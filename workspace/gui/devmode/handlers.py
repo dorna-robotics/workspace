@@ -5,7 +5,7 @@ mode" notice, every API route 401 {error: "login required"} (contract:
 offline mode runs existing projects and nothing else).
 
     GET  /dev/api/ports                                serial ports on this unit
-    GET  /dev/api/projects/<n>/info                    project dir, launch state, components
+    GET  /dev/api/projects/<n>/info                    project dir, launch state, components (+ each part's settings)
     GET  /dev/api/projects/<n>/params?component=c      the Parameters window's fields
     POST /dev/api/projects/<n>/params                  {component, values: {key: value}}
     POST /dev/api/projects/<n>/simulation              {components: [..] | component, on}
@@ -126,6 +126,27 @@ class PortsHandler(_Base):
         self.finish({"ok": True, "ports": params.serial_ports()})
 
 
+def _components(scene):
+    """The scene's parts for the page: kind, simulation, and — for a part
+    with a settings menu — its Settings window (the /params schema), so
+    the page opens one without a round trip."""
+    comps = []
+    for n, cfg in scene.items():
+        if not isinstance(cfg, dict):
+            continue
+        t = str(cfg.get("type") or "")
+        dev = params.is_device(t, cfg)
+        try:
+            sch = params.schema(n, cfg, scene)
+        except Exception:
+            sch = {"fields": []}
+        comps.append({"name": n, "type": t, "kind": params.kind_of(t), "device": dev,
+                      "simulation": cfg.get("simulation", True) is not False if dev else None,
+                      "camera": t.startswith("inspection_"), "menu": bool(sch["fields"]),
+                      "settings": sch if sch["fields"] else None})
+    return comps
+
+
 class InfoHandler(_Base):
     async def get(self, name):
         p = self.project(name)
@@ -137,15 +158,7 @@ class InfoHandler(_Base):
             scene_err = None
         except Exception as e:
             scene, scene_err = {}, f"{type(e).__name__}: {e}"
-        comps = []
-        for n, cfg in scene.items():
-            if not isinstance(cfg, dict):
-                continue
-            t = str(cfg.get("type") or "")
-            dev = params.is_device(t, cfg)
-            comps.append({"name": n, "type": t, "kind": params.kind_of(t), "device": dev,
-                          "simulation": cfg.get("simulation", True) is not False if dev else None,
-                          "camera": t.startswith("inspection_")})
+        comps = await _off_loop(_components, scene)
         try:
             files = [os.path.relpath(f, d) for f in scene_edit.scene_files(d)]
             sig = scene_edit.files_sig(d)
@@ -194,15 +207,17 @@ class ParamsHandler(_Base):
                 if v in ("", None) and fields[k]["value"] is None:
                     continue                # left empty and never set: stays unset
                 typed[k] = params.coerce(fields[k], v)
-            # Only what changed: an untouched field keeps its text.
-            typed = {k: v for k, v in typed.items() if fields[k]["value"] != v}
+            # Only what changed: an untouched field keeps its text, and an
+            # unset one left at the library default stays unset.
+            typed = {k: v for k, v in typed.items() if fields[k]["value"] != v
+                     and not (fields[k]["value"] is None and "default" in fields[k] and fields[k]["default"] == v)}
             touched = await _off_loop(scene_edit.set_values, p[1], comp, typed) if typed else {}
         except (ValueError, scene_edit.SceneEditError) as e:
             return self.fail(400, str(e))
         # Keys the scene builder also writes (rail, has_rail, critical…):
         # a builder holding the old values would save them back, so the
         # page must reload the builder before its next Save.
-        builder_keys = sorted(k for k in typed if k.split(".")[0] not in scene_edit.BUILDER_SKIPS)
+        builder_keys = sorted(k for k in typed if not scene_edit.builder_skips(k))
         self.finish({"ok": True, "changed": sorted(typed), "files": touched,
                      "builder_keys": builder_keys,
                      "scene_sig": scene_edit.files_sig(p[1]),

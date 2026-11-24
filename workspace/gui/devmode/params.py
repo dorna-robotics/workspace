@@ -7,12 +7,19 @@ sets by hand, so the window shows a curated set: a field appears when
 the component's class declares the key (scene_builder's AST reader),
 the scene already sets it, or the type is one that always has it
 (core → rail, inspection_* → camera).
+
+I/O wiring the human fills in on the bench — the robot output pins a
+decapper, gripper or shaker switches (``output_*``: [[pin, value, wait]])
+and an input pin it reads (``*_input_index``) — comes from the class's
+``DEFAULTS`` (merged down its bases, like the classes merge them).
 """
+import copy
 import glob
 import os
 import re
 
 import gui.scene_builder.server as sb
+from workspace.components import factory as comp_factory
 
 CAMERA_TYPES = ["d405", "ueye_xs", "hikrobot", "oak"]
 
@@ -33,11 +40,15 @@ FIELDS = {
     "simulation":             ("Simulation", "bool", "On = nothing is sent to the real device."),
 }
 SERIAL_HINT = "A /dev/serial/by-id/… path — it stays the same across reboots."
+IO_PINS = 16                        # the robot's outputs 0–15 (core.output)
+IO_HINT = "Each step sets one robot output pin to 0 or 1, then waits. An empty pin does nothing."
+IO_SEQ_RE = re.compile(r"^output_[a-z0-9_]+$")
+IO_IN_RE = re.compile(r"^[a-z0-9_]*input_index$")
 SKIP_FOLDERS = {"probe"}            # passive tools whose module only mentions sim
 
 
 def _src(ctype):
-    fp = sb.COMPONENT_MAP.get(ctype)
+    fp = sb.COMPONENT_MAP.get(ctype) or sb._project_component_map.get(ctype)
     return fp if fp and os.path.isfile(fp) else None
 
 
@@ -130,6 +141,46 @@ def _declared(ctype):
     return names
 
 
+_defaults_cache = {}      # type → (class, merged DEFAULTS)
+
+
+def defaults(ctype):
+    """The type's ``DEFAULTS``, base classes first (a project component
+    registers on set_project; an unknown type has none)."""
+    cls = comp_factory._registry.get(ctype)
+    hit = _defaults_cache.get(ctype)
+    if hit and hit[0] is cls:
+        return hit[1]
+    out = {}
+    for c in reversed(getattr(cls, "__mro__", ())):
+        d = c.__dict__.get("DEFAULTS")
+        if isinstance(d, dict):
+            out.update(d)
+    _defaults_cache[ctype] = (cls, out)
+    return out
+
+
+def _is_seq(v):
+    return isinstance(v, list) and bool(v) and all(isinstance(r, (list, tuple)) and len(r) == 3 for r in v)
+
+
+def io_keys(ctype):
+    """{key: default} of the type's I/O wiring settings."""
+    out = {}
+    for k, v in defaults(ctype).items():
+        if IO_SEQ_RE.match(k) and _is_seq(v):
+            out[k] = v
+        elif IO_IN_RE.match(k) and (v is None or isinstance(v, int)):
+            out[k] = v
+    return out
+
+
+def _io_label(k):
+    if IO_IN_RE.match(k):
+        return k[:-len("_index")].replace("_", " ").capitalize() + " pin"
+    return "Output pins · " + k[len("output_"):].replace("_", " ")
+
+
 def schema(name, cfg, scene):
     """The Parameters window for component ``name`` (its merged scene
     ``cfg``; ``scene`` = the whole merged scene, for the vision-server
@@ -157,6 +208,9 @@ def schema(name, cfg, scene):
     if ctype == "vision_server":
         want("ip")
         want("port")
+    io = io_keys(ctype)
+    for k in io:
+        want(k)
     device = is_device(ctype, cfg)
     if device and ("critical" in declared or "critical" in cfg):
         want("critical")
@@ -168,6 +222,12 @@ def schema(name, cfg, scene):
                      if isinstance(c, dict) and c.get("type") == "vision_server")
     fields = []
     for k in keys:
+        if k in io:
+            seq = IO_SEQ_RE.match(k) is not None
+            fields.append({"key": k, "label": _io_label(k), "kind": "io" if seq else "int",
+                           "hint": IO_HINT if seq else f"The robot input pin (0–{IO_PINS - 1}) it reads.",
+                           "value": _get(cfg, k), "default": copy.deepcopy(io[k]), "group": "io"})
+            continue
         label, kind, hint = FIELDS[k]
         f = {"key": k, "label": label, "kind": kind, "hint": hint, "value": _get(cfg, k)}
         if k == "port" and serial:
@@ -187,6 +247,8 @@ def schema(name, cfg, scene):
 def coerce(field, value):
     """A value from the window, typed for the scene; raises ValueError."""
     kind = field["kind"]
+    if kind == "io":
+        return _coerce_io(field, value)
     if kind == "bool":
         if isinstance(value, bool):
             return value
@@ -204,6 +266,8 @@ def coerce(field, value):
             raise ValueError(f"{field['label']}: a whole number")
         if field["key"] == "port" and not 0 < v < 65536:
             raise ValueError("Port: 1 to 65535")
+        if field.get("group") == "io" and not 0 <= v < IO_PINS:
+            raise ValueError(f"{field['label']}: 0 to {IO_PINS - 1}")
         return v
     if kind == "float":
         try:
@@ -218,3 +282,41 @@ def coerce(field, value):
     if kind == "serial" and v and not v.startswith("/dev/"):
         raise ValueError("USB port: a /dev/… path")
     return v
+
+
+def _coerce_io(field, value):
+    """[[pin, value, wait], …]: pin 0–15 or empty (None), value 0/1,
+    wait seconds ≥ 0."""
+    name = field["label"]
+    if not isinstance(value, list) or not value:
+        raise ValueError(f"{name}: at least one step")
+    out = []
+    for i, row in enumerate(value, 1):
+        if not isinstance(row, (list, tuple)) or len(row) != 3:
+            raise ValueError(f"{name}, step {i}: pin, value and wait")
+        pin, val, wait = row
+        if pin in ("", None):
+            pin = None
+        else:
+            try:
+                pin = int(str(pin).strip())
+            except ValueError:
+                raise ValueError(f"{name}, step {i}: the pin is a whole number")
+            if not 0 <= pin < IO_PINS:
+                raise ValueError(f"{name}, step {i}: pin 0 to {IO_PINS - 1}")
+        if val in ("", None):
+            val = None
+        elif str(val).strip() in ("0", "1"):
+            val = int(str(val).strip())
+        else:
+            raise ValueError(f"{name}, step {i}: the value is 0 or 1")
+        if pin is not None and val is None:
+            raise ValueError(f"{name}, step {i}: pin {pin} needs a value, 0 or 1")
+        try:
+            wait = float(str(wait).strip() or 0)
+        except ValueError:
+            raise ValueError(f"{name}, step {i}: the wait is a number of seconds")
+        if wait < 0:
+            raise ValueError(f"{name}, step {i}: the wait is 0 s or more")
+        out.append([pin, val, wait])
+    return out

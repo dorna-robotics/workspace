@@ -62,8 +62,8 @@
         <button class="btn btn-primary" id="sbNew"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>New component</button>
         <button class="btn" id="sbSave" title="Write the builder's scene into the project's scene files">Save to project</button>
         <div class="dv-sep"></div>
-        <span class="muted dv-sel" id="sbSel">Click a component to set its parameters.</span>
-        <button class="btn" id="sbParams" disabled>Parameters</button>
+        <span class="muted dv-sel" id="sbSel">Parts with settings show a settings button in the list.</span>
+        <button class="btn" id="sbParams" hidden title="This part's settings: pins, ports, simulation…"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>Settings</button>
         <button class="btn" id="sbCamera" hidden><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>Camera</button>
         <button class="btn" id="sbVision" hidden title="Open this camera's vision server GUI — build and test its detections"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>Vision configurator</button>
         <div class="spacer"></div>
@@ -72,30 +72,16 @@
       <iframe class="dv-frame" id="sbFrame" title="Scene builder"></iframe>
     </section>
 
-    <!-- 2 · Workflow -->
+    <!-- 2 · Workflow: the project page itself (3D view, run controls,
+         steps, devices and their buttons), with the scene's simulation
+         switches one click away -->
     <section class="dv-pane" data-pane="workflow" hidden>
-      <div class="dv-wf">
-        <div class="dv-col">
-          <div class="dv-card">
-            <div class="dv-card-head"><h2>Run</h2><div class="spacer"></div><a class="btn btn-ghost" id="wfOperator" target="_blank">Operator page</a></div>
-            <div class="dv-run" id="wfRun"></div>
-            <div class="muted dv-small" id="wfRunMsg"></div>
-          </div>
-          <div class="dv-card">
-            <div class="dv-card-head"><h2>Simulation</h2><div class="spacer"></div>
-              <button class="btn" id="wfAllSim">All simulated</button>
-              <button class="btn" id="wfAllReal">All real</button></div>
-            <div class="dv-note" id="wfSimNote" hidden></div>
-            <div id="wfSim"></div>
-          </div>
-        </div>
-        <div class="dv-col dv-col-wide">
-          <div class="dv-card">
-            <div class="dv-card-head"><h2>Devices</h2><div class="spacer"></div><span class="muted dv-small" id="wfDevMsg"></span></div>
-            <div id="wfDevices"></div>
-          </div>
-        </div>
+      <div class="dv-toolbar">
+        <button class="btn" id="wfSimBtn" title="Which devices are simulated — saved to the project's scene"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="10" rx="5"/><circle cx="16" cy="12" r="3"/></svg><span id="wfSimSum">Simulation</span></button>
+        <div class="spacer"></div>
+        <a class="btn btn-ghost" id="wfOperator" target="_blank" rel="noopener" title="The project page in its own tab">Open in a new tab</a>
       </div>
+      <iframe class="dv-frame" id="wfFrame" title="Project page"></iframe>
     </section>
 
     <!-- 3 · HMI -->
@@ -121,7 +107,7 @@
   </main>
 </div>
 
-<!-- floating windows (Parameters, Camera) -->
+<!-- floating windows (Parameters, Camera, Simulation) -->
 <div id="dvWins"></div>
 
 <script src="/vendor/theme.js"></script>

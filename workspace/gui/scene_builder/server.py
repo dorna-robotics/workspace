@@ -851,24 +851,17 @@ app = tornado.web.Application([
 
 
 def _devmode_filter(handler, types):
-    """The catalog shows only the components the unit's account was
-    given (gui/devmode/access.py; admins see all; logged out = none but
-    what the scene already holds) — whatever the query string says.
-    Never hidden: the project's own components and every type already
-    in its scene — a part on the bench stays editable."""
+    """The "add a component" catalog shows only the components the
+    unit's account was given (gui/devmode/access.py; admins see all;
+    logged out = none) — whatever the query string says. The project's
+    own components (its components/ folder) are always there. Parts the
+    account was not given still load, render and edit like any other
+    when a project already has them; they are only not offered to add."""
     try:
         from gui.devmode.access import filter_types
     except Exception:
         return []
-    keep = set(_project_component_map.keys())
-    if _project_path:
-        try:
-            from gui.devmode.scene_edit import merged
-            keep |= {str(c.get("type")) for c in merged(_project_path).values()
-                     if isinstance(c, dict) and c.get("type")}
-        except Exception:
-            pass
-    return filter_types(types, keep)
+    return filter_types(types, set(_project_component_map.keys()))
 
 
 class CatalogHandler(tornado.web.RequestHandler):

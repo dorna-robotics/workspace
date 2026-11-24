@@ -1,9 +1,9 @@
 // Developer mode — /dev/?project=<name>
 // Four tabs over one project: Scene builder (the embedded builder, its
-// Parameters + Camera windows), Workflow (run controls, simulation per
-// device, the devices' operator buttons), HMI (Main + Parameters
-// previews) and Calibration (calibration.html).
-import { apiFetch, esc, stateVariant, stateLabel, isLaunched, canStart, isRunning } from "/orchestrator/api.js";
+// Settings + Camera windows), Workflow (the project page itself — 3D
+// view, run controls, steps, devices — plus the scene's simulation
+// switches), HMI (Main + Parameters previews) and Calibration.
+import { apiFetch, esc, stateVariant, stateLabel, isLaunched } from "/orchestrator/api.js";
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -95,6 +95,7 @@ let baseSig = "";         // the scene files as the builder loaded them (Save re
 async function openScene() {
   if (sbReady || !info) return;
   sbReady = true;
+  if (info.components.some(c => c.settings?.fields.some(f => f.kind === "serial"))) loadPorts();
   await loadScene();
 }
 
@@ -129,6 +130,8 @@ async function loadScene() {
   frame.addEventListener("load", () => {
     const w = frame.contentWindow;
     w.addEventListener("sb-select", e => onSelect(e.detail || {}));
+    w.addEventListener("sb-menu", e => e.detail?.name && openParams(e.detail.name));
+    pushMenus();
     // The project's picture for the Projects page, once the scene is in.
     waitForScene(w).then(ok => {
       setSaveReady(ok);
@@ -160,21 +163,37 @@ function setSaveReady(ok) {
   b.title = ok ? "Write the builder's scene into the project's scene files" : "Loading the scene…";
 }
 
+// Which parts have a settings menu (pins, ports, simulation…): the
+// builder's list shows them a settings button; plain parts (fixture
+// plates, racks) have none and open no window.
+const hasMenu = (name) => !!info?.components.find(c => c.name === name)?.menu;
+function pushMenus() {
+  const w = $("#sbFrame").contentWindow;
+  if (!w || !info) return;
+  try {
+    w.__sbMenus = new Set(info.components.filter(c => c.menu).map(c => c.name));
+    w.updateObjectList?.();
+  } catch (_) {}
+}
+
 function onSelect({ name, type }) {
   sbSel = name ? { name, type } : null;
-  $("#sbSel").textContent = name ? `${name} · ${type || "component"}` : "Click a component to set its parameters.";
-  $("#sbParams").disabled = !name;
+  const menu = !!name && hasMenu(name);
+  $("#sbSel").textContent = !name ? "Parts with settings show a settings button in the list."
+    : `${name} · ${type || "component"}` + (menu ? "" : " — no settings");
+  $("#sbParams").hidden = !menu;
   $("#sbCamera").hidden = !(type || "").startsWith("inspection_");
   $("#sbVision").hidden = !isVisionPart(type);
   if (name && isVisionPart(type)) prefetchVision(name);
-  if (name) openParams(name);
+  if (menu) openParams(name);
+  else document.getElementById("dvParams")?.querySelector("[data-close]")?.click();
 }
 
 $("#sbNew").onclick = () => {
   const w = $("#sbFrame").contentWindow;
   if (w && w.__sbOpenInsert) w.__sbOpenInsert();
 };
-$("#sbParams").onclick = () => sbSel && openParams(sbSel.name);
+$("#sbParams").onclick = () => sbSel && openParams(sbSel.name, true);
 $("#sbCamera").onclick = () => sbSel && openCamera(sbSel.name);
 $("#sbVision").onclick = () => sbSel && openVision(sbSel.name);
 $("#sbThumb").onclick = () => saveThumb(false);
@@ -237,25 +256,38 @@ async function saveThumb(quiet) {
   }
 }
 
-// Parameters window
-let ports = null;
-async function openParams(name) {
+// Settings window. /info carries every part's window (its schema), so
+// a click opens it at once — no round trip while the 3D view is busy
+// with the selection; a reselect of the part already shown leaves the
+// window, and any typing in it, alone. Serial ports are asked for once.
+let ports = [];
+const schemas = new Map();                     // name → /params schema (from /info)
+function loadPorts() {
+  fetch("/dev/api/ports").then(r => r.json()).then(j => { ports = j.ports || []; }).catch(() => {});
+}
+
+async function openParams(name, force = false) {
+  const open = document.getElementById("dvParams");
+  if (open && open.dataset.comp === name && !force) return;
   const w = makeWin("dvParams", name);
+  w.dataset.comp = name;
   const body = w.querySelector(".dv-win-body"), foot = w.querySelector(".dv-win-foot");
-  body.innerHTML = `<div class="muted">Loading…</div>`;
-  foot.hidden = true;
-  let s;
-  try { s = await api(`/params?component=${encodeURIComponent(name)}`); }
-  catch (e) { body.innerHTML = `<div class="dv-msg bad">${esc(e.message)}</div>`; return; }
-  if (w.querySelector("h3").textContent !== name) return;   // another click won
+  let s = schemas.get(name);
+  if (!s) {                                       // not in /info (yet): ask
+    body.innerHTML = `<div class="muted">Loading…</div>`;
+    foot.hidden = true;
+    try { s = await api(`/params?component=${encodeURIComponent(name)}`); }
+    catch (e) { body.innerHTML = `<div class="dv-msg bad">${esc(e.message)}</div>`; return; }
+    if (w.dataset.comp !== name) return;          // another click won
+  }
   if (!s.fields.length) {
-    body.innerHTML = `<div class="muted">${esc(s.type)} has no device settings — it is placed, not connected.</div>`;
+    body.innerHTML = `<div class="muted">${esc(s.type)} has no settings — it is placed, not connected.</div>`;
+    foot.hidden = true;
     return;
   }
-  if (s.fields.some(f => f.kind === "serial") && !ports) {
-    try { ports = (await fetch("/dev/api/ports").then(r => r.json())).ports || []; } catch (_) { ports = []; }
-  }
-  body.innerHTML = `<div class="muted dv-small">${esc(s.type)}</div>` + s.fields.map(f => fieldHtml(f)).join("");
+  const io = s.fields.filter(f => f.group === "io"), rest = s.fields.filter(f => f.group !== "io");
+  body.innerHTML = `<div class="muted dv-small">${esc(s.type)}</div>` + rest.map(f => fieldHtml(f, ports)).join("")
+    + (io.length ? `<div class="dv-grp">I/O wiring</div>` + io.map(f => fieldHtml(f, ports)).join("") : "");
   foot.hidden = false;
   foot.innerHTML = `<button class="btn btn-primary" data-save>Save</button>
     ${s.type.startsWith("inspection_") ? `<button class="btn" data-cam>Camera</button>` : ""}
@@ -268,15 +300,15 @@ async function openParams(name) {
     const values = {};
     for (const f of s.fields) {
       const el = body.querySelector(`[data-key="${f.key}"]`);
-      values[f.key] = f.kind === "bool" ? el.checked : el.value;
+      values[f.key] = f.kind === "bool" ? el.checked : f.kind === "io" ? ioValue(el) : el.value;
     }
     msg.className = "dv-msg"; msg.textContent = "Saving…";
     try {
       const r = await post("/params", { component: name, values });
-      // Connection keys: the builder never writes them, so its copy is
-      // still current. Rail / critical: the builder writes those too and
-      // would save its old values back — it must reload first (baseSig
-      // stays old, so a Save before that is refused with a 409).
+      // Connection + I/O keys: the builder never writes them, so its copy
+      // is still current. Rail / critical: the builder writes those too
+      // and would save its old values back — it must reload first
+      // (baseSig stays old, so a Save before that is refused with a 409).
       if (!(r.builder_keys || []).length) baseSig = r.scene_sig;
       else {
         banner(`Saved ${esc(r.builder_keys.join(", "))}. The Scene builder still shows the old value — reload it before you move anything (its unsaved changes are dropped). <button class="btn btn-sm" id="sbReload">Reload the Scene builder</button>`);
@@ -285,18 +317,47 @@ async function openParams(name) {
       msg.className = "dv-msg ok";
       msg.textContent = !r.changed.length ? "No changes." :
         `Saved to ${Object.keys(r.files).map(f => f.split("/").pop()).join(", ")}.` + (r.relaunch ? " Relaunch to apply." : "");
-      if (r.changed.includes("simulation")) loadInfo();
+      if (r.changed.length) loadInfo();
     } catch (e) {
       msg.className = "dv-msg bad"; msg.textContent = e.message;
     }
   };
 }
 
-function fieldHtml(f) {
+// I/O wiring: [[pin, value, wait], …] as rows of pin · 0/1 · wait (s).
+const PINS = 16;
+function ioRow([pin, val, wait] = [null, 1, 0.25]) {
+  const pinOpts = `<option value="" ${pin == null ? "selected" : ""}>—</option>` +
+    Array.from({ length: PINS }, (_, i) => `<option value="${i}" ${pin === i ? "selected" : ""}>Out ${i}</option>`).join("");
+  const valOpts = ["", 0, 1].map(v => `<option value="${v}" ${(val ?? "") === v ? "selected" : ""}>${v === "" ? "—" : v ? "1 · on" : "0 · off"}</option>`).join("");
+  return `<div class="dv-io-row">
+    <select class="input" data-io="pin" aria-label="Output pin">${pinOpts}</select>
+    <select class="input" data-io="val" aria-label="Value">${valOpts}</select>
+    <input class="input" data-io="wait" inputmode="decimal" value="${esc(wait ?? 0)}" aria-label="Wait (s)"/><span class="muted dv-small">s</span>
+    <button class="btn btn-ghost btn-icon" data-io-del title="Remove this step"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+  </div>`;
+}
+function ioValue(el) {
+  return [...el.querySelectorAll(".dv-io-row")].map(r => [
+    r.querySelector('[data-io="pin"]').value, r.querySelector('[data-io="val"]').value, r.querySelector('[data-io="wait"]').value]);
+}
+document.addEventListener("click", e => {
+  const del = e.target.closest("[data-io-del]");
+  if (del) { const box = del.closest(".dv-io"); if (box.querySelectorAll(".dv-io-row").length > 1) del.closest(".dv-io-row").remove(); return; }
+  const add = e.target.closest("[data-io-add]");
+  if (add) add.insertAdjacentHTML("beforebegin", ioRow());
+});
+
+function fieldHtml(f, portList = []) {
   const id = `f_${f.key.replace(/\W/g, "_")}`;
-  const v = f.value ?? "";
+  const v = f.value ?? (f.group === "io" ? f.default ?? "" : "");
   let input;
-  if (f.kind === "bool") {
+  if (f.kind === "io") {
+    const rows = Array.isArray(v) && v.length ? v : [[null, 1, 0.25]];
+    input = `<div class="dv-io" id="${id}" data-key="${esc(f.key)}">
+      <div class="dv-io-head muted dv-small"><span>Pin</span><span>Value</span><span>Wait</span></div>
+      ${rows.map(ioRow).join("")}<button class="btn btn-ghost btn-sm" data-io-add>+ Add a step</button></div>`;
+  } else if (f.kind === "bool") {
     input = `<label class="dv-switch"><input type="checkbox" id="${id}" data-key="${esc(f.key)}" ${f.value ? "checked" : ""}/>
       <span>${f.key === "simulation" ? (f.value ? "Simulated" : "Real device") : (f.value ? "On" : "Off")}</span></label>`;
   } else if (f.kind === "enum") {
@@ -305,7 +366,7 @@ function fieldHtml(f) {
     input = `<select class="input" id="${id}" data-key="${esc(f.key)}">${opts.map(o => `<option value="${esc(o)}" ${o === v ? "selected" : ""}>${esc(o || "— none —")}</option>`).join("")}</select>`;
   } else if (f.kind === "serial") {
     input = `<input class="input mono" id="${id}" data-key="${esc(f.key)}" list="${id}_l" value="${esc(v)}" placeholder="/dev/serial/by-id/…" spellcheck="false"/>
-      <datalist id="${id}_l">${(ports || []).map(p => `<option value="${esc(p.port)}">${esc(p.description)}</option>`).join("")}</datalist>`;
+      <datalist id="${id}_l">${portList.map(p => `<option value="${esc(p.port)}">${esc(p.description)}</option>`).join("")}</datalist>`;
   } else {
     const num = f.kind === "int" || f.kind === "float";
     input = `<input class="input${num ? "" : " mono"}" id="${id}" data-key="${esc(f.key)}" value="${esc(v)}" ${num ? `inputmode="decimal"` : ""} spellcheck="false"/>`;
@@ -392,46 +453,47 @@ function openCamera(name) {
 }
 
 // ── 2 · Workflow ────────────────────────────────────────────────────
-let wfOpen = false, rtWs = null, rtUrl = "", opActions = [], opComponents = [], devices = new Map(), replies = {};
-
+// The project page itself (orchestrator workspace.html, ?embed=1: no
+// nav or account of its own) — the 3D view, run controls, steps,
+// devices and their buttons, exactly as operators know it. Developer
+// mode adds the scene's simulation switches on top.
 function openWorkflow() {
-  $("#wfOperator").href = `/orchestrator/workspace.html?name=${encodeURIComponent(PROJECT)}`;
-  if (!wfOpen) { wfOpen = true; }
-  renderRun();
-  renderSim();
-  renderDevices();
+  const page = `/orchestrator/workspace.html?name=${encodeURIComponent(PROJECT)}`;
+  $("#wfOperator").href = page;
+  const f = $("#wfFrame");
+  if (!f.getAttribute("src")) f.src = `${page}&embed=1`;
+  renderSimSum();
 }
 
-function renderRun() {
-  const s = status.state || "NOT_LAUNCHED", launched = isLaunched(s);
-  const btn = (cmd, label, cls = "", on = true) => `<button class="btn ${cls}" data-cmd="${cmd}" ${on ? "" : "disabled"}>${label}</button>`;
-  $("#wfRun").innerHTML = launched
-    ? btn("start", "Start", "btn-primary", canStart(s)) + btn("pause", "Pause", "", isRunning(s)) + btn("park", "Park", "", s !== "PARKING")
-      + btn("relaunch", "Relaunch") + btn("kill", "Kill", "btn-danger")
-    : btn("launch", "Launch", "btn-primary");
-  $("#wfRunMsg").textContent = status.last_error ? `Last error: ${status.last_error}` : launched ? `State: ${stateLabel(s)}` : "Not launched. Launch builds the project with its current scene.";
+function renderSimSum() {
+  if (!info) return;
+  const devs = info.components.filter(c => c.device), n = devs.filter(c => c.simulation).length;
+  $("#wfSimSum").textContent = !devs.length ? "Simulation · no devices"
+    : n === devs.length ? "Simulation · all simulated" : !n ? "Simulation · all real" : `Simulation · ${n} of ${devs.length} simulated`;
+  if (document.getElementById("dvSim")) renderSim();
 }
-$("#wfRun").addEventListener("click", async e => {
-  const b = e.target.closest("[data-cmd]");
-  if (!b) return;
-  const cmd = b.dataset.cmd;
-  if (cmd === "kill") {
-    const ok = await window.confirmDialog({ title: "Kill the project?", message: "The program stops and the robot halts.", confirm: "Kill" });
-    if (!ok) return;
-  }
-  b.disabled = true;
-  try {
-    await apiFetch(`/workspace/${encodeURIComponent(PROJECT)}/cmd`, { method: "POST", body: JSON.stringify({ cmd }) });
-    $("#wfSimNote").hidden = true;
-  } catch (err) {
-    banner(`${esc(cmd)}: ${esc(err.message)}`, true);
-  }
-  pollStatus();
-});
+
+function openSim() {
+  const w = makeWin("dvSim", "Simulation");
+  const body = w.querySelector(".dv-win-body"), foot = w.querySelector(".dv-win-foot");
+  body.innerHTML = `<div class="muted dv-small">Saved to the project's scene: a simulated device answers, nothing real moves.</div><div class="dv-note" id="wfSimNote" hidden></div><div id="wfSim"></div>`;
+  foot.hidden = false;
+  foot.innerHTML = `<button class="btn" data-all="1">All simulated</button><button class="btn" data-all="0">All real</button>`;
+  foot.onclick = e => {
+    const b = e.target.closest("[data-all]");
+    if (b && info) setSim(info.components.filter(c => c.device).map(c => c.name), b.dataset.all === "1");
+  };
+  body.addEventListener("change", e => {
+    const el = e.target.closest("[data-sim]");
+    if (el) setSim([el.dataset.sim], el.checked);
+  });
+  renderSim();
+}
+$("#wfSimBtn").onclick = openSim;
 
 function renderSim() {
   const box = $("#wfSim");
-  if (!info) return;
+  if (!box || !info) return;
   const devs = info.components.filter(c => c.device);
   if (!devs.length) { box.innerHTML = `<div class="dv-empty">This project's scene has no devices.</div>`; return; }
   const groups = [["robot", "Robot"], ["camera", "Cameras"], ["device", "Devices"]];
@@ -444,22 +506,21 @@ function renderSim() {
           <input type="checkbox" data-sim="${esc(c.name)}" ${c.simulation ? "checked" : ""} title="Simulation"/></label></div>`).join("");
   }).join("");
 }
-$("#wfSim").addEventListener("change", e => {
-  const el = e.target.closest("[data-sim]");
-  if (el) setSim([el.dataset.sim], el.checked);
-});
-$("#wfAllSim").onclick = () => info && setSim(info.components.filter(c => c.device).map(c => c.name), true);
-$("#wfAllReal").onclick = () => info && setSim(info.components.filter(c => c.device).map(c => c.name), false);
 
 async function setSim(names, on) {
   try {
     const r = await post("/simulation", { components: names, on });
     if (r.scene_sig) baseSig = r.scene_sig;
-    if (r.relaunch) {
-      const n = $("#wfSimNote");
-      n.innerHTML = `<span>The running project still uses the old setting.</span><button class="btn btn-sm" data-cmd-relaunch>Relaunch now</button>`;
-      n.hidden = false;
-      n.querySelector("[data-cmd-relaunch]").onclick = () => $("#wfRun").querySelector('[data-cmd="relaunch"]')?.click();
+    const note = $("#wfSimNote");
+    if (r.relaunch && note) {
+      note.innerHTML = `<span>The running project still uses the old setting — relaunch it to apply.</span><button class="btn btn-sm" data-relaunch>Relaunch now</button>`;
+      note.hidden = false;
+      note.querySelector("[data-relaunch]").onclick = async () => {
+        note.hidden = true;
+        try { await apiFetch(`/workspace/${encodeURIComponent(PROJECT)}/cmd`, { method: "POST", body: JSON.stringify({ cmd: "relaunch" }) }); }
+        catch (err) { banner(`Relaunch: ${esc(err.message)}`, true); }
+        pollStatus();
+      };
     }
   } catch (e) {
     banner(`Simulation: ${esc(e.message)}`, true);
@@ -467,81 +528,12 @@ async function setSim(names, on) {
   await loadInfo();
 }
 
-// The runtime's own socket: operator_actions, devices, invoke results.
-function connectRuntime() {
-  const launched = isLaunched(status.state) && status.state !== "LAUNCHED_NOT_READY";
-  const url = launched && info ? `http://${location.hostname}:${info.port}` : "";
-  if (url === rtUrl) return;
-  rtUrl = url;
-  if (rtWs) { try { rtWs.onclose = null; rtWs.close(); } catch (_) {} rtWs = null; }
-  opActions = []; opComponents = []; devices.clear();
-  if (!url) { renderDevices(); return; }
-  const ws = new WebSocket(url.replace(/^http/, "ws") + "/ws");
-  rtWs = ws;
-  ws.onmessage = e => {
-    let m; try { m = JSON.parse(e.data); } catch (_) { return; }
-    const p = m.payload || {};
-    if (m.type === "operator_actions") opActions = p.actions || [];
-    else if (m.type === "operator_components") opComponents = p.components || [];
-    else if (m.type === "devices_snapshot") { devices.clear(); for (const d of p.devices || []) if (d.id) devices.set(d.id, d); }
-    else if (m.type === "device_state") { if (p.id) devices.set(p.id, p); }
-    else if (m.type === "invoke_result") replies[p.component] = p;
-    else return;
-    if (tab === "workflow") renderDevices();
-  };
-  ws.onclose = () => { if (rtWs === ws) { rtWs = null; rtUrl = ""; setTimeout(connectRuntime, 2000); } };
-}
-
-function renderDevices() {
-  const box = $("#wfDevices");
-  if (!rtUrl) {
-    $("#wfDevMsg").textContent = "";
-    box.innerHTML = `<div class="dv-empty">Launch the project to use its devices' buttons.<br>Simulated devices answer too — nothing real moves.</div>`;
-    return;
+// The theme toggle is the host's: the embedded pages follow it.
+addEventListener("storage", e => {
+  if (e.key !== "orch_theme") return;
+  for (const f of $$("iframe")) {
+    try { f.contentDocument?.documentElement.setAttribute("data-theme", e.newValue || "light"); } catch (_) {}
   }
-  const running = isRunning(status.state);
-  $("#wfDevMsg").textContent = running ? "Buttons are off while a run is in progress." : "";
-  const comps = opComponents.length ? opComponents
-    : [...new Set(opActions.map(a => a.component))].map(n => ({ name: n, label: n }));
-  if (!comps.length) { box.innerHTML = `<div class="dv-empty">Connecting to the project…</div>`; return; }
-  const simOf = n => info?.components.find(c => c.name === n)?.simulation;
-  box.innerHTML = comps.map(c => {
-    const acts = opActions.filter(a => a.component === c.name);
-    const devs = (c.devices || []).map(id => devices.get(id)).filter(Boolean);
-    const down = devs.find(d => d.state === "down" || d.state === "error");
-    const st = devs.length ? (down ? `<span class="pill bad"><span class="dot"></span>${esc(down.state)}</span>` : `<span class="pill ok"><span class="dot"></span>ready</span>`) : "";
-    const sim = simOf(c.name);
-    const mode = sim == null ? "" : `<span class="pill ${sim ? "sim" : "off"}"><span class="dot ${sim ? "sim" : ""}"></span>${sim ? "SIM" : "REAL"}</span>`;
-    const rep = replies[c.name];
-    return `<div class="dv-dev"><div class="dv-dev-head"><b>${esc(c.label || c.name)}</b>${mode}${st}
-        ${down ? `<div class="spacer"></div><button class="btn btn-sm" data-recover="${esc(down.id)}">Recover</button>` : ""}</div>
-      ${down?.msg ? `<div class="dv-msg bad">${esc(down.msg)}</div>` : ""}
-      <div class="dv-acts">${acts.map(a => actHtml(a, running)).join("") || `<span class="muted dv-small">No buttons.</span>`}</div>
-      ${rep ? `<div class="dv-reply ${rep.ok ? "" : "bad"}">${esc(rep.method)}: ${esc(rep.ok ? (rep.text ?? "done") : (rep.msg || "failed"))}</div>` : ""}
-    </div>`;
-  }).join("");
-}
-function actHtml(a, running) {
-  const ps = (a.params || []).map(p => `<input class="input dv-act-arg" data-arg="${esc(p.name)}" placeholder="${esc(p.name)}${p.unit ? ` (${esc(p.unit)})` : ""}" value="${esc(p.default ?? "")}"/>`).join("");
-  return `<span class="dv-act" data-c="${esc(a.component)}" data-m="${esc(a.method)}">${ps}<button class="btn" ${running ? "disabled" : ""}>${esc(a.label || a.method)}</button></span>`;
-}
-$("#wfDevices").addEventListener("click", async e => {
-  const rec = e.target.closest("[data-recover]");
-  if (rec) {
-    try { await apiFetch(`/workspace/${encodeURIComponent(PROJECT)}/devices/${encodeURIComponent(rec.dataset.recover)}/recover`, { method: "POST", body: "{}" }); }
-    catch (err) { banner(`Recover: ${esc(err.message)}`, true); }
-    return;
-  }
-  const b = e.target.closest(".dv-act button");
-  if (!b || !rtWs || rtWs.readyState !== 1) return;
-  const span = b.parentElement;
-  const args = {};
-  for (const i of span.querySelectorAll("[data-arg]")) if (i.value !== "") args[i.dataset.arg] = isNaN(+i.value) ? i.value : +i.value;
-  const payload = { component: span.dataset.c, method: span.dataset.m };
-  if (Object.keys(args).length) payload.args = args;
-  replies[span.dataset.c] = { method: span.dataset.m, ok: true, text: "…" };
-  renderDevices();
-  rtWs.send(JSON.stringify({ type: "invoke", payload }));
 });
 
 // ── 3 · HMI ─────────────────────────────────────────────────────────
@@ -579,7 +571,10 @@ async function loadInfo() {
   $("#dvProject").textContent = info.label || info.name;
   document.title = `${info.name} · Developer mode`;
   if (info.scene_error) banner(`The scene does not load: ${esc(info.scene_error)}`, true);
-  if (tab === "workflow") { renderSim(); renderDevices(); }
+  schemas.clear();
+  for (const c of info.components) if (c.settings) schemas.set(c.name, c.settings);
+  pushMenus();
+  renderSimSum();
 }
 
 async function pollStatus() {
@@ -592,8 +587,6 @@ async function pollStatus() {
   const pill = $("#dvState");
   pill.className = `pill ${stateVariant(s)}`;
   pill.innerHTML = `<span class="dot ${stateVariant(s)}"></span><span>${esc(stateLabel(s))}</span>`;
-  connectRuntime();
-  if (tab === "workflow") { renderRun(); renderDevices(); }
   if (tab === "hmi") openHmi();
 }
 

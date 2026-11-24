@@ -4,7 +4,7 @@
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>Dorna Workspace</title>
-  <script>(function(){ document.documentElement.setAttribute("data-theme", localStorage.getItem("orch_theme")||"light"); if(localStorage.getItem("nav_expanded")==="1")document.documentElement.classList.add("nav-expanded"); if(/[?&]pendant=(1|true)(&|$)/i.test(location.search))document.documentElement.classList.add("pendant-boot"); })();</script>
+  <script>(function(){ document.documentElement.setAttribute("data-theme", localStorage.getItem("orch_theme")||"light"); if(localStorage.getItem("nav_expanded")==="1")document.documentElement.classList.add("nav-expanded"); if(/[?&]pendant=(1|true)(&|$)/i.test(location.search))document.documentElement.classList.add("pendant-boot"); if(/[?&]embed=1(&|$)/.test(location.search))document.documentElement.classList.add("embedded"); })();</script>
   <link rel="icon" type="image/png" href="favicon.png"/>
   <link rel="stylesheet" href="/vendor/base.css"/>
   <link rel="stylesheet" href="/vendor/nav.css"/>
@@ -21,6 +21,13 @@
     .ws-title-block { min-width: 0; flex: 1 1 auto; overflow: hidden; position: relative; z-index: 1; }
     .ws-title    { font-size: var(--text-xl); font-weight: 600; letter-spacing: -0.3px; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .ws-subtitle { font-size: var(--text-sm); color: var(--muted); }
+
+    /* Embedded (?embed=1 — Developer mode's Workflow tab): the host
+       page owns navigation, account and theme. */
+    html.embedded .app-nav, html.embedded .app-nav-overlay,
+    html.embedded #btnBurger, html.embedded .ws-header > a[href="/orchestrator/"],
+    html.embedded .ws-header .js-theme-toggle, html.embedded .ws-header .acct { display: none !important; }
+    html.embedded .app-nav ~ * { margin-left: 0 !important; }
 
     /* ---- Body ---- */
     .ws-body { display: flex; flex: 1; overflow: hidden; min-height: 0; }

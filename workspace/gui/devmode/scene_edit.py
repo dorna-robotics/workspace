@@ -60,11 +60,52 @@ def render(path, text=None):
     return yaml.safe_load(text) or {}
 
 
+_merged_cache = {}       # project dir → (signature, merged scene)
+TEMPLATE_SUFFIXES = {".j2", ".yaml", ".yml", ".json"}
+
+
+def _merged_sig(project_dir, files):
+    """launch.yaml plus every template beside the scene files (what a
+    ``{% import %}`` can pull in) — stats only, no reads."""
+    out = []
+    folders = {Path(project_dir) / "launch.yaml"} | {p.parent for p in files}
+    for d in sorted(folders):
+        try:
+            entries = [d] if d.is_file() else [q for q in d.iterdir() if q.suffix in TEMPLATE_SUFFIXES]
+        except OSError:
+            continue
+        for q in sorted(entries):
+            try:
+                st = q.stat()
+                out.append(f"{q}:{st.st_mtime_ns}:{st.st_size}")
+            except OSError:
+                out.append(f"{q}:missing")
+    return "|".join(out)
+
+
+def _write(p, text):
+    """Write a scene file; the merged scene is read fresh after it (an
+    mtime can repeat within a coarse clock tick)."""
+    p.write_text(text)
+    _merged_cache.clear()
+
+
 def merged(project_dir):
+    """The project's scene, every file rendered and merged in order.
+    Rendering a large scene takes most of a second on the Pi and every
+    Developer mode call needs it, so it is kept until a template beside
+    the scene files changes; callers get their own copy."""
+    files = scene_files(project_dir)
+    key = str(Path(project_dir).resolve())
+    sig = _merged_sig(project_dir, files)
+    hit = _merged_cache.get(key)
+    if hit and hit[0] == sig:
+        return copy.deepcopy(hit[1])
     out = {}
-    for p in scene_files(project_dir):
+    for p in files:
         out.update(render(p))
-    return out
+    _merged_cache[key] = (sig, out)
+    return copy.deepcopy(out)
 
 
 BACKUPS_KEPT = 40           # per scene file; the oldest go first
@@ -256,7 +297,7 @@ def set_values(project_dir, component, values):
             got = _get((render(p, new_text) or {}).get(component) or {}, path)
             if got != value:
                 raise SceneEditError(f"{dotted}: the file did not read back as {value!r} (got {got!r})")
-            p.write_text(new_text)
+            _write(p, new_text)
             touched.setdefault(str(p), []).append(dotted)
         # The merged scene must still give the asked values (a later file
         # could override them).
@@ -267,7 +308,7 @@ def set_values(project_dir, component, values):
                 raise SceneEditError(f"{dotted}: another scene file overrides it ({got!r})")
     except Exception:
         for p, text in originals.items():
-            p.write_text(text)
+            _write(p, text)
         raise
     for p, text in originals.items():
         _backup(p, text)
@@ -279,6 +320,14 @@ def set_values(project_dir, component, values):
 # set in the Parameters window, and the builder's previews blank them
 # (scene_builder/server.py) — a save never writes them.
 BUILDER_SKIPS = {"simulation", "ip", "port", "serial_number", "baud", "camera_cfg"}
+# I/O wiring (output pins, input pins) is the Parameters window's too.
+IO_SKIP_RE = re.compile(r"^(output_[a-z0-9_]+|[a-z0-9_]*input_index)$")
+
+
+def builder_skips(key):
+    """A key the builder's save leaves to the Parameters window."""
+    k = str(key).split(".")[0]
+    return k in BUILDER_SKIPS or bool(IO_SKIP_RE.match(k))
 
 
 def _emit(value, ind):
@@ -418,7 +467,7 @@ def save_components(project_dir, by_file):
                 old = cur[name] if isinstance(cur[name], dict) else {}
                 patched = copy.deepcopy(old)
                 for k, v in cfg.items():
-                    if k in BUILDER_SKIPS or str(k).startswith("__"):
+                    if builder_skips(k) or str(k).startswith("__"):
                         continue
                     patched[k] = v
                 if patched == old:
@@ -448,12 +497,12 @@ def save_components(project_dir, by_file):
                 new_text += "\n"
             render(p, new_text)               # must still parse
             originals[p] = text
-            p.write_text(new_text)
+            _write(p, new_text)
             summary["files"].append(p.name)
         merged(project_dir)                   # the whole scene still loads
     except Exception:
         for p, text in originals.items():
-            p.write_text(text)
+            _write(p, text)
         raise
     for p, text in originals.items():
         _backup(p, text)
