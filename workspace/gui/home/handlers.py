@@ -123,7 +123,10 @@ class ProjectThumbHandler(_Base):
         if not data or not data.startswith(b"\x89PNG\r\n\x1a\n"):
             raise tornado.web.HTTPError(404)
         self.set_header("Content-Type", "image/png")
-        self.set_header("Cache-Control", "no-cache")
+        # The cards ask for ?v=<the file's mtime>: a new picture is a new
+        # URL, so a versioned one never needs asking again.
+        self.set_header("Cache-Control", "private, max-age=31536000, immutable"
+                        if self.get_argument("v", "") else "no-cache")
         self.write(data)
 
     async def post(self, name):
