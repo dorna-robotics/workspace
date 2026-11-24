@@ -2131,6 +2131,109 @@ if (node) {
       // TCP drag support: viewer internals + a fast world-pose setter
       // (drag solves return WORLD solid poses; holders are core-local).
       window.__three = { scene, camera, renderer, controls, THREE };
+      // The project's picture for its card on the Projects page, taken the AI
+      // builder's way (its app.js __sbSnapshot, copied) so every card matches:
+      // from the bench's top-front-right corner, the bench top filling the
+      // frame, no grid, one light backdrop — whatever the user is looking at.
+      let _snapBg = null;
+      function snapBackdrop() {
+        if (_snapBg) return _snapBg;
+        const c = document.createElement("canvas");
+        c.width = c.height = 512;
+        const g = c.getContext("2d");
+        const rg = g.createRadialGradient(256, 170, 20, 256, 256, 400);
+        rg.addColorStop(0, "#ffffff"); rg.addColorStop(0.55, "#eef1f9"); rg.addColorStop(1, "#d9dfee");
+        g.fillStyle = rg; g.fillRect(0, 0, 512, 512);
+        _snapBg = new THREE.CanvasTexture(c);
+        _snapBg.colorSpace = THREE.SRGBColorSpace;
+        return _snapBg;
+      }
+      window.__sbMeshCount = () => { let n = 0; scene.traverse((o) => { if (o.isMesh) n++; }); return n; };
+      window.__sbSnapshot = (W = 640, H = 400, info = null) => {
+        const box = new THREE.Box3(), parts = [];                  // the whole setup; each part's own box
+        scene.traverse((n) => {
+          if (!n.isMesh || !n.visible || !n.geometry || /^__/.test(n.name || "")) return;
+          const m = Array.isArray(n.material) ? n.material[0] : n.material;
+          if (m && m.transparent && m.opacity < 0.9) return;        // collision boxes, ghosts
+          if (info) {                                               // what sets the outline (debugging)
+            const b = new THREE.Box3().setFromObject(n), sz = b.getSize(new THREE.Vector3());
+            (info.meshes = info.meshes || []).push({ name: n.name, parent: n.parent && n.parent.name, size: [sz.x, sz.y, sz.z].map(Math.round),
+              min: [b.min.x, b.min.y, b.min.z].map(Math.round) });
+          }
+          box.expandByObject(n);
+          parts.push(new THREE.Box3().setFromObject(n));
+        });
+        if (info) info.box = [box.min, box.max].map((v) => [v.x, v.y, v.z].map(Math.round));
+        if (box.isEmpty()) return null;
+        // aim at the table's centre (the bench), at the setup's mid height
+        const comps = (window.builderState && window.builderState.components) || {};
+        const tName = Object.keys(comps).find((n) => /^table/.test(String((comps[n] && comps[n].type) || "")));
+        const tObj = tName && objectsByName.get(tName);
+        let tBox = tObj ? new THREE.Box3().setFromObject(tObj) : null;
+        // a Workspace chassis is one "core" object (table and all): its bench top is
+        // where the fixture plates sit, so they stand in for the table here
+        let top = tBox ? tBox.max.z : null;
+        if (!tBox) {
+          const plates = new THREE.Box3();
+          for (const [n, cc] of Object.entries(comps)) {
+            if (!cc || cc.type !== "fixture_plate") continue;
+            const o = objectsByName.get(n);
+            if (o) plates.expandByObject(o);
+          }
+          if (!plates.isEmpty()) { tBox = plates; top = plates.min.z; }
+        }
+        const c = (tBox || box).getCenter(new THREE.Vector3());
+        // the bench top and what's on it — the legs and shelf below fall out of frame
+        const floor = top != null ? top - 40 : box.min.z;
+        for (const b of parts) { if (b.max.z < floor) b.makeEmpty(); else b.min.z = Math.max(b.min.z, floor); }
+        box.min.z = Math.max(box.min.z, floor);
+        c.z = (box.min.z + box.max.z) / 2;
+        let R = 0;                                                    // everything in view from there
+        for (const x of [box.min.x, box.max.x]) for (const y of [box.min.y, box.max.y]) for (const z of [box.min.z, box.max.z])
+          R = Math.max(R, c.distanceTo(new THREE.Vector3(x, y, z)));
+        // the W:H crop of this canvas: its half-angles, so the setup fits that crop
+        const A = W / H, tv = Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2) * Math.min(1, camera.aspect / A);
+        const dist = R / Math.sin(Math.atan(Math.min(tv, tv * A))) * 1.02;
+        const saved = { p: camera.position.clone(), q: camera.quaternion.clone() };
+        const gridWas = _sbGridMesh ? _sbGridMesh.visible : null;
+        if (_sbGridMesh) _sbGridMesh.visible = false;
+        const src = renderer.domElement;
+        const k = Math.max(W / src.width, H / src.height), w = W / k, h = H / k;     // centre crop to W:H
+        // then centre the setup's outline in the crop and pull in until it fills it
+        // (the sphere is generous, and the outline sits off-centre from up front)
+        const dir = new THREE.Vector3(0.5, -1, 0.7).normalize(), fx = w / src.width, fy = h / src.height;
+        let d = dist;
+        for (let i = 0; i < 6; i++) {
+          camera.position.copy(c).addScaledVector(dir, d);
+          camera.lookAt(c); camera.updateMatrixWorld();
+          let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;   // the parts' own corners: the real outline
+          for (const b of parts) if (!b.isEmpty()) for (const x of [b.min.x, b.max.x]) for (const y of [b.min.y, b.max.y]) for (const z of [b.min.z, b.max.z]) {
+            const v = new THREE.Vector3(x, y, z).project(camera);
+            x0 = Math.min(x0, v.x / fx); x1 = Math.max(x1, v.x / fx); y0 = Math.min(y0, v.y / fy); y1 = Math.max(y1, v.y / fy);
+          }
+          const m = Math.max((x1 - x0) / 2, (y1 - y0) / 2);
+          if (info) (info.fit = info.fit || []).push({ d: Math.round(d), m: +m.toFixed(3), off: [+((x0 + x1) / 2).toFixed(3), +((y0 + y1) / 2).toFixed(3)] });
+          // aim at the outline's centre (on the plane through the current aim), then fit it
+          const ndcZ = c.clone().project(camera).z;
+          c.copy(new THREE.Vector3((x0 + x1) / 2 * fx, (y0 + y1) / 2 * fy, ndcZ).unproject(camera));
+          d *= Math.max(0.5, Math.min(1.5, m / 0.98));
+        }
+        camera.position.copy(c).addScaledVector(dir, d);
+        camera.lookAt(c);
+        // one calm, light backdrop for every picture, whatever theme took it: the setup
+        // cards look the same in a row (no dark slabs on the light page)
+        const bgWas = scene.background;
+        try { scene.background = snapBackdrop(); } catch (_) {}
+        renderer.render(scene, camera);
+        scene.background = bgWas;
+        const out = document.createElement("canvas");
+        out.width = W; out.height = H;
+        out.getContext("2d").drawImage(src, (src.width - w) / 2, (src.height - h) / 2, w, h, 0, 0, W, H);
+        if (_sbGridMesh) _sbGridMesh.visible = gridWas;
+        camera.position.copy(saved.p); camera.quaternion.copy(saved.q);
+        renderer.render(scene, camera);
+        return out.toDataURL("image/png");
+      };
       // Replay player (module scope) drives holder poses directly and
       // must invalidate the on-demand render loop itself — and its
       // loaded meshes join the edge/collision toggles like everything

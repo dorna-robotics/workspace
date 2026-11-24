@@ -136,7 +136,7 @@ async function loadScene() {
     waitForScene(w).then(ok => {
       setSaveReady(ok);
       if (!ok) return banner("The scene did not finish loading in the builder — Reload the page to try again.", true);
-      if (!thumbDone) setTimeout(() => saveThumb(true), 1500);       // meshes stream in after the import
+      if (!thumbDone) meshesSettled(w).then((ok) => ok && saveThumb(true));
     });
   }, { once: true });
 }
@@ -225,20 +225,25 @@ $("#sbSave").onclick = async () => {
   }
 };
 
+// The project's picture, the AI builder's standard view (scene builder
+// __sbSnapshot): the same angle, framing and backdrop on every card.
 function snapshot() {
   const w = $("#sbFrame").contentWindow;
-  const t = w && w.__three;
-  if (!t || !t.renderer) return null;
-  t.renderer.render(t.scene, t.camera);            // same task as toDataURL: the buffer is still there
-  const src = t.renderer.domElement;
-  const W = 640, H = Math.round(W * 3 / 4);
-  const c = document.createElement("canvas");
-  c.width = W; c.height = H;
-  const g = c.getContext("2d");
-  const s = Math.max(W / src.width, H / src.height);
-  const sw = W / s, sh = H / s;
-  g.drawImage(src, (src.width - sw) / 2, (src.height - sh) / 2, sw, sh, 0, 0, W, H);
-  return c.toDataURL("image/png");
+  return w && w.__sbSnapshot ? w.__sbSnapshot(640, 400) : null;
+}
+
+// models stream in after the import: wait until the mesh count is still
+async function meshesSettled(w, ms = 60000) {
+  const t0 = Date.now();
+  let last = -1, quiet = 0;
+  while (Date.now() - t0 < ms) {
+    const n = w.__sbMeshCount ? w.__sbMeshCount() : 0;
+    quiet = n === last && n > 0 ? quiet + 1 : 0;
+    last = n;
+    if (quiet >= 3) return true;
+    await new Promise((r) => setTimeout(r, 700));
+  }
+  return false;
 }
 
 async function saveThumb(quiet) {
