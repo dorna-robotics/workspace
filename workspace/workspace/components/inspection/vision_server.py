@@ -29,7 +29,7 @@ scene order):
       simulation: false
       critical: true
       ip: "10.0.3.40"
-      port: 80
+      port: 4001
 
     inspection_vertical_144mm_1:
       type: "inspection_vertical_144mm"

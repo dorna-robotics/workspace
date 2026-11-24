@@ -58,14 +58,21 @@ class Pump(Recipe):
         """µL the full stroke sweeps — the declared barrel."""
         return self.component.syringe_volume()
 
+    def stroke_volume(self):
+        """µL one stroke may hold — ``min(syringe_volume, max_stroke_ul)``.
+        Size stroke loops from this, never from the barrel."""
+        return self.component.stroke_volume()
+
     def initialize(self, syringe_volume_ul=None, half_force: bool = True,
-                   sim_return: bool = True):
+                   max_stroke_ul=None, sim_return: bool = True):
         """Configure and home the plunger and valve. Required after
         power-up and after any stall or stop; homing expels the barrel
         through the output port. Pass ``syringe_volume_ul`` for a
-        barrel swap without touching the scene."""
+        barrel swap without touching the scene, ``max_stroke_ul`` to
+        set the stroke limit."""
         return self.component.initialize(syringe_volume_ul=syringe_volume_ul,
-                                         half_force=half_force, sim_return=sim_return)
+                                         half_force=half_force, max_stroke_ul=max_stroke_ul,
+                                         sim_return=sim_return)
 
     def stop(self):
         """Immediate stop; the next op re-initializes automatically."""

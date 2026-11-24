@@ -126,8 +126,9 @@ class PumpLink:
     # unchanged.
     #
     # To set the pump's speed through a nozzle, say so in its own
-    # units: ``pump_speed`` (0-100) is forwarded, and like every speed
-    # on this drive it stays in effect after the move.
+    # units: ``pump_speed`` (0-100, or [fill, empty] — the component's
+    # _stroke) is forwarded, and like every speed on this drive it stays
+    # in effect after the move.
 
     def aspirate(self, volume_ul: float, port=None, pump_speed=None,
                  speed=None, blowout=None, **kw):

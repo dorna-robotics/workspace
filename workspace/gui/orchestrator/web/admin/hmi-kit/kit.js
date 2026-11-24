@@ -183,9 +183,22 @@ export const kitCss = `
   font-family:ui-monospace,Menlo,Consolas,monospace; }
 .hmi .fig.over { color:var(--red); font-weight:700; }
 
-/* frozen while a run is active — read-only, still legible */
+/* frozen while a run is active — a filled-in record, not greyed-out
+   controls: the field's box goes, its value stays at full contrast, a
+   tick shows as ticked. Buttons stop answering but are not dimmed;
+   .nofreeze (step navigation) keeps working. */
 .hmi[data-frozen="1"] input, .hmi[data-frozen="1"] select,
-.hmi[data-frozen="1"] button:not(.nofreeze) { pointer-events:none; opacity:.6; }
+.hmi[data-frozen="1"] textarea {
+  pointer-events:none; opacity:1;
+  background:transparent; border-color:transparent; box-shadow:none;
+  color:var(--text); font-weight:600; padding-left:0;
+  field-sizing:content; min-width:0; width:auto;
+  appearance:none; -moz-appearance:textfield; }
+.hmi[data-frozen="1"] input::-webkit-inner-spin-button,
+.hmi[data-frozen="1"] input::-webkit-outer-spin-button { -webkit-appearance:none; margin:0; }
+.hmi[data-frozen="1"] input[type="checkbox"], .hmi[data-frozen="1"] input[type="radio"] {
+  appearance:auto; -webkit-appearance:auto; accent-color:var(--accent); }
+.hmi[data-frozen="1"] button:not(.nofreeze) { pointer-events:none; }
 `;
 
 // ── identity colors ─────────────────────────────────────────────────────

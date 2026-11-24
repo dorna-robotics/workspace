@@ -1,5 +1,5 @@
 import { apiFetch, stateVariant, stateLabel, isRunning, isLaunched, isBooting, canStart, isStarted, isWaiting, fmtUptime, esc, wsViewerUrl, connectStatusWS, confirmDialog, deviceFaultGate, wireCommand, toast } from "./api.js";
-import { renderKwargsForm, readKwargsForm, validateKwargsForm, loadKwargsFromFile } from "./kwargs.js";
+import { renderKwargsForm, readKwargsForm, validateKwargsForm, loadKwargsFromFile, frozenValues, recordChip } from "./kwargs.js";
 
 let workspaces = [];
 let prevStates = {};   // name → last known state string (for transition toasts)
@@ -12,6 +12,31 @@ let pollTimer  = null;
 // view.
 const pendantUrl = name => `workspace.html?name=${encodeURIComponent(name)}&pendant=1`;
 const desktopUrl = name => `workspace.html?name=${encodeURIComponent(name)}`;
+
+// A project as its FOLDER's end — "…/bna/_bna": the folders that tell
+// projects apart. The start (/home/dorna/Downloads/…) is the same on every
+// card and was all an ellipsis left of it; the file is main.py on every
+// project. The full path is the element's title.
+function _pathTail(path, keep = 2) {
+  const parts = String(path || "").split("/").filter(Boolean);
+  if (parts.length && /\.py$/.test(parts[parts.length - 1])) parts.pop();
+  return parts.length > keep ? `…/${parts.slice(-keep).join("/")}` : `/${parts.join("/")}`;
+}
+
+// The card is ONE target: a click anywhere on it opens the pendant — the
+// avatar, the name, the path, the URL, the step line, the progress bar.
+// Not its own controls (links and buttons keep their job), not the
+// footer (the run controls' strip — a near-miss on Kill must not
+// navigate away), and not a text selection (copying the path or URL).
+// Ctrl/Cmd-click opens a new tab, as a link would. The head link stays
+// the keyboard's way in.
+function _openCardPendant(e, name) {
+  if (e.defaultPrevented || e.button !== 0) return;
+  if (e.target.closest("a, button, input, select, textarea, label, .wc-footer")) return;
+  if (String(window.getSelection ? window.getSelection() : "")) return;
+  if (e.ctrlKey || e.metaKey) window.open(pendantUrl(name), "_blank");
+  else window.location.href = pendantUrl(name);
+}
 
 const AVATAR_PALETTE = ["#3b82f6","#8b5cf6","#ec4899","#14b8a6","#f59e0b","#ef4444","#22c55e","#6366f1"];
 function wsColor(name) {
@@ -135,16 +160,18 @@ async function openParamsModal(name, frozen) {
   if (!ws) return;
 
   // Fetch data first, then show the modal fully built
-  let schema = {}, values = {}, fetchError = false;
+  let schema = {}, values = {}, record = "", fetchError = false;
   try {
     const j = await apiFetch(`/workspace/${encodeURIComponent(name)}/launch_config`);
     schema = j.kwargs_schema || {};
-    values = j.kwargs_values || {};
+    values = frozen ? frozenValues(j) : (j.kwargs_values || {});
+    record = frozen ? recordChip(j) : "";
   } catch {
     fetchError = true;
   }
 
   paramsTitle.textContent = `Parameters — ${name}`;
+  document.getElementById("paramsRecord").innerHTML = record;
   document.getElementById("btnParamsLoad").style.display = frozen ? "none" : "";
 
   if (fetchError) {
@@ -155,7 +182,7 @@ async function openParamsModal(name, frozen) {
     renderKwargsForm(paramsForm, schema, values, frozen, name);
 
     if (frozen) {
-      paramsFoot.innerHTML = `<button class="btn" id="btnParamsDone">Cancel</button>`;
+      paramsFoot.innerHTML = `<button class="btn" id="btnParamsDone">Close</button>`;
       paramsFoot.querySelector("#btnParamsDone").addEventListener("click", () => paramsModal.classList.remove("show"));
     } else if (Object.keys(schema).length) {
       paramsFoot.innerHTML = `
@@ -324,6 +351,7 @@ function render() {
     if (isNew) {
       el = document.createElement("div");
       el.setAttribute("data-name", ws.name);
+      el.addEventListener("click", e => _openCardPendant(e, ws.name));
     }
 
     const newCls = `ws-card${running ? " is-running" : variant === "bad" ? " is-error" : variant === "warn" ? " is-ready" : ""}`;
@@ -346,25 +374,25 @@ function render() {
               ${esc(ws.name)}
               ${ws.label ? `<span class="wc-label">${esc(ws.label)}</span>` : ""}
             </div>
-            <div class="wc-path mono">${esc(ws.path_to_file)}</div>
+            <div class="wc-path mono" title="${esc(ws.path_to_file)}">${esc(_pathTail(ws.path_to_file))}</div>
           </div>
         </a>
-        <span class="pill ${variant}">
-          <span class="dot ${variant}${waiting ? " pulse" : ""}"></span>
-          ${esc(stateLabel(state))}
-        </span>
         <a class="btn btn-sm btn-ghost btn-icon desktop-link" title="Open the desktop view of ${esc(ws.name)}"
            href="${desktopUrl(ws.name)}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></a>
         <button class="btn btn-sm btn-ghost btn-icon remove-btn" title="Remove"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
       </div>
       <div class="wc-meta">
+        <span class="pill ${variant}">
+          <span class="dot ${variant}${waiting ? " pulse" : ""}"></span>
+          ${esc(stateLabel(state))}
+        </span>
         <span class="wc-meta-item" title="${esc(wsViewerUrl(ws))}">
           <span>URL</span>
           <strong>${esc(wsViewerUrl(ws).replace(/^https?:\/\//, ""))}</strong>
         </span>
         ${uptime ? `<span class="wc-meta-item"><span>Up</span> <strong>${esc(uptime)}</strong></span>` : ""}
         ${devicesPill}
-        ${st.last_error ? `<span class="wc-err" title="${esc(st.last_error)}">⚠ ${esc(st.last_error.length > 60 ? st.last_error.slice(0, 60) + "…" : st.last_error)}</span>` : ""}
+        ${st.last_error ? `<span class="wc-err" title="${esc(st.last_error)}"><span class="msg-mark sm" data-level="bad" aria-hidden="true">!</span>${esc(st.last_error.length > 60 ? st.last_error.slice(0, 60) + "…" : st.last_error)}</span>` : ""}
       </div>
       ${(() => {
         const steps = st.step?.steps;

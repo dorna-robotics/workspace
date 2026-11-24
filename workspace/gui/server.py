@@ -10,6 +10,7 @@ Usage:
     sudo python3 gui/server.py
 """
 
+import json
 import os
 import sys
 
@@ -62,6 +63,7 @@ from gui.orchestrator.server import (
     WorkspaceLogsHandler,
     WorkspaceLogsWebSocket,
     LaunchConfigHandler,
+    SceneHandler,
     ProjectScreenFileHandler,
     UpdateKwargsHandler,
     FileUploadHandler,
@@ -73,6 +75,9 @@ from gui.orchestrator.server import (
     WorkspaceDevicesHandler,
     WorkspaceDeviceCmdHandler,
     ProjectVersionHandler,
+    SystemHandler,
+    SystemLogHandler,
+    SystemSummaryHandler,
 )
 
 # ---------------------------------------------------------------------------
@@ -157,6 +162,8 @@ LANDING_HTML = """<!DOCTYPE html>
     .card-text { min-width: 0; }
     .card-label { font-size: 14px; font-weight: 600; letter-spacing: -0.2px; }
     .card-hint { font-size: 11px; color: var(--muted); margin-top: 2px; }
+    /* a card whose address this unit does not declare: shown, with why */
+    .card.card-off { cursor: default; opacity: 0.6; }
     .cards-label {
       display: flex; align-items: center; gap: 5px;
       text-align: left; font-size: 11px; font-weight: 600;
@@ -206,11 +213,17 @@ LANDING_HTML = """<!DOCTYPE html>
         <span>Orchestrator</span>
         <span class="app-nav-badge" id="navOrchCount" hidden></span>
       </a>
+      <a href="/orchestrator/system.html" class="app-nav-link" title="System">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="7" rx="2"/><rect x="2" y="14" width="20" height="7" rx="2"/><line x1="6" y1="6.5" x2="6.01" y2="6.5"/><line x1="6" y1="17.5" x2="6.01" y2="17.5"/></svg>
+        <span>System</span>
+        <span class="app-nav-badge" id="navSystemBadge" hidden></span>
+      </a>
     </div>
   </nav>
   <div class="app-nav-overlay"></div>
   <header class="topbar">
     <button class="burger-btn" id="btnBurger" title="Menu"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
+    <h1 class="topbar-title">Workspace</h1>
     <div class="spacer"></div>
     <div class="topbar-actions">
       <button class="btn btn-ghost btn-sm btn-icon js-fullscreen-toggle" id="btnFullscreen" title="Fullscreen"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg></button>
@@ -252,19 +265,8 @@ LANDING_HTML = """<!DOCTYPE html>
       <script>
         var h = window.location.hostname;
         document.getElementById("cardJupyter").href = "http://" + h + ":8888/doc/workspaces/auto";
-        // Dorna Lab / vision server live on fixed last-octet IPs of the
-        // bench subnet — derive from the page's own host. Hidden when
-        // the page isn't served from an IPv4 address (no subnet to derive).
-        var m = /^(\\d{1,3}\\.\\d{1,3}\\.\\d{1,3})\\.\\d{1,3}$/.exec(h);
-        var lab = document.getElementById("cardDornaLab");
-        var vis = document.getElementById("cardVision");
-        if (m) {
-          lab.href = "http://" + m[1] + ".10/";
-          vis.href = "http://" + m[1] + ".40/";
-        } else {
-          lab.style.display = "none";
-          vis.style.display = "none";
-        }
+        // Dorna Lab / Vision: their addresses are the unit's declaration,
+        // filled in by /vendor/nav.js (one owner for every page).
 
         // Developer section — collapsible, collapsed by default,
         // choice persisted per browser.
@@ -293,6 +295,25 @@ class LandingHandler(tornado.web.RequestHandler):
     def get(self):
         self.set_header("Content-Type", "text/html")
         self.write(LANDING_HTML.replace("__WS_VERSION__", _WS_VERSION))
+
+
+# What this unit is — /etc/dorna/unit.json, written per unit type by the
+# upgrade (os/setup.sh), never guessed here: `links` (where the Dorna Lab
+# and Vision cards and nav item point — vendor/nav.js) and `system` (the app
+# that owns the System page). Read per request, so an upgrade's new
+# declaration needs no restart; {} before the upgrade has written it.
+UNIT_DECLARATION = "/etc/dorna/unit.json"
+
+
+class UnitHandler(tornado.web.RequestHandler):
+    def get(self):
+        try:
+            with open(UNIT_DECLARATION) as f:
+                unit = json.load(f)
+        except FileNotFoundError:
+            unit = {}
+        self.set_header("Cache-Control", "no-store")
+        self.write(unit)
 
 
 class ProjectAwareStaticHandler(NoCacheStaticFileHandler):
@@ -334,6 +355,7 @@ def make_app(port=5000):
     routes = [
         # ---- Landing ----
         (r"/", LandingHandler),
+        (r"/unit.json", UnitHandler),
 
         # ---- Orchestrator API (must be before catch-all) ----
         (r"/orchestrator/api/workspaces/status", WorkspacesStatusHandler, dict(orch=orch)),
@@ -345,6 +367,7 @@ def make_app(port=5000):
         (r"/orchestrator/api/workspace/([^/]+)/logs", WorkspaceLogsHandler, dict(orch=orch)),
         (r"/orchestrator/ws/logs/([^/]+)", WorkspaceLogsWebSocket, dict(orch=orch)),
         (r"/orchestrator/api/workspace/([^/]+)/launch_config", LaunchConfigHandler, dict(orch=orch)),
+        (r"/orchestrator/api/workspace/([^/]+)/scene", SceneHandler, dict(orch=orch)),
         (r"/orchestrator/api/workspace/([^/]+)/setup/(.*)", ProjectScreenFileHandler, dict(orch=orch, key="setup")),
         (r"/orchestrator/api/workspace/([^/]+)/replan/(.*)", ProjectScreenFileHandler, dict(orch=orch, key="replan")),
         (r"/orchestrator/api/workspace/([^/]+)/kwargs", UpdateKwargsHandler, dict(orch=orch)),
@@ -358,6 +381,9 @@ def make_app(port=5000):
         (r"/orchestrator/api/workspace/([^/]+)/devices", WorkspaceDevicesHandler, dict(orch=orch)),
         # The Version panel: git state vs the remote, and Get latest (project_git.py).
         (r"/orchestrator/api/workspace/([^/]+)/version", ProjectVersionHandler, dict(orch=orch)),
+        (r"/orchestrator/api/system", SystemHandler, dict(orch=orch)),
+        (r"/orchestrator/api/system/log", SystemLogHandler, dict(orch=orch)),
+        (r"/orchestrator/api/system/summary", SystemSummaryHandler, dict(orch=orch)),
         (r"/orchestrator/api/workspace/([^/]+)/devices/([^/]+)/(recover|release)", WorkspaceDeviceCmdHandler, dict(orch=orch)),
 
         # ---- Orchestrator WebSocket + GUI (catch-all last) ----
@@ -420,8 +446,10 @@ def main():
             loop.default_exception_handler(context)
     asyncio.get_event_loop().set_exception_handler(_ws_exception_handler)
 
+    # The orchestrator's handle on this IOLoop (Orchestrator.loop)
+    orch.loop = tornado.ioloop.IOLoop.current()
     # Start orchestrator WS broadcast loop
-    tornado.ioloop.IOLoop.current().add_callback(_ws_poll_loop, orch)
+    orch.loop.add_callback(_ws_poll_loop, orch)
 
     print(f"Dorna Workspace server running on {host}:{port}")
     print(f"  Orchestrator:  http://{host}:{port}/orchestrator/")

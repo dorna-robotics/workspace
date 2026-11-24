@@ -2,6 +2,8 @@ from copy import deepcopy
 from mergedeep import merge
 from dorna2 import Solid
 
+from workspace.components.work import pure
+
 from workspace.components.inspection.vision_server import VisionServer
 from workspace.components.inspection.vision_station import VisionStation
 
@@ -34,7 +36,9 @@ class Inspection:
             "server": "",
             "serial_number": "",
             # Camera driver on the vision server: "d405" (RealSense,
-            # depth+color) or "ueye_xs" (IDS uEye XS, color + autofocus).
+            # depth+color), "ueye_xs" (IDS uEye XS, color + autofocus),
+            # "hikrobot" (Hikrobot GigE, color) or "oak" (Luxonis OAK
+            # over USB, e.g. the OAK-1 W: color, factory intrinsics).
             "type": "d405",
             "stream": {"width":1280, "height":720, "fps":30},
             "mode": "bgrd",
@@ -116,6 +120,7 @@ class Inspection:
         self._default_detection = name
         return self.vision.add_detection(name, **detection_preset)
 
+    @pure
     def lens_pose(self) -> list:
         """The lens's CURRENT world pose (xyzabc) — the per-capture
         frame the Inspector passes so detections report in scene
@@ -136,6 +141,7 @@ class Inspection:
         (VisionStation.frame); ``None`` in simulation."""
         return self.vision.frame(quality=quality)
 
+    @pure
     def get_img(self, name: str, kind: str = "img", quality: int = 85, max_side=None, meta=False):
         """The named detection's last image as JPEG bytes (``"img"`` the
         drawn frame, ``"img_roi"`` the crop); ``None`` in simulation or
@@ -167,7 +173,7 @@ class Inspection:
         return self.detect(self._default_detection)
 
     def operator_actions(self) -> list[dict]:
-        return [{"label": "Detect", "method": "operator_detect", "icon": "eye"}]
+        return [{"label": "Detect", "method": "operator_detect", "icon": "eye", "group": "Inspect"}]
 
     def close(self):
         self.vision.close()

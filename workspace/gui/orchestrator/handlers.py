@@ -145,6 +145,23 @@ class ProjectScreenFileHandler(tornado.web.RequestHandler):
             self.write({"error": str(e)})
 
 
+class SceneHandler(tornado.web.RequestHandler):
+    """The project's declared scene, read-only — what a project screen
+    gets as ``api.scene`` (kwargs.js). Rendered on each request: the
+    files, not the live tree, so an edit shows on the next mount."""
+    def initialize(self, orch: Orchestrator):
+        self.orch = orch
+
+    async def get(self, name):
+        try:
+            if name not in self.orch.workspaces:
+                raise ValueError(f"Unknown workspace: {name}")
+            self.write({"scene": self.orch.workspaces[name].scene()})
+        except Exception as e:
+            self.set_status(400)
+            self.write({"error": f"{type(e).__name__}: {e}"})
+
+
 class LaunchConfigHandler(tornado.web.RequestHandler):
     """Returns the kwargs schema from the workspace's launch.yaml."""
     def initialize(self, orch: Orchestrator):
@@ -160,6 +177,8 @@ class LaunchConfigHandler(tornado.web.RequestHandler):
             self.write({
                 "kwargs_schema": schema or {},
                 "kwargs_values": ws.kwargs_values or {},
+                "run_kwargs": ws.run_kwargs,
+                "run_started": ws.run_started,
                 "has_park": has_park,
             })
         except Exception as e:
@@ -178,6 +197,7 @@ class FileUploadHandler(AuthedHandler):
         try:
             if name not in self.orch.workspaces:
                 raise ValueError(f"Unknown workspace: {name}")
+            _refuse_while_launched(self.orch, name)
             ws = self.orch.workspaces[name]
 
             if not self.request.files or "file" not in self.request.files:
@@ -234,6 +254,15 @@ class FileUploadHandler(AuthedHandler):
             self.write({"error": str(e)})
 
 
+def _refuse_while_launched(orch: Orchestrator, name: str) -> None:
+    """A launched run's parameters are fixed: what it was started with is
+    what it runs, and what the Parameters tab shows. Changing them takes a
+    Kill and a fresh Launch."""
+    if orch.is_launched(name):
+        raise ValueError("Parameters are locked while the workspace is launched "
+                         "— Kill it to change them.")
+
+
 class UpdateKwargsHandler(AuthedHandler):
     """Update stored kwargs_values for a workspace."""
     def initialize(self, orch: Orchestrator):
@@ -245,6 +274,7 @@ class UpdateKwargsHandler(AuthedHandler):
         try:
             if name not in self.orch.workspaces:
                 raise ValueError(f"Unknown workspace: {name}")
+            _refuse_while_launched(self.orch, name)
             data = json.loads(self.request.body.decode())
             ws = self.orch.workspaces[name]
             ws.kwargs_values = data.get("kwargs_values", {})
@@ -441,9 +471,7 @@ class WorkspaceLogsHandler(tornado.web.RequestHandler):
         try:
             if name not in self.orch.workspaces:
                 raise ValueError(f"Unknown workspace: {name}")
-            ws = self.orch.workspaces[name]
-            if os.path.isfile(ws.log_path):
-                open(ws.log_path, "w").close()
+            self.orch.workspaces[name].log.clear()
             self.write({"ok": True})
         except Exception as e:
             self.set_status(400)
@@ -532,6 +560,104 @@ def _node_ws_url(ws, name: str) -> str:
                        f"{path}/ws/files/{quote(name)}", "", ""))
 
 
+def _run_state(orch: Orchestrator, name: str) -> dict:
+    """Is ``name`` launched, and is a run in flight — the one judgement the
+    Version panel and the System page both warn from."""
+    st = orch.get_status(name)
+    launched = bool((st.get("_orch") or {}).get("launched"))
+    active = launched and bool(st.get("run_started_at")) and not st.get("run_finished_at")
+    return {"launched": launched, "run_active": active, "state": st.get("state")}
+
+
+class SystemHandler(AuthedHandler):
+    """The admin's System page (system.py).
+
+    ``GET  /orchestrator/api/system?fetch=1`` → the unit, the last
+    upgrade's record, each part vs what the upgrade installs, and every
+    workspace that is launched or running — the page's warnings.
+    ``POST /orchestrator/api/system`` ``{"confirmed": true}`` → starts the
+    upgrade as its own system job; refused only when it is not installed
+    or already running."""
+
+    def initialize(self, orch: Orchestrator):
+        self.orch = orch
+
+    async def get(self):
+        if not self.ensure_auth():
+            return
+        try:
+            from gui.orchestrator import system
+            fetch = self.get_argument("fetch", "1") != "0"
+            loop = asyncio.get_running_loop()
+            out = await loop.run_in_executor(None, system.state, fetch)
+            runs = []
+            for name, ws in list(self.orch.workspaces.items()):
+                if ws.is_remote():
+                    continue
+                rs = await loop.run_in_executor(_status_pool, _run_state, self.orch, name)
+                if rs["launched"]:
+                    runs.append({"name": name, **rs})
+            out["launched"] = runs
+            self.write(out)
+        except Exception as e:
+            self.set_status(400)
+            self.write({"error": str(e)})
+
+    async def post(self):
+        if not self.ensure_auth():
+            return
+        try:
+            from gui.orchestrator import system
+            data = json.loads(self.request.body.decode() or "{}")
+            if data.get("confirmed") is not True:
+                raise ValueError("the upgrade starts only when confirmed")
+            loop = asyncio.get_running_loop()
+            self.write(await loop.run_in_executor(None, system.start))
+        except Exception as e:
+            self.set_status(400)
+            self.write({"error": str(e)})
+
+
+class SystemSummaryHandler(AuthedHandler):
+    """``GET /orchestrator/api/system/summary`` — the nav's glance (the
+    System item's badge): parts to update as of the last check, cheap."""
+
+    def initialize(self, orch: Orchestrator):
+        self.orch = orch
+
+    async def get(self):
+        if not self.ensure_auth():
+            return
+        try:
+            from gui.orchestrator import system
+            loop = asyncio.get_running_loop()
+            self.write(await loop.run_in_executor(None, system.summary))
+        except Exception as e:
+            self.set_status(400)
+            self.write({"error": str(e)})
+
+
+class SystemLogHandler(AuthedHandler):
+    """``GET /orchestrator/api/system/log?since=<epoch>&cursor=<c>`` — the
+    upgrade's journal lines since it started (or after ``cursor``)."""
+
+    def initialize(self, orch: Orchestrator):
+        self.orch = orch
+
+    async def get(self):
+        if not self.ensure_auth():
+            return
+        try:
+            from gui.orchestrator import system
+            since = float(self.get_argument("since", "0") or 0)
+            cursor = self.get_argument("cursor", "")
+            loop = asyncio.get_running_loop()
+            self.write(await loop.run_in_executor(None, system.log, since, cursor))
+        except Exception as e:
+            self.set_status(400)
+            self.write({"error": str(e)})
+
+
 class ProjectVersionHandler(AuthedHandler):
     """The admin page's Version panel (project_git.py).
 
@@ -552,12 +678,6 @@ class ProjectVersionHandler(AuthedHandler):
             raise ValueError("a remote workspace — open the page on its own node to update it")
         return ws
 
-    def _run_state(self, name) -> dict:
-        st = self.orch.get_status(name)
-        launched = bool((st.get("_orch") or {}).get("launched"))
-        active = launched and bool(st.get("run_started_at")) and not st.get("run_finished_at")
-        return {"launched": launched, "run_active": active, "state": st.get("state")}
-
     async def get(self, name):
         if not self.ensure_auth():
             return
@@ -573,7 +693,7 @@ class ProjectVersionHandler(AuthedHandler):
             except project_git.GitError as e:
                 info["plan"], info["plan_error"] = [], str(e)
             info["stamp"] = stamp
-            info.update(await loop.run_in_executor(_status_pool, self._run_state, name))
+            info.update(await loop.run_in_executor(_status_pool, _run_state, self.orch, name))
             self.write(info)
         except Exception as e:
             self.set_status(400)
@@ -589,7 +709,7 @@ class ProjectVersionHandler(AuthedHandler):
             loop = asyncio.get_running_loop()
             out = await loop.run_in_executor(None, project_git.update, _project_dir(ws),
                                              list(data.get("confirmed") or []), str(data.get("stamp") or ""))
-            out.update(await loop.run_in_executor(_status_pool, self._run_state, name))
+            out.update(await loop.run_in_executor(_status_pool, _run_state, self.orch, name))
             self.write(out)
         except Exception as e:
             self.set_status(400)

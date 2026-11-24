@@ -308,7 +308,12 @@ you don't want a silently-abandoned recipe.
 bus judges a down edge against the device's last *settled* state
 (`DeviceEntry.settled` — `recovering` never settles), and the admin GUI
 does the same for its alarm (`api.js downEdge`): one pause and one alarm
-per outage, however many retries it takes.
+per outage, however many retries it takes. The workspace page holds an
+outage the same way (`_deviceOutage`: last settled state `down`): the
+Devices tab's Recover bar stays up through every retry, and a device in
+use (not simulated) gets one message in the top bar — "<name> is down",
+the reason, **Recover** — that goes when the device is ok again
+(design-system §3.3b).
 
 **What nudges the retries.** AutoRecover is a reconnect, so only a
 lost link starts it — and which events say "lost link" is declared,

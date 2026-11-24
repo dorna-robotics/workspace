@@ -196,11 +196,11 @@ class PipettorSP2840mm(Gripper):
 
     def operator_actions(self) -> list[dict]:
         return [
-            {"label": "Tip?",      "method": "has_tip",      "icon": "eye",      "group": "pump"},
-            {"label": "Home Pump", "method": "initialize",   "icon": "activity", "group": "pump"},
-            {"label": "Eject Tip", "method": "eject_tip",    "icon": "forward",  "group": "pump"},
-            {"label": "Reconnect", "method": "reconnect",    "icon": "rotate",   "group": "conn"},
-            {"label": "Release",   "method": "release_pump", "icon": "link-off", "group": "conn"},
+            {"label": "Check tip", "method": "has_tip",      "icon": "eye",      "group": "Pipette"},
+            {"label": "Home Pump", "method": "initialize",   "icon": "activity", "group": "Pipette"},
+            {"label": "Eject Tip", "method": "eject_tip",    "icon": "forward",  "group": "Pipette"},
+            {"label": "Reconnect", "method": "reconnect",    "icon": "rotate",   "group": "Connection"},
+            {"label": "Release",   "method": "release_pump", "icon": "link-off", "group": "Connection"},
         ]
 
     # ── Teardown ──────────────────────────────────────────────────────

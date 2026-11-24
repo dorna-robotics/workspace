@@ -103,6 +103,7 @@ What each setting means and how to get it right:
 | `port` | the USB RS-232 adapter | use the `/dev/serial/by-id/...` symlink — it survives replugs |
 | `address` | rotary switch **position** on the back, 0-9 / A-F | read it off the switch; 0 is factory |
 | `syringe_volume_ul` | µL the pump's fixed 30 mm stroke **sweeps** | NOT always the barrel label: PSD-specific syringes sweep their full nominal volume, but 1700-series gastights have ~60 mm of travel, so the stroke sweeps only half of nominal (a 1725/250 µL sweeps ~125). Wrong value = every volume off by the same ratio, silently |
+| `max_stroke_ul` | the highest the plunger may ever stand, µL — optional | a **hard limit**, checked in the one place every plunger move goes through: an `aspirate`, an absolute move, a line op's stroke, a prime fill. A target above it is refused before anything moves (`last_error`, `False`) — never clamped. Absent = the full barrel. Above 0 and at most `syringe_volume_ul`, checked when the scene loads. Not a scale: µL↔steps stays `syringe_volume_ul`. Size stroke loops from `stroke_volume()` = `min(syringe_volume, max_stroke_ul)`, never from the barrel |
 | `valve_type` | the valve BODY the firmware reports | see the DIP table below. Declared here and **verified at every initialize** — a mismatch refuses to home, with a message naming both sides. `valve_type: null` skips the check |
 | `variant` | which pump drive this is | `'standard'` = PSD/4, PSD/6 high-torque; `'smooth_flow'` = PSD/4 SF / PSD/6 SF (PN 97709-xx). The pump cannot report it; wrong value scales every move 8x, silently. **Always declare it** |
 | `high_resolution` | step mode | defaults to `True` (8x finer steps). On SF drives the cost is stroke time — a full stroke is ~8x slower — so set `False` when throughput matters more than granularity; standard mode already resolves far below the barrel's ±1% accuracy |
@@ -345,9 +346,11 @@ motion.
 - `prime(...)` sweeps fill/empty cycles from a source to an outlet.
   `from_port` defaults to the single declared source, `to_port` to the
   single outlet, and `cycles` to what the declared tube volumes need:
-  ceil(dead volume / barrel) + 1 margin cycle, so a 25 µL barrel
-  behind 150 µL of tubing gets 7 cycles, not 1. With no tube volumes
-  declared it falls back to 1 cycle.
+  ceil(dead volume / stroke) + 1 margin cycle, so a 25 µL barrel
+  behind 150 µL of tubing gets 7 cycles, not 1. A stroke is
+  `stroke_volume()` — each fill takes at most that (the full barrel
+  with no `max_stroke_ul`). With no tube volumes declared it falls
+  back to 1 cycle.
 
 ### A draw larger than the barrel — the line
 
@@ -369,6 +372,8 @@ valve_ports:
 pump.aspirate_line(60, speed=70)            # 25 + return + 25 + return + 10, through needle_LV
 pump.line_volume()                          # 60.0 — what the line holds
 pump.dispense_line(60, speed=80)            # the barrel's 10 out, refill 25 + out, refill 25 + out
+pump.aspirate_line(60, speed=[62, 100])     # draws at 62, the returns (pushes) at 100 — Speed below
+pump.dispense_line(60, speed=[70, 80])      # refills (draws) at 70, pushes out of the tip at 80
 pump.aspirate_line(30, return_port="Water") # the call's return_port wins over the scene's
 ```
 
@@ -379,6 +384,11 @@ pump.aspirate_line(30, return_port="Water") # the call's return_port wins over t
 - The line count (`line_volume()`) is every stroke through the outlet:
   a draw adds, a push subtracts, never below 0 — so an air gap drawn
   with plain `aspirate` just before counts too.
+- A stroke never passes the stroke limit (`max_stroke_ul`, else the
+  barrel): `aspirate_line` returns to the return port at the limit, and
+  each `dispense_line` refill is at most `stroke_volume()` — a 20 µL
+  limit on a 25 µL barrel draws 120 µL as 20 + 20 + … and pushes 45 µL
+  out on refills of 20 + 20 + 5.
 - Refused before anything moves: an `aspirate_line` that would make the
   line hold more than `max(tube_volume_ul, syringe_volume)` — up to a
   barrel needs no shuttle; past it every shuttle must return only the
@@ -407,6 +417,7 @@ holds surrogate" without tracking it itself.
 ```python
 pump.initialize()
 pump.initialize(syringe_volume_ul=125.0)   # barrel swap without touching the scene
+pump.initialize(max_stroke_ul=20)          # the stroke limit — must fit the barrel, else nothing changes
 ```
 
 Configures the pump and homes the plunger and valve. Required after
@@ -439,6 +450,22 @@ pump.aspirate(200, speed=25)     # or per move — same register, same units
 "draw viscous liquid slowly, push it back fast" pair. The drive has ONE
 speed register, so a per-move value **stays in effect** afterwards —
 "for this move" is as close as the hardware gets.
+
+**A number or `[fill, empty]`.** Every op's `speed` is one number (every
+stroke at it — as it always was) or a pair: `fill` for a stroke that
+draws (the barrel fills, whatever the port), `empty` for one that
+pushes. It matters for the ops that stroke both ways —
+`aspirate_line`'s empties into the return port, `dispense_line`'s
+refills from it, `prime`:
+
+```python
+pump.aspirate_line(60, speed=[62, 100])   # the draws at 62, the empties into the return port at 100
+pump.dispense_line(60, speed=[70, 80])    # the refills at 70, the pushes out of the tip at 80
+```
+
+A draw pulls a vacuum (bubbles); a push does not — so the two seldom
+want the same speed. The speed each stroke ran at is in its op record
+(`last_op()["speed"]`). One rule, in the component's `_stroke`.
 
 Through a plumbed nozzle the parameter is called **`pump_speed`**:
 

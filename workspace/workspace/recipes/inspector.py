@@ -68,7 +68,12 @@ class Inspector(Recipe):
             component=station,
             **prm,
         )
-        self._vision_owner = camera
+        # Behind the gate (recipes/gated.py), as every device a recipe
+        # drives: a capture or a detection is WORK — the robot's held
+        # motion runs first, so the picture is of the world the model
+        # already describes (a decap's held lift, the cap still over the
+        # tube, would otherwise be in the frame).
+        self._vision_owner = self.gated(camera)
 
         # Cache the name we registered the detection under so detect() can
         # find it. Each Inspector instance owns one named detection.

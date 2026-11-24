@@ -878,22 +878,31 @@ class Core:
         reports homed after."""
         return self.home_axis_with_stop(self.rail_cfg, force=True)
 
+    def operator_facts(self) -> list[dict]:
+        """The Devices tab's glance — what the platform knows without a
+        robot round-trip (it is asked every few seconds while on screen)."""
+        tool = self.current_tool()
+        return [
+            {"label": "Tool", "value": getattr(tool, "name", None) or "none"},
+            {"label": "Address", "value": self.robot_ip or "—"},
+        ]
+
     def operator_actions(self) -> list[dict]:
         actions = [
-            {"label": "Enable Motors",  "method": "motor_enable",  "icon": "power",     "group": "motors"},
-            {"label": "Disable Motors", "method": "motor_disable", "icon": "power-off", "group": "motors"},
-            {"label": "Enable Alarm",   "method": "alarm_enable",  "icon": "bell",      "group": "alarm"},
-            {"label": "Disable Alarm",  "method": "alarm_disable", "icon": "bell-off",  "group": "alarm"},
-            {"label": "Enable Tool",    "method": "tool_enable",   "icon": "zap",       "group": "tool"},
-            {"label": "Disable Tool",   "method": "tool_disable",  "icon": "zap-off",   "group": "tool"},
+            {"label": "Enable Motors",  "method": "motor_enable",  "icon": "power",     "group": "Motors"},
+            {"label": "Disable Motors", "method": "motor_disable", "icon": "power-off", "group": "Motors"},
+            {"label": "Enable Alarm",   "method": "alarm_enable",  "icon": "bell",      "group": "Alarm"},
+            {"label": "Disable Alarm",  "method": "alarm_disable", "icon": "bell-off",  "group": "Alarm"},
+            {"label": "Enable Tool",    "method": "tool_enable",   "icon": "zap",       "group": "Tool"},
+            {"label": "Disable Tool",   "method": "tool_disable",  "icon": "zap-off",   "group": "Tool"},
         ]
         if self.has_tool_changer:
             actions += [
-                {"label": "Attach Tool", "method": "tool_attach", "icon": "link",     "group": "tool_changer"},
-                {"label": "Detach Tool", "method": "tool_detach", "icon": "link-off", "group": "tool_changer"},
+                {"label": "Attach Tool", "method": "tool_attach", "icon": "link",     "group": "Tool changer"},
+                {"label": "Detach Tool", "method": "tool_detach", "icon": "link-off", "group": "Tool changer"},
             ]
         if self.has_rail:
-            actions += [{"label": "Home Rail", "method": "home_rail", "icon": "backward"}]
+            actions += [{"label": "Home Rail", "method": "home_rail", "icon": "backward", "group": "Rail"}]
         return actions
 
     def _guard_api(self, api):

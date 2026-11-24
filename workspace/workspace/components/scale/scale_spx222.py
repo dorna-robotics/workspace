@@ -231,10 +231,10 @@ class ScaleSpx222:
 
     def operator_actions(self) -> list[dict]:
         return [
-            {"label": "Weigh",     "method": "weigh_once",     "icon": "activity"},
-            {"label": "Zero",      "method": "zero"},
-            {"label": "Reconnect", "method": "reconnect",      "icon": "rotate",   "group": "conn"},
-            {"label": "Release",   "method": "release_scale",  "icon": "link-off", "group": "conn"},
+            {"label": "Weigh",     "method": "weigh_once",     "icon": "activity", "group": "Measure"},
+            {"label": "Zero",      "method": "zero",           "group": "Measure"},
+            {"label": "Reconnect", "method": "reconnect",      "icon": "rotate",   "group": "Connection"},
+            {"label": "Release",   "method": "release_scale",  "icon": "link-off", "group": "Connection"},
         ]
 
     # ── Teardown ──────────────────────────────────────────────────────

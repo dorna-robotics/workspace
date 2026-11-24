@@ -249,10 +249,10 @@ class PrinterAxon1(Printer):
 
     def operator_actions(self) -> list[dict]:
         return [
-            {"label": "Test label", "method": "print_test",      "icon": "activity"},
-            {"label": "Feed",       "method": "spin_once",       "icon": "rotate"},
-            {"label": "Reconnect",  "method": "reconnect",       "icon": "rotate",   "group": "conn"},
-            {"label": "Release",    "method": "release_printer", "icon": "link-off", "group": "conn"},
+            {"label": "Test label", "method": "print_test",      "icon": "activity", "group": "Print"},
+            {"label": "Feed",       "method": "spin_once",       "icon": "rotate",   "group": "Print"},
+            {"label": "Reconnect",  "method": "reconnect",       "icon": "rotate",   "group": "Connection"},
+            {"label": "Release",    "method": "release_printer", "icon": "link-off", "group": "Connection"},
         ]
 
     # ── Teardown ──────────────────────────────────────────────────────

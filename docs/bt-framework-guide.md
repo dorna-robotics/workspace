@@ -458,7 +458,7 @@ rule as `eff()` being a dict.
 | **Runtime — execute() returns non-first key** | That branch applies. The framework raises `ReplanRequested` so downstream actions re-evaluate. |
 | **Runtime — execute() returns unknown key** | Warning + fall back to the default (first) key. |
 | **Runtime — execute() returns False** | Action failed; no effects applied. The planner replans from observed state (no implicit retry). |
-| **Runtime — execute() raises** (or `pre()`, the tool swap, a check) | Something is BROKEN — a dead link, a device that refused, a bug. The run **pauses** with the error on the timeline (level `error`: red banner, beep); no effects, nothing retried. Resume → the leaf fails → replan from observed state, the action runs again. Park / Kill as usual. (`RecipeUnavailable` stays fatal.) |
+| **Runtime — execute() raises** (or `pre()`, the tool swap, a check) | Something is BROKEN — a dead link, a device that refused, a bug. The run **pauses** with the error on the timeline (level `error`: an error message in the top bar, beep); no effects, nothing retried. Resume → the leaf fails → replan from observed state, the action runs again. Park / Kill as usual. (`RecipeUnavailable` stays fatal.) |
 | **Runtime — execute() returns `"killed"`** | **RESERVED — fatal abort.** The framework kills the runtime: the engine exits before its next tick, the run ends `INVALID` / `RTState.KILLED`, no further action runs, no motion happens. See below. |
 | **Runtime — execute() returns anything else (None / int / etc.)** | Programmer error — warning + treated as failure. |
 
@@ -1519,6 +1519,7 @@ export default {
 // api.items    the offer — {item, label, phase, in_phase, done, with, holds}
 //              (an item not in it was removed earlier: draw it, don't offer it)
 // api.values   the run's parameters (what Start sent); api.schema
+// api.scene    the declared scene, read-only (hmi-guide §4b)
 // api.invoke(component, method)  a declared operator action — nothing more
 // api.theme / api.onTheme(cb)
 // api.changed()  the platform re-reads value() and ready(), redraws the stepper

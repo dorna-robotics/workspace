@@ -44,6 +44,66 @@
     if (e.key === "Escape") mobileClose();
   });
 
+  // ── The unit's declaration: the home page's Dorna Lab and Vision cards ──
+  // /unit.json is /etc/dorna/unit.json as the upgrade wrote it for this
+  // unit type (gui/server.py). Its `links` say where Dorna Lab and the
+  // vision server are — {host} is this page's own host, {subnet} its first
+  // three octets. Nothing here guesses an address: one the unit does not
+  // declare, or one that needs {subnet} on a page opened by name, is shown
+  // with why, never hidden.
+  function unitLink(tpl) {
+    var h = window.location.hostname;
+    var m = /^(\d{1,3}\.\d{1,3}\.\d{1,3})\.\d{1,3}$/.exec(h);
+    if (!tpl) return { why: "Not declared on this unit — run sudo upgrade" };
+    if (tpl.indexOf("{subnet}") >= 0 && !m) return { why: "Open this page by its IP address to reach it" };
+    return { href: tpl.replace("{host}", h).replace("{subnet}", m ? m[1] : "") };
+  }
+  fetch("/unit.json")
+    .then(function(r) { return r.ok ? r.json() : {}; })
+    .catch(function() { return {}; })
+    .then(function(unit) {
+      var links = unit.links || {};
+      // gui/server.py LANDING_HTML
+      [["cardDornaLab", "dorna_lab"], ["cardVision", "vision"]].forEach(function(c) {
+        var card = document.getElementById(c[0]);
+        if (!card) return;
+        var l = unitLink(links[c[1]]);
+        if (l.href) { card.href = l.href; return; }
+        card.classList.add("card-off");
+        card.querySelector(".card-hint").textContent = l.why;
+      });
+    });
+
+  // ── System: parts to update ─────────────────────────────────────────
+  // The System item's badge — how many parts of the bench's upgrade are
+  // not up to date (gui/orchestrator/system.py: needs_update, cached, a
+  // fresh check at most hourly). Hidden when none, or when it is not
+  // known yet (the first check runs in the background: asked again in
+  // 20 s), or when the orchestrator does not answer. The System page
+  // calls window.__navSystemRefresh after its own check.
+  var sysBadge = document.getElementById("navSystemBadge");
+  if (sysBadge) {
+    var sysLink = sysBadge.closest ? sysBadge.closest("a") : null;
+    var sysCheck = function(again) {
+      var tok = "";
+      try { tok = (localStorage.getItem("orch_token") || "").trim(); } catch (_) {}
+      fetch("/orchestrator/api/system/summary", { headers: tok ? { "X-Orch-Token": tok } : {} })
+        .then(function(r) { return r.ok ? r.json() : null; })
+        .then(function(j) {
+          if (!j) return;
+          if (j.to_update == null) { if (again) setTimeout(function() { sysCheck(false); }, 20000); return; }
+          var n = j.to_update.length;
+          sysBadge.hidden = !n;
+          sysBadge.textContent = n ? String(n) : "";
+          if (sysLink) sysLink.title = n ? "System — " + n + " part" + (n === 1 ? "" : "s") + " to update" : "System";
+        })
+        .catch(function() {});
+    };
+    window.__navSystemRefresh = function() { sysCheck(false); };
+    sysCheck(true);
+    setInterval(function() { sysCheck(false); }, 10 * 60 * 1000);
+  }
+
   // ── Orchestrator running-workspace count badge ─────────────────────
   // Shows the number of workspaces in a strictly-running state
   // (RUNNING / ACTIVE) — matches the dashboard's "running" stat-item

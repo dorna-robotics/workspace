@@ -192,7 +192,8 @@ when you make a project:
    {% set rail_offset   = -212.1 %}  {# the rail's measured zero, mm #}
    {% set robot_ip      = "10.0.3.10" %}
    {% set scale_ip      = "10.0.3.50" %}
-   {% set vision_ip     = "10.0.3.40" %}
+   {% set vision_ip     = "10.0.3.40" %}  {# the vision Pi; a Jetson: "127.0.0.1" #}
+   {% set vision_port   = 4001 %}         {# every vision server's port #}
    {% set camera_serial = "130322274110" %}
    {% set pump_port     = "/dev/serial/by-id/usb-1a86_USB_Serial-if00-port0" %}
    ```
@@ -360,6 +361,21 @@ Start no longer empties it (the Clear button still does); a run's
 history lives in its folder. A workspace with no project folder (the
 shared `~/.workspace/log/` fallback) gets no run folders.
 
+**The live console.** `log/workspace.log` has one writer, the pump's
+`LogStream`, and every line goes in the same moment to the pages
+reading it over `ws://<orchestrator>/orchestrator/ws/logs/<name>` — no
+polling. A reader picks where it starts: `?since=tail` (the Logs
+panel), `?since=boot` (this launch's `--- LAUNCH` line on) or
+`?since=run` (the open run's `[run] start` line on); the launch card
+reads the last two (hmi-guide "The launch card").
+
+**The run's preparation.** From `[run] start` until the robot's first
+motion — recipes, checks, the plan, the schedule, the motion book —
+the runtime reports `preparing: true` on `/status`, and the pages show
+the run's card over that console. The workflow ends it with
+`rt.prepared()` at that boundary; the BT launcher calls it as its
+engine starts, so a project calls nothing. A run that ends clears it.
+
 Sibling projects that share one bench (bna's `_bna`, `_tph`,
 `_calibration`) point the shared keys one level up — `scene: [../scene/...]`,
 `recipes: ../recipes.j2`, `core_dir: ../core`, `counts: ../counts/counts.json`,
@@ -453,7 +469,13 @@ tubes:
 The screen is hosted exactly like the pendant screen (hmi-guide §4b) —
 shadow root, design tokens, `.html` with `data-field="key"` or `.js`
 with `{css, mount(root, api), value(), validate()}`. Its `api` carries
-`{schema, values, frozen, theme, onTheme, save}`. `save(name, text,
+`{schema, values, frozen, scene, theme, onTheme, save}`. `scene` is the
+project's declared scene, read-only (hmi-guide §4b) — read scene facts
+there, never type a copy. `frozen` is true once
+the workspace is launched: the screen is then the run's record, shown
+read-only on the pendant's Parameters tab and in the Parameters dialog
+with what the last Start sent (the orchestrator's `run_kwargs`), and
+the orchestrator refuses parameter changes until Kill. `save(name, text,
 {overwrite})` writes one file into the project's Uploads — the folder
 Parameters › Open reads, so a screen can offer "Save this method" and
 the operator opens it again on a later run. It never overwrites unless
@@ -619,23 +641,25 @@ cleared at run start. Delivery is a coalesced WS push — see
 ### `rt.notice(title, text, ...)` — ask the operator, then pause
 
 When the run needs the operator — clear a blocked anode, seat a cap,
-press a button on a meter — say what to do in a modal, and pause:
+press a button on a meter — say what to do in a notice, and pause:
 
 ```python
 rt.step("A1: cap still on — presence 0.93", level="warning")   # the timeline
 rt.notice("Cap still on the tube in A1",
           "Make sure the cap sits on the tube, not tight. On Resume the robot decaps it again.",
-          img=jpeg, caption="presence 0.93")                  # the modal
+          img=jpeg, caption="presence 0.93")                  # the question
 rt.pause()
 rt.checkpoint()                                                # blocks until Resume
 return False                                                   # or a branch
 ```
 
-The pendant FRAME draws it, the same for every project — a modal over
-the project's screen (the 3D and Devices tabs too), the bench dimmed
-behind it, with **Resume** (the bar's own command, device-fault gate
-included) and **Dismiss**. The nav, the step rail and the control bar
-stay uncovered and live: Park, Replan and Kill are never behind it.
+The FRAME draws it, the same for every project and on the desktop and
+the pendant alike — as a message (design-system §3.3b): the top bar's
+line, and a card under it with the picture, **Resume** (the bar's own
+command, device-fault gate included) and **Dismiss**, over the
+project's screen (the 3D view too). The rail, the steps and the
+control bar stay uncovered and live: Park, Replan and Kill are never
+behind it.
 
 * **A notice is the pause's question.** Publish it with `rt.pause()`;
   the runtime takes it down when the run leaves the pause — Resume,
@@ -645,8 +669,8 @@ stay uncovered and live: Park, Replan and Kill are never behind it.
   stopped") | `info` ("Notice").
 * `img` — a picture's bytes (a JPEG), held as the `notice` rt.asset;
   `caption` is drawn on it. A small crop (a vision ROI) is scaled up.
-* Dismiss hides that notice until a different one arrives; the
-  backdrop does nothing, so a stray tap never takes it away.
+* Dismiss hides that notice until a different one arrives; nothing
+  but its buttons closes it, so a stray tap never takes it away.
 * `notice` is the platform's rt.op key — `rt.op(notice=…)` is refused
   with one log line.
 * Never blocks, never raises (§8); `rt.pause()` + `rt.checkpoint()` are
@@ -1079,8 +1103,8 @@ states:
 ```python
 rt.step("Picking tube 3")                          # info — appears in timeline
 rt.step("All tubes placed", level="success")        # success — green dot
-rt.step("Tube misaligned", level="warning")          # warning — amber banner
-rt.step("Robot alarm", level="error")                # error — red banner + beep
+rt.step("Tube misaligned", level="warning")          # warning — a message in the top bar
+rt.step("Robot alarm", level="error")                # error — a message in the top bar + beep
 rt.step(45, level="progress")                        # progress bar (0-100)
 ```
 
@@ -1093,12 +1117,12 @@ which redrew it: a 2800-disc apc run reached ~33 000 entries and ~3 MB
 per step, and the tab's 3D view froze after a few hours. The log file
 keeps every line regardless.
 
-| Level | Timeline | Banner | Sound | Progress bar |
+| Level | Timeline | Top-bar message (design-system §3.3b) | Sound | Progress bar |
 |-------|----------|--------|-------|-------------|
-| `info` | Blue dot | — | — | — |
-| `success` | Green dot | — | — | — |
-| `warning` | Amber dot | Amber banner | — | — |
-| `error` | Red dot | Red pulsing banner | Beep + notification | — |
+| `info` | Blue dot | clears the one shown | — | — |
+| `success` | Green dot | clears the one shown | — | — |
+| `warning` | Amber "!" | Warning — its card opens, folds after 5 s | — | — |
+| `error` | Red "!" | Error — its card opens and stays | Beep + notification | — |
 | `progress` | — | — | — | Updates bar |
 
 ### Robot commands
@@ -1495,7 +1519,7 @@ purely in **who set the flag** and **how the operator should respond**.
 | 2 | **Critical device goes down on the bus** (USB unplug, TCP drop, daemon crash, etc.) | Auto — by `MQTTOrchestrator` watching `device/+/state` topics | Fix the hardware → click Recover on the device row → wait for state=ok → click Resume | `devices/orchestrator.py:351` |
 | 3 | **Robot motion command returns an alarm code** (negative int from a `rt.<robot>` call — limit hit, IK failed, E-stop pressed) | Auto — by `rt.call` itself when a wrapped robot method returns < 0 | Fix the cause → **Disable Alarm** (Operator Controls; the robot's device row and modal offer the same button instead of Recover, which cannot clear an alarm) → click Resume | `runtime.py:532` (inside `rt.call`) |
 | 4 | **Project code calls `rt.pause()`** directly (custom checks, action policy, "I want to wait for the operator here") | Your code | Whatever the project documents — usually Resume after handling the situation | Anywhere a `Check` / action / recipe calls `rt.pause()` |
-| 5 | **An action raises** — an exception escapes `pre()`, the tool swap, a check or `execute()` (a dead robot link, a device that refused, a bug) | Auto — by the BT leaf, which puts the error on the timeline at level `error` (red banner, beep) before it pauses | Read the error, fix the cause (Recover the device), click Resume — the engine replans from observed state and the action runs again; or Park / Kill | `bt/dsl.py` (`_DSLActionLeaf._execute_body` → `_pause_on_raise`) |
+| 5 | **An action raises** — an exception escapes `pre()`, the tool swap, a check or `execute()` (a dead robot link, a device that refused, a bug) | Auto — by the BT leaf, which puts the error on the timeline at level `error` (an error message in the top bar, beep) before it pauses | Read the error, fix the cause (Recover the device), click Resume — the engine replans from observed state and the action runs again; or Park / Kill | `bt/dsl.py` (`_DSLActionLeaf._execute_body` → `_pause_on_raise`) |
 
 Trigger 2 (device-down auto-pause) has additional gates: it fires only
 when the device is **critical**, **not sim**, and either entering `down`

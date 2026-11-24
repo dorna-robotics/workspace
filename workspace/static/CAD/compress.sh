@@ -70,15 +70,18 @@ for dir in "${TARGETS[@]}"; do
     for f in "$abs_dir"/*.glb; do
         found=1
         size_before=$(stat -c%s "$f")
+        [ -f "$f.bin" ] && size_before=$((size_before + $(stat -c%s "$f.bin")))
         dir_before=$((dir_before + size_before))
 
-        # ``optimize`` runs the recommended pipeline: dedup, prune, weld,
-        # Draco compression. Keep full topology (no --simplify).
-        "$LOCAL_BIN" optimize "$f" "$f.tmp" \
-            --compress draco \
+        # compress.mjs: gltf-transform's optimize pipeline (dedup, instance,
+        # flatten, join, weld, simplify, prune, Draco) with material names
+        # kept: differently named materials are never merged and no palette
+        # textures are made, so a name like "Glass_(Clear)" survives.
+        node "$SCRIPT_DIR/compress.mjs" "$f" "$f.tmp" \
             2>/dev/null >/dev/null && mv "$f.tmp" "$f"
 
-        size_after=$(stat -c%s "$f")
+        size_after=$(stat -c%s "$f")                 # the .glb holds the JSON; its data sits beside it in .glb.bin
+        [ -f "$f.bin" ] && size_after=$((size_after + $(stat -c%s "$f.bin")))
         dir_after=$((dir_after + size_after))
 
         pct=$(( (size_before - size_after) * 100 / size_before ))

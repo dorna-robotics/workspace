@@ -27,6 +27,7 @@
 // --- END DEBUG OVERLAY ---
 
     import * as THREE from "three";
+    import { toast } from "/vendor/messages.js";
     import { OrbitControls } from "three/addons/controls/OrbitControls.js";
     import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
     import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js";
@@ -2576,35 +2577,10 @@ window.__rulerHUD = function (m) {
   el.querySelector(".sb-ruler-pts").textContent = m.from + "  \u2192  " + m.to;
 };
 
-function showToast(msg, type="") {
-  const area = document.getElementById("toastArea");
-  if (area) {
-    // Same rules as the admin pages' toast (api.js; look: base.css):
-    // a hint or success fades, a warning after 5 s, a failure stays
-    // until clicked; three at most.
-    const t = document.createElement("div");
-    t.className = "toast" + (type ? " " + type : "");
-    t.setAttribute("role", type === "bad" ? "alert" : "status");
-    t.textContent = msg;
-    t.addEventListener("click", () => t.remove());
-    area.appendChild(t);
-    while (area.children.length > 3) area.firstElementChild.remove();
-    if (type !== "bad") setTimeout(() => t.remove(), type === "warn" ? 5000 : 2500);
-    return;
-  }
-  // Fallback: use legacy builderToast
-  let t = document.getElementById("builderToast");
-  if (!t) {
-    t = document.createElement("div");
-    t.id = "builderToast";
-    t.style.cssText = "position:fixed;top:12px;left:50%;transform:translateX(-50%);background:#111;color:#fff;padding:10px 14px;font-family:system-ui;font-size:14px;border-radius:10px;box-shadow:0 8px 20px rgba(0,0,0,0.2);z-index:9999;pointer-events:none;";
-    document.body.appendChild(t);
-  }
-  t.textContent = msg;
-  t.style.display = "block";
-  clearTimeout(t.__hide);
-  t.__hide = setTimeout(() => { t.style.display = "none"; }, 2200);
-}
+// A hint or a result — the platform's one message place (the header's
+// line and its cards, /vendor/messages.js): a hint or success fades, a
+// warning after 5 s, a failure stays until its ×.
+function showToast(msg, type="") { toast(msg, type); }
 
 // Expose for any non-module callbacks / inline handlers.
 window.showToast = showToast;

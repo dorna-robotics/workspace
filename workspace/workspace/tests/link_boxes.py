@@ -50,7 +50,7 @@ ok("rides_robot: the camera rides robot_A5; a rack and the gripper (downstream o
 ok("no class says it: inspection components carry no ROBOT_MOUNTED", not hasattr(type(cam_comp), "ROBOT_MOUNTED"))
 from workspace.recipes.inspector import Inspector
 insp = Inspector(ws, core, component=cam_comp)
-ok("Inspector on the robot camera: no station geometry (component None), present() refused", insp.component is None and insp._vision_owner is cam_comp and _raises(insp.present))
+ok("Inspector on the robot camera: no station geometry (component None), present() refused", insp.component is None and insp._vision_owner.raw is cam_comp and _raises(insp.present))
 cam_world = np.array(cl[0]["pose"]); scale = cl[0]["scale"]
 ok("camera box: 46.5 x 86.5 x 27 (the component's own)", list(np.round(scale, 1)) == [46.5, 86.5, 27.0], scale)
 # test poses: those where the arm is FREE of the bench (both checkers agree: no contact) — a probe

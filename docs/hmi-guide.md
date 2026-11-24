@@ -174,14 +174,32 @@ Three sources; two exist, one is a small addition:
 
    A request to the operator is not a project value: `rt.notice(title,
    text, level=, img=, caption=)` publishes the platform's `notice` key
-   (rt.op refuses it from a project) and the FRAME draws it — one modal
-   for every project, over the pendant body (tabs and pane, the 3D view
-   included), with Resume (the bar's command, device-fault gate and
-   all) and Dismiss. The nav, the step rail and the control bar stay
-   uncovered: Park and Kill are never behind it. The runtime owns its
-   lifetime — published with a pause, unset when the run leaves it
-   (Resume, Park, Kill); the frame draws whatever is set. Spec and rules: project-guide "`rt.notice`";
-   code: `Runtime.notice`, workspace.js `renderPendantNotice`.
+   (rt.op refuses it from a project) and the FRAME draws it — the same
+   for every project, desktop and pendant alike — as a message
+   (design-system §3.3b): the top bar's line and a card under it, over
+   the page (the 3D view included), with the picture, Resume (the bar's
+   command, device-fault gate and all) and Dismiss; nothing else closes
+   it. The rail, the step list and the control bar stay uncovered:
+   Park and Kill are never behind it. The runtime owns its lifetime —
+   published with a pause, unset when the run leaves it (Resume, Park,
+   Kill); the frame draws whatever is set. Spec and rules: project-guide
+   "`rt.notice`"; code: `Runtime.notice`, workspace.js `renderNotice`,
+   `vendor/messages.js`.
+
+   ### The launch card and the Start hint (platform, no project input)
+
+   The two waits an operator otherwise watches in silence get a wait
+   card (`.pn-card`), on the pendant and the desktop page alike: **Launch
+   until ready** (the orchestrator's `_orch.boot`: starting → ready, or
+   failed with the exit code and the log's last lines) and **Start until
+   the first motion** (the runtime's `preparing`, project-guide "The
+   run's preparation"). Under it, that wait's console, every line as
+   written (the log WebSocket `?since=boot` / `?since=run`). Hide puts
+   it away — the state pill / state block brings it back; a launch this
+   page watched ends green for 2 s. Then, launched and idle with no run
+   yet in the process, a ring leaves Start every 2 s (`.start-hint`).
+   Mockup: `docs/internal/launch_mockups/`; code: workspace.js
+   `renderLaunchCard`.
 
 4. **`rt.record(item, **fields)` — the per-item record channel. BUILT.**
    Sibling of `rt.op` for the AUDIT: one row per sample / vial / plate,
@@ -269,7 +287,8 @@ headline from `rt.op`, a bench that shows the live position — says so
 once here instead of showing the same step twice. Default on; the
 HTML shape has no say and keeps the panel.
 
-`api` is deliberately small: `values` (current snapshot), `theme`
+`api` is deliberately small: `values` (current snapshot), `scene`
+(the declared scene, read-only — below), `theme`
 (`"light"`/`"dark"`), `onTheme(cb)` (fires on toggle — for canvas and
 anything else that must repaint), `url(path)` (a runtime path — an
 `rt.asset`'s `/op/asset/…` — as a URL the screen can load: the runtime
@@ -278,6 +297,25 @@ which routes to the **same declared `operator_action` path** the
 platform's own buttons use. A screen can trigger what a component
 already declares, and nothing more — it gets no runtime handle, no
 device handle, no way to command the robot.
+
+**`api.scene` — every project screen's (pendant, setup, Replan view).**
+The project's DECLARED scene, read-only: launch.yaml's `scene:` files
+rendered and merged by `workspace/scene.py` — the one reader the run
+itself builds from — as `{component_name: config}`. A screen reads a
+scene fact (a pump's stroke, a rack's rows) here instead of typing a
+copy that drifts the day the scene changes:
+
+```js
+const lv = api.scene.syringe_pump_1;
+const stroke = lv.max_stroke_ul ?? lv.syringe_volume_ul;   // the pump's stroke_volume()
+```
+
+The files, not the live tree (runtime `add_component` is not in it),
+read when the screen mounts. Frozen — a screen reads it, never edits
+it. `null` when the scene cannot be read (the reason is on the
+console): a screen that needs a fact then says it is unknown, never
+guesses one. Served by the orchestrator, `GET
+/orchestrator/api/workspace/<name>/scene`.
 
 Use JS when the screen computes (charts, canvas, animation, derived
 values); use HTML for everything else. A `.js` screen can import its

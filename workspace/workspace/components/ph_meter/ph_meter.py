@@ -330,12 +330,12 @@ class PhMeter(Gripper):
 
     def operator_actions(self) -> list[dict]:
         return [
-            {"label": "Read",      "method": "read",         "icon": "activity", "group": "read"},
-            {"label": "Cal 4",     "method": "calibrate_4",  "icon": "rotate",   "group": "cal"},
-            {"label": "Cal 7",     "method": "calibrate_7",  "icon": "rotate",   "group": "cal"},
-            {"label": "Cal 10",    "method": "calibrate_10", "icon": "rotate",   "group": "cal"},
-            {"label": "Reconnect", "method": "reconnect",    "icon": "rotate",   "group": "conn"},
-            {"label": "Release",   "method": "release_probe","icon": "link-off", "group": "conn"},
+            {"label": "Read pH",   "method": "read",         "icon": "activity", "group": "Measure"},
+            {"label": "Calibrate pH 4", "method": "calibrate_4",  "icon": "rotate",   "group": "Calibrate"},
+            {"label": "Calibrate pH 7", "method": "calibrate_7",  "icon": "rotate",   "group": "Calibrate"},
+            {"label": "Calibrate pH 10","method": "calibrate_10", "icon": "rotate",   "group": "Calibrate"},
+            {"label": "Reconnect", "method": "reconnect",    "icon": "rotate",   "group": "Connection"},
+            {"label": "Release",   "method": "release_probe","icon": "link-off", "group": "Connection"},
         ]
 
     # ── Teardown ──────────────────────────────────────────────────────

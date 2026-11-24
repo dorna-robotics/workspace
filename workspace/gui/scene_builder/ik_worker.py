@@ -29,6 +29,7 @@ from copy import deepcopy
 
 import yaml
 from workspace.j2 import render_text
+from workspace.scene import load_scene, scene_paths
 
 
 def _pose6(solid, anchor=None):
@@ -52,15 +53,7 @@ def main(project_dir):
 
     with open(os.path.join(project_dir, "launch.yaml")) as f:
         launch = yaml.safe_load(f) or {}
-    scene = launch.get("scene") or []
-    if isinstance(scene, str):
-        scene = [scene]
-    cfgs = {}
-    for rel in scene:
-        text = open(os.path.join(project_dir, rel)).read()
-        if rel.endswith(".j2") or "{%" in text or "{{" in text:
-            text = render_text(text, os.path.dirname(os.path.join(project_dir, rel)))
-        cfgs.update(yaml.safe_load(text) or {})
+    cfgs = load_scene(scene_paths(project_dir, launch))     # workspace/scene.py — the one reader
     for cfg in cfgs.values():
         if isinstance(cfg, dict):
             cfg["simulation"] = True

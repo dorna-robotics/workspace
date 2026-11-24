@@ -1,8 +1,7 @@
 # workspace/workspace.py
 import threading
-from workspace.j2 import render_text
+from workspace.scene import load_scene
 from pathlib import Path
-import yaml
 import numpy as np
 
 from workspace.display import Display
@@ -43,17 +42,9 @@ class Workspace:
         # old guess.
         self.project_dir = str(Path(project_dir)) if project_dir else None
 
-        comp_cfgs = {}
-
-        # --- load + merge configs in order ---
-        for path in paths:
-            text = Path(path).read_text()
-
-            if str(path).endswith(".j2") or "{%" in text or "{{" in text:
-                text = render_text(text, Path(path).parent)
-
-            cfg = yaml.safe_load(text) or {}
-            comp_cfgs.update(cfg)  # later files override earlier ones
+        # --- load + merge configs in order (workspace/scene.py: the one
+        # reader — later files override earlier ones) ---
+        comp_cfgs = load_scene(paths)
 
         # Scene fingerprint — stamps the IK/path caches so a geometry
         # change invalidates them automatically instead of relying on
@@ -80,10 +71,11 @@ class Workspace:
         # to the planner and BT in one place.
         self._active_ctx = None
 
-        # 1) build components
+        # 1) build components (and their labels: _keep_component)
         self.components = {}
+        self.component_labels = {}
         for name, ccfg in comp_cfgs.items():
-            self.components[name] = comp_factory.create_component(name, ccfg, self)
+            self._keep_component(name, comp_factory.create_component(name, ccfg, self), ccfg)
         # the scene is long-lived: out of the garbage collector's reach
         # (a full collection over it froze the process for ~100 ms)
         from workspace.lag import freeze_heap
@@ -244,12 +236,21 @@ class Workspace:
                     f"cannot add device-backed component '{name}' during a run; "
                     "launch the workspace with it from the start"
                 )
-            self.components[name] = comp
+            self._keep_component(name, comp, cfg)
             if cfg.get("attach"):
                 self._initial_attachments.append((name, cfg["attach"]))
                 self._apply_one_attachment(name, cfg["attach"])
         self._notify_scene_changed()
         return comp
+
+    def _keep_component(self, name: str, comp, cfg: dict) -> None:
+        """Put a built component in the scene, with its ``label:`` — the
+        name a screen shows (the pendant's Devices tab), which the
+        component itself never sees (factory.create_component). The one
+        place for the scene build and add_component alike."""
+        self.components[name] = comp
+        if cfg.get("label"):
+            self.component_labels[name] = str(cfg["label"])
 
     def remove_component(self, name: str):
         """Remove a component from the workspace at runtime.
@@ -292,6 +293,7 @@ class Workspace:
                 (n, a) for n, a in self._initial_attachments if n != name
             ]
             del self.components[name]
+            self.component_labels.pop(name, None)
         self._notify_scene_changed()
 
     def _is_running(self) -> bool:

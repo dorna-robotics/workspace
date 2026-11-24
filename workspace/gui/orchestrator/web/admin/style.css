@@ -6,6 +6,35 @@
 /* ── Orchestrator-specific overrides ──────────────────────────────────── */
 .topbar > .btn, .ws-header > .btn { position: relative; z-index: 1; }
 .main { padding: 28px 48px; }
+/* The admin pages' frame (dashboard, System): the centred column and the
+   section header in the sidebar's caps — here, before the phone rules
+   below, so those can override them. */
+.main-inner {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+}
+.section-actions { margin-bottom: 12px; }
+/* Match the sidebar's .section-label rhythm — same caps, same
+   tracking, no second visual identity for a "section title". */
+.section-header h2 { font-size: var(--text-xs); font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+.section-header .count {
+  font-size: var(--text-sm); font-weight: 600;
+  color: var(--muted);
+  background: var(--surface2);
+  border: none;
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-family: var(--mono);
+}
 @media (max-width: 768px) {
   .topbar {
     height: 48px; min-height: 48px;
@@ -221,18 +250,25 @@
 /* A Parameters form whose values are being sent (Set / Set & Launch in
    flight): inert, and visibly so — dimmed, the cursor says wait. */
 .kw-busy { opacity: 0.55; cursor: progress; transition: opacity var(--motion-fast) var(--ease); }
-.kwargs-banner {
-  display: flex; align-items: center; gap: 8px;
-  font-size: 12px; font-weight: 500; color: var(--muted);
-  font-style: italic;
-  border-left: 3px solid var(--border2);
-  padding: 8px 14px; margin-bottom: 6px;
+/* A launched run's Parameters — a filled-in record, not greyed-out
+   controls: the field's box goes, its value stays at full contrast. The
+   header's .kw-record pill says read-only; nothing here is dimmed. */
+.kwargs-form.kw-frozen .input {
+  pointer-events: none;
+  background: transparent; border-color: transparent; box-shadow: none;
+  padding-left: 0; font-weight: 600; color: var(--text);
+  appearance: none; -moz-appearance: textfield;
 }
-.kwargs-banner svg { flex-shrink: 0; opacity: 0.4; }
-.kwargs-banner.frozen { color: var(--amber); border-left-color: var(--amber); }
-.kwargs-banner.frozen svg { opacity: 0.7; }
+.kwargs-form.kw-frozen .input::-webkit-inner-spin-button,
+.kwargs-form.kw-frozen .input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.kwargs-form.kw-frozen .kw-switch-wrap { cursor: default; }
+.kwargs-form.kw-frozen .kw-switch:disabled + .kw-switch-track { opacity: 1; cursor: default; }
+.kw-record b { color: var(--text); font-weight: 700; }
 .kwargs-form .input-error { border-color: var(--red) !important; box-shadow: 0 0 0 3px rgba(255,69,58,0.15) !important; }
-.kwargs-form .kw-error { font-size: 11px; color: var(--red); font-weight: 600; }
+/* a field's error: the shared mark (base.css .msg-mark) + plain words */
+.kwargs-form .kw-error { display: flex; align-items: flex-start; gap: var(--space-2);
+  font-size: var(--text-sm); color: var(--text); font-weight: 500; line-height: 1.4; }
+.kw-error .msg-mark, .rp-state .msg-mark { margin-top: 1px; }
 
 /* ---- Modal mobile ---- */
 @media (max-width: 600px) {
@@ -250,15 +286,12 @@
   .modal-foot .btn { font-size: 12px; padding: 6px 12px; }
   .kwargs-form .kw-label { font-size: 12px; }
   .kwargs-form .kw-hint { font-size: 11px; }
-  .kwargs-banner { font-size: 11px; padding: 6px 10px; }
 }
 
 /* Confirm dialog CSS in /vendor/base.css */
 
 /* ── Utility classes (orchestrator-specific) ───────────────────────────── */
 .label-optional { font-weight: 400; text-transform: none; letter-spacing: 0; }
-.section-chevron { transition: transform var(--motion-med) var(--ease); opacity: 0.45; flex-shrink: 0; }
-.section-chevron.open { transform: rotate(90deg); }
 
 /* ── Kwargs form element classes ───────────────────────────────────────── */
 .kw-file-wrap { display: flex; align-items: center; gap: 8px; flex: 1; }
@@ -367,77 +400,13 @@
 .sidebar-progress > span { font-size: 11px; font-family: var(--mono); font-weight: 600; color: var(--muted); flex-shrink: 0; }
 
 /* ── Log colors ─────────────────────────────────────────────────────────── */
-.log-err  { color: var(--red); }
-.log-warn { color: var(--amber); }
+/* A problem line is marked by a coloured edge, its words in the plain
+   text colour — never red or amber words (design-system §9). */
+.log-err, .log-warn { display: inline-block; width: 100%; color: var(--text);
+  padding-left: var(--space-3); box-shadow: inset 3px 0 0 var(--red); }
+.log-warn { box-shadow: inset 3px 0 0 var(--amber); }
 .log-dim  { color: var(--muted2); }
 .log-ts   { color: var(--muted2); }
-
-/* ── Alarm Banner ─────────────────────────────────────────────────────── */
-.alarm-banner {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 100000;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 18px;
-  background: rgba(255, 69, 58, 0.15);
-  border-bottom: 1px solid rgba(255, 69, 58, 0.3);
-  color: var(--red);
-  font-size: var(--text-md);
-  font-weight: 500;
-  animation: alarm-pulse 1.5s ease-in-out infinite;
-  backdrop-filter: blur(12px);
-}
-.alarm-banner svg { flex-shrink: 0; }
-.alarm-banner #alarmText { flex: 1; }
-.alarm-dismiss {
-  background: none;
-  border: none;
-  color: var(--red);
-  cursor: pointer;
-  padding: 4px;
-  border-radius: var(--radius-xs);
-  opacity: 0.6;
-}
-.alarm-dismiss:hover { opacity: 1; background: rgba(255, 69, 58, 0.15); }
-@keyframes alarm-pulse {
-  0%, 100% { background: rgba(255, 69, 58, 0.12); }
-  50% { background: rgba(255, 69, 58, 0.22); }
-}
-/* Warning level — amber */
-.alarm-banner[data-level="warning"] {
-  background: rgba(255, 159, 10, 0.12);
-  border-bottom-color: rgba(255, 159, 10, 0.3);
-  color: var(--amber);
-  animation: alarm-pulse-warn 1.5s ease-in-out infinite;
-}
-.alarm-banner[data-level="warning"] .alarm-dismiss { color: var(--amber); }
-.alarm-banner[data-level="warning"] .alarm-dismiss:hover { background: rgba(255, 159, 10, 0.15); }
-@keyframes alarm-pulse-warn {
-  0%, 100% { background: rgba(255, 159, 10, 0.12); }
-  50% { background: rgba(255, 159, 10, 0.22); }
-}
-
-/* Pendant alarm — warning level */
-.pendant-alarm[data-level="warning"] {
-  background: rgba(255, 159, 10, 0.15);
-  border-color: rgba(255, 159, 10, 0.4);
-  color: var(--amber);
-  animation: alarm-pulse-warn 1.5s ease-in-out infinite;
-}
-
-[data-theme="light"] .alarm-banner {
-  background: rgba(215, 0, 21, 0.06);
-  border-bottom-color: rgba(215, 0, 21, 0.2);
-}
-[data-theme="light"] .alarm-banner[data-level="warning"] {
-  background: rgba(199, 124, 10, 0.06);
-  border-bottom-color: rgba(199, 124, 10, 0.2);
-}
-
 
 /* ── Schedule view — modal + second-row trigger button ───────────────── */
 
@@ -458,6 +427,10 @@
    tabbed main section with the pinned ACTIVE ROUTINE hero, a
    collapsible event rail on the right, and the four run controls in a
    bottom bar. */
+/* ?pendant=1 — the overlay is up from the FIRST paint (the head script
+   sets the class), not after workspace.js has run, so the desktop never
+   flashes on the way in. togglePendant() takes over and drops it. */
+html.pendant-boot .pendant-overlay { display: flex !important; }
 .pendant-overlay {
   position: fixed; inset: 0; z-index: 10000;
   display: flex; flex-direction: column;
@@ -509,22 +482,90 @@
 .pendant-region { flex: 1; display: flex; min-height: 0; }
 .pendant-body {
   flex: 1; min-width: 0; display: flex; flex-direction: column;
-  overflow-y: auto; padding: 0 24px 24px;
+  overflow-y: auto; padding: 20px 24px 24px;
 }
 
-/* Tabs */
-.pendant-tabs { display: flex; gap: 26px; flex: none; padding-top: 2px; margin-bottom: 14px; }
-.pendant-tab {
-  font: inherit; font-size: var(--text-sm); font-weight: 700;
-  text-transform: uppercase; letter-spacing: 0.08em;
-  color: var(--muted); background: none; border: none; cursor: pointer;
-  padding: 15px 2px 13px; position: relative;
+/* ── Section rail: the left counterpart of the Steps rail ──
+   The admin nav's grammar (vendor/nav.css): icons only when collapsed,
+   icon + label when expanded, muted items, a surface2 hover, the accent
+   tint for the active one, a ringed count badge, the same sidebar
+   toggle. Sized for operator glass: 52 px targets. One row layout in
+   both states — the label fades to zero width — so the toggle and the
+   icons never move: their centre is the collapsed rail's, 32 px. The
+   toggle works at every width; expanding pushes the content (an overlay
+   would sit under the floating 3D view). The foot holds the Steps
+   panel's toggle — that panel has no strip of its own when closed. */
+.pendant-rail {
+  flex: none; width: 64px;
+  display: flex; flex-direction: column; min-height: 0;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  transition: width var(--motion-med) var(--ease);
+  overflow: hidden;
 }
-.pendant-tab.active { color: var(--accent); }
-.pendant-tab.active::after {
-  content: ""; position: absolute; left: 0; right: 0; bottom: 0;
-  height: 3px; background: var(--accent);
+.pendant-rail.expanded { width: 216px; }
+/* the head is the Steps rail head's height: the two hairlines meet */
+.pr-head {
+  flex: none; height: 56px;
+  display: flex; align-items: center; padding-left: 10px;
+  border-bottom: 1px solid var(--border);
 }
+.pr-toggle {
+  display: grid; place-items: center; flex: none;
+  width: 44px; height: 44px; border-radius: var(--radius-sm);
+  background: none; border: none; color: var(--muted); cursor: pointer;
+  transition: background var(--motion-fast) var(--ease), color var(--motion-fast) var(--ease);
+}
+.pr-toggle:hover { background: var(--surface2); color: var(--text); }
+.pr-toggle:focus-visible { outline: none; box-shadow: var(--glow); }
+.pr-items { display: flex; flex-direction: column; gap: 4px; padding: 10px 6px; }
+:is(.pendant-tab, .pr-panel) {
+  position: relative;
+  display: flex; align-items: center; gap: 14px;
+  height: 52px; padding: 0 0 0 14px;
+  border: none; border-radius: var(--radius-md);
+  background: none; color: var(--muted); cursor: pointer;
+  font: inherit; font-size: var(--text-md); font-weight: 600;
+  white-space: nowrap; text-align: left;
+  -webkit-tap-highlight-color: transparent;
+  transition: color var(--motion-fast) var(--ease), background var(--motion-fast) var(--ease),
+              transform var(--motion-fast) var(--ease);
+}
+:is(.pendant-tab, .pr-panel) svg { width: 24px; height: 24px; flex: none; }
+:is(.pendant-tab, .pr-panel) .pr-label {
+  overflow: hidden; opacity: 0; width: 0;
+  transition: opacity var(--motion-med) var(--ease);
+}
+.pendant-rail.expanded .pr-label { opacity: 1; width: auto; }
+:is(.pendant-tab, .pr-panel):hover { background: var(--surface2); color: var(--text); }
+:is(.pendant-tab, .pr-panel):active { transform: scale(0.97); }
+:is(.pendant-tab, .pr-panel):focus-visible { outline: none; box-shadow: var(--glow); }
+.pendant-tab.active { background: var(--accent-dim); color: var(--accent); }
+/* The foot: panel toggles, not sections — below a hairline, at the
+   rail's bottom. A section is SELECTED (the accent tint, one at a
+   time); a panel is OPEN beside whichever section is up (accent icon on
+   a surface2 fill), so the two never read the same. */
+.pr-foot {
+  margin-top: auto; flex: none;
+  display: flex; flex-direction: column; gap: 4px; padding: 10px 6px;
+  border-top: 1px solid var(--border);
+}
+.pr-panel[aria-pressed="true"] { background: var(--surface2); color: var(--accent); }
+/* attention — a count, never colour alone; ringed like the admin's.
+   Collapsed it sits on the icon's corner, expanded at the row's end. */
+.pr-badge {
+  position: absolute; top: 5px; right: 4px;
+  min-width: 18px; height: 18px; padding: 0 5px;
+  border-radius: var(--radius-sm);
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1;
+  color: #fff; background: var(--red);
+  box-shadow: 0 0 0 2px var(--surface);
+  pointer-events: none;
+}
+.pr-badge.warn { background: var(--amber); }
+.pr-badge[hidden] { display: none; }
+.pendant-rail.expanded .pr-badge { top: 50%; right: 14px; transform: translateY(-50%); }
 
 /* ACTIVE ROUTINE hero */
 .pendant-hero {
@@ -595,99 +636,183 @@
 }
 .pendant-3d-pane { flex: 1; min-height: 320px; border-radius: var(--radius-lg); position: relative; }
 
-/* ── Pendant Main tab, before launch: the run parameters ──
-   The form scrolls, the buttons stay put. Same builder as the desktop
-   modal (mountParams), so Set and Set & Launch behave identically —
-   this is the same surface, in the place the operator is standing. */
-.pendant-params {
+/* ── A pendant PAGE: a card with a heading, a scrolling body and a
+   button foot — the run parameters (Main before launch, the Parameters
+   section after) and the Version section. The body scrolls, the buttons
+   stay put. Each is the desktop's modal content in the place the
+   operator is standing: the same builder fills both (mountParams, the
+   Version panel's host). */
+.pendant-page {
   flex: 1 1 auto; min-height: 0; width: 100%;
   display: flex; flex-direction: column;
-  /* A SURFACE, not bare background. The form sat directly on the
-     pendant's ground, so it read as loose parts on grey instead of one
-     panel — the same card the rest of the app puts content on. */
+  /* A SURFACE, not bare background — one card for every pendant page
+     (Parameters, Version, Devices), so every tab's panel reads alike. */
   background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-sm);
   overflow: hidden;
 }
-.pendant-params .pp-head {
+/* The panel heading in the tabs' one heading style (with .pe-head):
+   tracked caps, muted, hairline under. */
+.pendant-page .pp-head {
   flex: 0 0 auto;
   display: flex; align-items: center; gap: var(--space-3);
-  padding: var(--space-4) var(--space-5);
-  border-bottom: 1px solid var(--border2);
+  padding: 14px 18px;
+  font-size: var(--text-xs); font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted);
+  border-bottom: 1px solid var(--border);
 }
-.pendant-params .pp-title {
-  font-size: var(--text-lg); font-weight: 600; letter-spacing: -0.1px;
-}
-.pendant-params .pp-scroll {
+.pendant-page .pp-head .btn { text-transform: none; letter-spacing: 0; }
+.pendant-page .pp-scroll {
   flex: 1 1 auto; min-height: 0; overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   padding: var(--space-5);
 }
-.pendant-params .pp-foot {
+.pendant-page .pp-foot:empty { display: none; }
+.pendant-page .pp-foot {
   flex: 0 0 auto;
   display: flex; align-items: center; gap: var(--space-3);
   padding: var(--space-4) var(--space-5);
   border-top: 1px solid var(--border2);
 }
-/* Operator glass: the run-setup buttons are hit with gloves. */
-.pendant-params .pp-foot .btn { min-height: 44px; padding: 0 var(--space-5); font-size: var(--text-lg); }
-.pendant-params .kwargs-empty { color: var(--muted); font-size: var(--text-md); }
+/* Operator glass: every main button on a pendant page — Parameters, Version,
+   Devices (Run, Recover) — is one size, hit with gloves. The small header
+   buttons (Upload, Open: .btn-sm) keep their size. */
+.pendant-page .btn:not(.btn-sm) { min-height: 44px; padding: 0 var(--space-5); font-size: var(--text-lg); justify-content: center; }
+.pendant-page .pp-meta { text-transform: none; letter-spacing: 0; font-weight: 500; font-size: var(--text-sm); }
+.pendant-page .kwargs-empty { color: var(--muted); font-size: var(--text-md); }
+/* the Version page: the modal body's rhythm, its buttons at the right */
+.pv-body { display: flex; flex-direction: column; gap: 14px; }
+.pendant-page .pv-foot { justify-content: flex-end; }
 
-/* ── Pendant Devices tab: devices | operator controls ── */
-.pendant-devices-pane {
-  flex: 1; min-height: 0; min-width: 0;
-  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px;
-  align-items: start;
-}
-.pd-col {
-  min-width: 0;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
-  display: flex; flex-direction: column;
-  max-height: 100%; min-height: 0;
-}
-.pd-head {
-  display: flex; align-items: baseline; gap: 10px;
-  padding: 14px 18px; flex: none;
-  font-size: var(--text-xs); font-weight: 700;
-  text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted);
-  border-bottom: 1px solid var(--border);
-}
-.pd-head .mono { font-size: 11.5px; text-transform: none; letter-spacing: 0; }
-.pd-col .devices-list, .pd-col .pd-op-list {
-  flex: 1; overflow-y: auto; padding: 14px 18px;
-  overflow-wrap: anywhere;
-}
-.pd-col .devices-list { max-height: none; }
-.pd-op-list { display: flex; flex-direction: column; gap: 12px; }
-@media (max-width: 900px) {
-  .pendant-devices-pane { grid-template-columns: 1fr; }
+/* ── Pendant Devices tab — one page: the list | the selected one ────────
+   The tabs' own shell (.pendant-page, .pp-head) and grammar (tracked-caps
+   labels, the shared .btn / .pill / .input / .device-pill). Inside, space
+   and tone separate — no line: the list is a tinted panel, the facts one
+   band, action rows borderless; the open action is the only box. */
+.dv-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 300px minmax(0, 1fr); }
+.dv-list { display: flex; flex-direction: column; min-height: 0; background: var(--bg); }
+.dv-lh { padding: var(--space-4) var(--space-4) var(--space-2); display: flex; flex-direction: column; gap: var(--space-3); flex: none; }
+.dv-search { position: relative; }
+.dv-search .input { padding-left: 36px; background: var(--surface); }
+.dv-search svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
+.dv-chips { display: flex; gap: var(--space-2); }
+.dv-chip { min-height: 32px; padding: 0 var(--space-3); border-radius: var(--radius-sm); border: none; font: inherit;
+  font-size: var(--text-sm); font-weight: 600; background: transparent; color: var(--muted); cursor: pointer; }
+.dv-chip b { font-weight: 600; opacity: .75; }
+.dv-chip:hover { color: var(--text); }
+.dv-chip.on { background: var(--accent-dim); color: var(--accent); }
+.dv-chip.att { color: var(--red); }
+.dv-items { overflow-y: auto; padding: 0 var(--space-3) var(--space-4); display: flex; flex-direction: column; gap: 2px; -webkit-overflow-scrolling: touch; }
+.dv-sec { font-size: var(--text-xs); font-weight: 700; text-transform: uppercase; letter-spacing: .1em; color: var(--muted);
+  padding: var(--space-4) var(--space-3) var(--space-2); }
+.dv-sec.att { color: var(--red); }
+.dv-empty { color: var(--muted); font-size: var(--text-md); padding: var(--space-5) var(--space-3); }
+.dv-item { display: grid; grid-template-columns: 10px 1fr; align-items: center; gap: var(--space-3);
+  min-height: 52px; padding: 6px var(--space-3); border-radius: var(--radius-md); cursor: pointer; }
+.dv-item:hover { background: var(--surface2); }
+.dv-item:focus-visible { outline: none; box-shadow: var(--glow); }
+.dv-item.sel { background: var(--surface); box-shadow: var(--shadow-sm); }
+.dv-it { min-width: 0; }
+.dv-item .nm { font-weight: 600; font-size: var(--text-md); color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dv-item .sb { font-size: var(--text-sm); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dv-item .sb .mode { font-weight: 600; text-transform: uppercase; letter-spacing: .04em; font-size: var(--text-xs); }
+.dv-item .sb .mode.live { color: var(--live); }
+.dv-item .sb .mode.sim { color: var(--sim); }
+.dv-item .hit { font-size: var(--text-sm); color: var(--accent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dv-item .dot.none { background: transparent; box-shadow: inset 0 0 0 1.5px var(--border2); }
+
+.dv-detail { display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow-y: auto;
+  padding: var(--space-5) var(--space-6) var(--space-6); gap: var(--space-5); -webkit-overflow-scrolling: touch; }
+.dv-detail > div:empty { display: none; }
+.dv-top { display: flex; gap: var(--space-4); align-items: center; }
+.dv-hd { min-width: 0; }
+.dv-top h2 { margin: 0; font-size: var(--text-xl); font-weight: 700; }
+.dv-top .meta { display: flex; gap: var(--space-2); align-items: center; margin-top: 6px; flex-wrap: wrap; }
+.dv-top .id { font-family: var(--mono); font-size: var(--text-sm); color: var(--muted); overflow-wrap: anywhere; }
+.dv-facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: var(--space-3) 0;
+  border-radius: var(--radius-md); background: var(--surface); border: 1px solid var(--border); padding: var(--space-4) var(--space-2); }
+.dv-facts > div { padding: 0 var(--space-4); min-width: 0; }
+.dv-facts .k { font-size: var(--text-xs); font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.dv-facts .v { margin-top: 4px; font-size: var(--text-md); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dv-alert { border-radius: var(--radius-md); background: var(--bg); box-shadow: inset 4px 0 0 var(--red);
+  padding: var(--space-3) var(--space-3) var(--space-3) var(--space-5);
+  display: flex; gap: var(--space-4); align-items: center; }
+.dv-alert .t { flex: 1; font-size: var(--text-md); line-height: 1.45; }
+.dv-alert b { font-weight: 700; }
+.dv-gate { border-radius: var(--radius-md); background: var(--bg); padding: var(--space-3) var(--space-4); font-size: var(--text-md); color: var(--muted); }
+/* One card per group: its title bar folds it (.fold, base.css), hairlines
+   part its actions — a group never runs into the next one. */
+.dv-acts { display: flex; flex-direction: column; gap: var(--space-4); }
+.dv-g { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden; }
+.dv-gh { display: flex; align-items: center; gap: var(--space-3); width: 100%; min-height: 52px; padding: 0 var(--space-4);
+  font: inherit; font-size: var(--text-sm); font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--text);
+  background: var(--surface); border: none; cursor: pointer; text-align: left; }
+.dv-gh:focus-visible { outline: none; box-shadow: inset var(--glow); }
+.dv-gh .section-chevron { opacity: 1; color: var(--muted); }
+.dv-gh .n { font-weight: 600; color: var(--muted); }
+.dv-a { border-top: 1px solid var(--border); }
+.dv-ar { display: grid; grid-template-columns: 28px 1fr auto; gap: var(--space-3); align-items: center; min-height: 64px;
+  padding: 8px var(--space-3) 8px var(--space-4); }
+.dv-ar[data-dv-toggle] { cursor: pointer; }
+.dv-ar .ai { width: 28px; display: grid; place-items: center; color: var(--muted); }
+.dv-ar .ai-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--border2); }
+.dv-at { min-width: 0; }
+.dv-ar .al { font-weight: 600; font-size: var(--text-lg); }
+.dv-ar .ad { font-size: var(--text-sm); color: var(--muted); margin-top: 1px; }
+.dv-ar .rt { display: flex; gap: var(--space-3); align-items: center; }
+.dv-ar .btn { min-width: 88px; }
+.dv-last { font-size: var(--text-sm); color: var(--muted); white-space: nowrap; }
+.dv-last .ok { color: var(--green); font-weight: 700; } .dv-last .bad { color: var(--red); font-weight: 700; }
+.dv-ab { padding: 0 var(--space-4) var(--space-4) 60px; display: flex; flex-direction: column; gap: var(--space-3); }
+.dv-params { display: flex; gap: var(--space-3); flex-wrap: wrap; align-items: flex-end; }
+.dv-f label { display: block; font-size: var(--text-xs); font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: 6px; }
+.dv-f .input { width: 150px; background: var(--surface); }
+.dv-bool { display: inline-flex; align-items: center; gap: var(--space-2); min-height: 40px; font-size: var(--text-md); }
+/* the reply: what the device handed back, on its note paper */
+.dv-out { border-radius: var(--radius-sm); background: var(--reply-bg); box-shadow: inset 0 0 0 1px var(--reply-border); padding: var(--space-3) var(--space-4); }
+.dv-out .h { font-size: var(--text-sm); color: color-mix(in srgb, var(--reply-text) 60%, transparent); margin-bottom: 6px; }
+.dv-out .h .ok { color: var(--green); font-weight: 700; } .dv-out .h .bad { color: var(--red); font-weight: 700; }
+.dv-out pre { margin: 0; font-family: var(--mono); font-size: var(--text-sm); line-height: 1.6; white-space: pre-wrap; word-break: break-word;
+  max-height: 320px; overflow: auto; color: var(--reply-text); }
+.dv-out .none { font-size: var(--text-sm); color: color-mix(in srgb, var(--reply-text) 60%, transparent); }
+@media (max-width: 1100px) {
+  .dv-body { grid-template-columns: 250px minmax(0, 1fr); }
+  .dv-detail { padding: var(--space-4); }
 }
 
-/* ── Event rail ── */
+/* ── Event rail ──
+   Opens and closes with the section rail's motion: the width eases
+   (--motion-med, --ease), the content keeps its width so nothing
+   reflows on the way, and closed it turns hidden once the motion ends. */
 .pendant-events {
-  width: 340px; flex: none;
+  --pe-w: 340px;
+  width: var(--pe-w); flex: none;
   display: flex; flex-direction: column; min-height: 0;
   background: var(--surface);
   border-left: 1px solid var(--border);
+  overflow: hidden;
+  transition: width var(--motion-med) var(--ease);
 }
+.pendant-events > * { min-width: calc(var(--pe-w) - 1px); }   /* inside the border */
 .pe-head {
   display: flex; align-items: center; gap: 10px;
-  padding: 14px 16px; flex: none;
+  height: 56px; padding: 0 6px 0 16px; flex: none; box-sizing: border-box;
   font-size: var(--text-xs); font-weight: 700;
   text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted);
   border-bottom: 1px solid var(--border);
 }
+/* the close control: the rail toggle's size and grammar */
 .pe-collapse {
   margin-left: auto;
   display: grid; place-items: center;
-  width: 28px; height: 28px; border-radius: var(--radius-sm);
+  width: 44px; height: 44px; border-radius: var(--radius-sm);
   background: none; border: none; color: var(--muted); cursor: pointer;
+  transition: background var(--motion-fast) var(--ease), color var(--motion-fast) var(--ease);
 }
 .pe-collapse:hover { background: var(--surface2); color: var(--text); }
+.pe-collapse:focus-visible { outline: none; box-shadow: var(--glow); }
 .pendant-events .pendant-steps {
   flex: 1; overflow-y: auto; padding: 4px 0;
 }
@@ -697,15 +822,11 @@
   display: flex; justify-content: space-between;
 }
 .pe-foot:empty { display: none; }
-/* Collapsed: a slim reopen strip */
-.pendant-events.collapsed { width: 44px; }
-.pendant-events.collapsed .pendant-steps,
-.pendant-events.collapsed .pe-foot,
-.pendant-events.collapsed .pe-head .pe-title,
-.pendant-events.collapsed .pe-head .dot { display: none; }
-.pendant-events.collapsed .pe-head { border-bottom: none; padding: 14px 8px; justify-content: center; }
-.pendant-events.collapsed .pe-collapse { margin: 0; }
-.pendant-events.collapsed .pe-collapse svg { transform: rotate(180deg); }
+/* Closed: no width — the section rail's Steps toggle reopens it */
+.pendant-events.collapsed {
+  width: 0; border-left-width: 0; visibility: hidden;
+  transition: width var(--motion-med) var(--ease), visibility 0s var(--motion-med);
+}
 
 /* Step rows — the shared :is(.step-card, .pendant-step-card)
    primitive in base.css drives the look (opacity ladder, active
@@ -713,6 +834,8 @@
    here, matching design-system §3.4. */
 .pendant-step-card { padding: 8px 16px; font-size: var(--text-md); }
 .pendant-step-dot { width: 8px; height: 8px; margin-top: 7px; }
+.pendant-step-card:is([data-level="warning"], [data-level="error"]) .pendant-step-dot { width: 16px; height: 16px; margin-top: 3px; }
+.pendant-step-card:is([data-level="warning"], [data-level="error"]) .pendant-step-dot::before { font-size: 10px; }
 
 /* ── Bottom bar: the four run controls ── */
 .pendant-bar {
@@ -751,15 +874,8 @@
 .pendant-park:hover:not(:disabled) { background: #ff6a2a; }
 [data-theme="light"] .pendant-park { background: #d8651e; }
 [data-theme="light"] .pendant-park:hover:not(:disabled) { background: #c4541a; }
-/* ── The operator notice (rt.notice, workspace.js renderPendantNotice) ──
-   A modal over the pendant BODY — tabs and pane, the bench dimmed
-   behind it — in the frame's warning voice. Fixed and synced to the
-   body's box (it must cover the 3D view, z 10001); the nav, the step
-   rail and the control bar stay uncovered and live. */
-.pendant-notice {
-  position: fixed; z-index: 10002; display: flex;     /* the card centres by margin: auto */
-  padding: var(--space-6); background: rgba(0,0,0,.5); overflow-y: auto;
-}
+/* ── The wait card (.pn-card) — the launch card's (below). Messages,
+   the pause's question included, are not here: base.css .msg-*. */
 .pn-card {
   width: min(620px, 100%); margin: auto;
   background: var(--surface); border-radius: var(--radius-lg);
@@ -782,17 +898,6 @@
 }
 .pn-card h2 { margin: 0; font-size: 26px; font-weight: 700; line-height: 1.2; }
 .pn-card p { margin: var(--space-2) 0 0; font-size: var(--text-lg); line-height: 1.45; opacity: .9; }
-/* the picture: up to 240 px tall (less on a short screen) — a small
-   crop (a 45 px ROI) is scaled up to read across a room */
-.pn-img { position: relative; margin: var(--space-4) 0 0; border-radius: var(--radius-md);
-  overflow: hidden; background: #000; }
-.pn-img img { display: block; height: min(240px, 30vh); max-width: 100%; object-fit: contain; }
-.pn-cap {
-  position: absolute; left: 10px; bottom: 10px; max-width: calc(100% - 20px);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  font-size: 12.5px; font-weight: 600; line-height: 1; padding: 6px 10px;
-  border-radius: 999px; background: rgba(0,0,0,.62); color: #fff;
-}
 .pn-actions { margin-top: var(--space-5); display: flex; gap: var(--space-4); }
 .pn-actions .btn { min-height: 48px; padding: 0 28px; font-size: var(--text-lg); font-weight: 700; }
 .pn-card[data-level="error"] { border-top-color: var(--red); }
@@ -801,6 +906,67 @@
 .pn-card[data-level="info"] { border-top-color: var(--accent); }
 .pn-card[data-level="info"] .pn-ico { background: rgba(10,132,255,.15); color: var(--accent); }
 .pn-card[data-level="info"] .pn-level { color: var(--accent); }
+
+.pn-card[data-level="ok"] { border-top-color: var(--green); }
+.pn-card[data-level="ok"] .pn-ico { background: rgba(52,199,89,.15); color: var(--green); }
+.pn-card[data-level="ok"] .pn-level { color: var(--green); }
+
+/* ── The launch card (workspace.js renderLaunchCard) ──────────────
+   The wait card (.pn-card, above), for the two waits: Launch until
+   ready, Start until the first motion. Over the whole page on the
+   desktop; over the pendant body in pendant mode. Under it, the
+   console of that wait, live. */
+.launch-card {
+  position: fixed; z-index: 10002; display: flex;
+  padding: var(--space-6); background: rgba(0,0,0,.5); overflow-y: auto;
+}
+.launch-card.lc-page { inset: 0; }
+/* The card fits its cover: the console gives way (down to a few lines)
+   before the buttons leave the screen. */
+.launch-card .pn-card { max-height: 100%; }
+.launch-card .pn-card > :not(.lc-log) { flex-shrink: 0; }
+.lc-spin {
+  width: 34px; height: 34px; border-radius: 50%;
+  border: 4px solid rgba(10,132,255,.25); border-top-color: var(--accent);
+  animation: lc-spin 0.9s linear infinite;
+}
+@keyframes lc-spin { to { transform: rotate(360deg); } }
+.lc-clock { font-family: var(--mono); color: var(--muted); }
+.lc-now {
+  align-self: stretch; display: flex; align-items: center; gap: var(--space-3);
+  margin-top: var(--space-3); padding: var(--space-4); border-radius: var(--radius-md);
+  background: var(--accent-dim); font-size: var(--text-lg); font-weight: 600; text-align: left;
+}
+.lc-now-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lc-now-age { color: var(--muted); font-size: var(--text-sm); white-space: nowrap; }
+.lc-log {
+  align-self: stretch; margin: var(--space-2) 0 0; flex: 0 1 260px; min-height: 84px; overflow-y: auto;
+  padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); background: var(--surface2);
+  font-family: var(--mono); font-size: var(--text-sm); line-height: 1.6; text-align: left;
+  white-space: pre-wrap; word-break: break-word;
+}
+/* Hidden with Hide: the state pill (desktop) / state block (pendant)
+   brings it back. */
+.lc-reopen { cursor: pointer; }
+@media (prefers-reduced-motion: reduce) { .lc-spin { animation-duration: 2.4s; } }
+
+/* ── The Start hint ──────────────────────────────────────────────
+   Launched, idle, and no run yet in this process: a ring leaves the
+   Start button every 2 s and fades — the next step, without a flash
+   or a colour change. Still, not pulsing, under reduced motion. */
+.start-hint { position: relative; overflow: visible; }
+.start-hint::after {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  animation: start-hint 2s var(--ease) infinite;
+}
+@keyframes start-hint {
+  0%   { box-shadow: 0 0 0 0 rgba(10,132,255,.45); }
+  70%  { box-shadow: 0 0 0 14px rgba(10,132,255,0); }
+  100% { box-shadow: 0 0 0 14px rgba(10,132,255,0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .start-hint::after { animation: none; box-shadow: 0 0 0 4px rgba(10,132,255,.35); }
+}
 
 /* ── Hold-to-activate (Park, Kill — api.js holdToActivate) ─────────
    The button fills from the left while held; the fill IS the timer,
@@ -955,7 +1121,7 @@
 .rp-state { font-size: var(--text-sm); font-weight: 600; }
 .rp-state:empty { display: none; }
 .rp-state.busy { color: var(--accent); }
-.rp-state.err { color: var(--red); }
+.rp-state.err { display: flex; gap: var(--space-2); align-items: flex-start; color: var(--text); font-weight: 500; }
 
 /* Kill — red tint, as .btn-danger */
 .pendant-kill { background: rgba(255,69,58,0.12); border-color: transparent; color: var(--red); }
@@ -965,20 +1131,19 @@
 .cmd-pressed { animation: pendant-flash 0.4s ease; }
 @keyframes pendant-flash { 0% { box-shadow: 0 0 0 3px var(--accent-dim); } 100% { box-shadow: none; } }
 
-/* ── Alarm (the one banner the pendant carries) ── */
-.pendant-alarm {
-  display: flex; align-items: center; gap: 10px;
-  margin: 12px 24px 0;
-  padding: 12px 18px;
-  background: rgba(255, 69, 58, 0.12);
-  border-radius: var(--radius-lg);
-  color: var(--red);
-  font-size: var(--text-xl); font-weight: 600;
-  animation: alarm-pulse 1.5s ease-in-out infinite;
-  box-shadow: var(--shadow-sm);
-  flex: none;
-}
-.pendant-alarm svg { flex-shrink: 0; }
+/* ── Messages at pendant size (base.css .msg-*; .big while the stack
+   hangs under the pendant nav) — read across a room, 44 px buttons
+   like the other pendant buttons. */
+.pendant-nav .msg-line { margin-left: var(--space-3); }
+.pendant-nav .msg-chip { height: 40px; font-size: var(--text-lg); }
+.pendant-nav .msg-mark { width: 26px; height: 26px; font-size: 15px; }
+.pendant-nav .msg-word, .msg-stack.big .msg-word { font-size: var(--text-sm); }
+.msg-stack.big { width: 560px; }
+.msg-stack.big .msg-mark { width: 30px; height: 30px; font-size: 17px; }
+.msg-stack.big .msg-title { font-size: 24px; }
+.msg-stack.big .msg-text { font-size: var(--text-xl); }
+.msg-stack.big .msg-acts .btn { min-height: 48px; padding: 0 28px; font-size: var(--text-lg); font-weight: 700; }
+.msg-stack.big .msg-x { width: 44px; height: 44px; font-size: 24px; }
 
 /* Project-screen widget classes (hmi.j2 fallback widgets) */
 .hmi-state {
@@ -1219,7 +1384,8 @@
   text-align: center;
 }
 .fb-empty b { color: var(--text); font-weight: 600; }
-.fb-error { color: var(--red); display: flex; align-items: center; justify-content: center; gap: var(--space-3); }
+.fb-error { color: var(--text); display: flex; align-items: center; justify-content: center; gap: var(--space-3); }
+.fb-error svg { color: var(--red); }
 .fb-loading { padding: var(--space-3); display: flex; flex-direction: column; gap: var(--space-3); }
 .fb-skel {
   height: 34px; border-radius: var(--radius-md);
@@ -1310,7 +1476,8 @@
 select.speed-sel { width: auto; min-width: 0; cursor: pointer; font-variant-numeric: tabular-nums;
   appearance: auto; padding-right: 6px; }
 
-/* ── Version panel (workspace.html #versionModalOverlay) ───────────────── */
+/* ── Version panel (workspace.html #versionModalOverlay; the System page reuses its rows,
+   warnings and command lists) ───────────────── */
 .ver-rows { display: grid; grid-template-columns: max-content 1fr; gap: var(--space-3) var(--space-5);
   font-size: var(--text-md); align-items: baseline; margin: 0; }
 .ver-rows dt { color: var(--muted); font-size: var(--text-xs); letter-spacing: .06em; text-transform: uppercase; font-weight: 600; }
@@ -1332,4 +1499,61 @@ select.speed-sel { width: auto; min-width: 0; cursor: pointer; font-variant-nume
 .ver-ok { display: flex; gap: var(--space-3); align-items: center; font-size: var(--text-md); }
 .ver-ok .tick { flex: none; width: 18px; height: 18px; border-radius: 50%; background: var(--green); color: var(--bg);
   font-size: var(--text-xs); font-weight: 700; display: flex; align-items: center; justify-content: center; }
-.ver-busy { color: var(--muted); font-size: var(--text-md); }
+/* Waiting on the bench (git, GitHub, a check): a turning ring above the
+   words — the launch card's ring — so a slow answer never reads as frozen.
+   The Version dialog and the System page share it. */
+.ver-busy { display: flex; flex-direction: column; align-items: center; gap: var(--space-3);
+  padding: var(--space-6) 0; color: var(--muted); font-size: var(--text-md); text-align: center; }
+.ver-busy::before { content: ""; width: 34px; height: 34px; border-radius: 50%;
+  border: 4px solid var(--accent-dim); border-top-color: var(--accent); animation: spin .9s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .ver-busy::before { animation: none; } }
+
+/* ── System page (system.html / system.js) — the bench's upgrade ─────────
+   One card per view (the unit, the confirm, the progress, the result) in
+   the Version panel's grammar: .ver-rows, .ver-warn, .ver-cmds. */
+.sys-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm); display: flex; flex-direction: column; overflow: hidden; }
+.sys-head { display: flex; align-items: center; gap: var(--space-3); padding: 14px 18px;
+  font-size: var(--text-xs); font-weight: 700; text-transform: uppercase; letter-spacing: .1em; color: var(--muted);
+  border-bottom: 1px solid var(--border); }
+.sys-head .mono { text-transform: none; letter-spacing: 0; font-weight: 500; }
+.sys-body { padding: 18px 20px; display: flex; flex-direction: column; gap: 14px; }
+.sys-foot { padding: 14px 20px; border-top: 1px solid var(--border2); display: flex; gap: 8px; align-items: center; }
+.sys-foot .btn { min-height: 40px; padding: 0 var(--space-5); }
+.sys-foot:empty { display: none; }
+.sys-t { width: 100%; border-collapse: collapse; font-size: var(--text-md); }
+.sys-t th { text-align: left; font-size: var(--text-xs); text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
+  font-weight: 600; padding: 0 12px 8px 0; border-bottom: 1px solid var(--border); }
+.sys-t td { padding: 10px 12px 10px 0; border-bottom: 1px solid var(--border2); vertical-align: top; }
+.sys-t tr:last-child td { border-bottom: none; }
+.sys-t .what { font-weight: 600; }
+.sys-t .sub { color: var(--muted); font-size: var(--text-sm); font-weight: 400; }
+.sys-t .sub.bad { display: flex; align-items: center; gap: 6px; color: var(--text); }
+.sys-t .h { font-family: var(--mono); font-size: var(--text-sm); }
+.sys-steps { list-style: none; margin: 0; padding: 0; display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px 18px; }
+.sys-steps li { display: flex; align-items: center; gap: 10px; font-size: var(--text-md); padding: 6px 0; color: var(--muted); }
+.sys-steps .ic { width: 20px; height: 20px; border-radius: 50%; flex: none; display: grid; place-items: center;
+  font-size: 12px; font-weight: 700; border: 1.5px solid var(--border); }
+.sys-steps li.done { color: var(--text); }
+.sys-steps li.done .ic { background: var(--green); border-color: var(--green); color: var(--bg); }
+.sys-steps li.bad .ic { background: var(--red); border-color: var(--red); color: var(--bg); }
+.sys-steps li.now { color: var(--text); font-weight: 600; }
+.sys-steps li.now .ic { border-color: var(--accent); border-top-color: transparent; animation: spin .8s linear infinite; }
+.sys-steps .t { margin-left: auto; font-family: var(--mono); font-size: var(--text-sm); color: var(--muted); font-weight: 400; }
+.sys-log { margin: 0; padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); background: var(--surface2);
+  font-family: var(--mono); font-size: var(--text-sm); line-height: 1.6; white-space: pre-wrap; word-break: break-word;
+  max-height: 300px; overflow-y: auto; }
+.sys-big { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 10px; padding: 30px 20px 22px; }
+.sys-big .ring { width: 54px; height: 54px; border-radius: 50%; border: 4px solid var(--accent-dim);
+  border-top-color: var(--accent); animation: spin 1s linear infinite; }
+.sys-big .tick { width: 54px; height: 54px; border-radius: 50%; background: var(--green); color: var(--bg);
+  display: grid; place-items: center; font-size: 28px; font-weight: 700; }
+.sys-big .bang { width: 54px; height: 54px; border-radius: 50%; border: 3px solid var(--red); color: var(--red);
+  display: grid; place-items: center; font-size: 28px; font-weight: 800; }
+.sys-big h2 { margin: 0; font-size: 24px; font-weight: 700; }
+.sys-big .ver-sub { max-width: 560px; }
+.sys-k { font-size: var(--text-xs); letter-spacing: .1em; text-transform: uppercase; color: var(--accent); font-weight: 700; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .sys-steps li.now .ic, .sys-big .ring { animation: none; } }
+

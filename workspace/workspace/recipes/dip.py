@@ -25,6 +25,15 @@ Every verb:
     of every dip verb is stamped with its recipe and verb
   * runs at the recipe's ``lmove_vaj`` unless the call names ``vaj``
     (``Recipe.immerse`` / ``retract``)
+  * rides the recipe's ``dip_offset`` — ``[dx, dy]`` mm, the vessel's
+    vertical axis moved sideways in the target anchor's frame (default
+    ``[0, 0]``, on the axis). The hover, the dive and the lift all
+    target the offset axis, so the three stay on one vertical line and
+    the axis contract (``axis_tol``) measures against it. Set it in
+    recipes.j2 (``dip_offset: [0, 7]``) or per call
+    (``above / immerse / retract(..., dip_offset=...)``). It belongs to
+    THIS recipe only: a pick/place recipe over the same component, and
+    the component's calibration, never see it.
 
 A subclass sets the defaults it wants (``DIP_ANCHOR`` … ``DIP_OUT``) and,
 when its component is a holder, overrides ``_dip_target`` to resolve
@@ -33,7 +42,16 @@ what actually sits on it.
 
 from __future__ import annotations
 
-from workspace.recipes.recipe import Recipe
+from workspace.recipes.recipe import Recipe, RecipeError
+
+
+def _dip_offset(value):
+    """``[dx, dy]`` as two floats — a dip offset is never guessed."""
+    try:
+        dx, dy = (float(v) for v in value)
+    except (TypeError, ValueError):
+        raise RecipeError(f"dip_offset: [dx, dy] in mm, got {value!r}")
+    return [dx, dy]
 
 
 class DipSite(Recipe):
@@ -43,6 +61,14 @@ class DipSite(Recipe):
     DIP_IN = 0              # immerse(): tip depth below the payload top (mm)
     DIP_OUT = 0             # retract(): tip height above the payload top (mm)
 
+    def __init__(self, workspace, core, component=None, dip_offset=(0, 0), **kwargs):
+        self.dip_offset = _dip_offset(dip_offset)
+        super().__init__(workspace=workspace, core=core, component=component, **kwargs)
+
+    def _axis(self, dip_offset):
+        """The call's dip offset, else the recipe's."""
+        return self.dip_offset if dip_offset is None else _dip_offset(dip_offset)
+
     def _dip_target(self):
         """``(component, solid_name)`` the verbs act on. Default: this
         recipe's own component — a rack whose anchors ARE the vessels.
@@ -50,7 +76,7 @@ class DipSite(Recipe):
         return self.component, "body"
 
     # ── the three verbs ───────────────────────────────────────────────
-    def above(self, anchor=None, padding=None, **kwargs):
+    def above(self, anchor=None, padding=None, dip_offset=None, **kwargs):
         anchor = self.DIP_ANCHOR if anchor is None else anchor
         padding = self.DIP_PADDING if padding is None else padding
         self._wire_verb("above", anchor)
@@ -62,21 +88,21 @@ class DipSite(Recipe):
         return super().above(
             anchor=anchor, solid_name=solid_name, component=component,
             padding=padding, tool_tcp_z_offset=height_load,
-            tool_tip_z_offset=height_load, **kwargs,
+            tool_tip_z_offset=height_load, axis_offset=self._axis(dip_offset), **kwargs,
         )
 
-    def immerse(self, dist=None, anchor=None, **kwargs):
+    def immerse(self, dist=None, anchor=None, dip_offset=None, **kwargs):
         anchor = self.DIP_ANCHOR if anchor is None else anchor
         dist = self.DIP_IN if dist is None else dist
         self._wire_verb("immerse", anchor)
         component, solid_name = self._dip_target()
         return super().immerse(dist=dist, anchor=anchor, solid_name=solid_name,
-                               component=component, **kwargs)
+                               component=component, axis_offset=self._axis(dip_offset), **kwargs)
 
-    def retract(self, dist=None, anchor=None, **kwargs):
+    def retract(self, dist=None, anchor=None, dip_offset=None, **kwargs):
         anchor = self.DIP_ANCHOR if anchor is None else anchor
         dist = self.DIP_OUT if dist is None else dist
         self._wire_verb("retract", anchor)
         component, solid_name = self._dip_target()
         return super().retract(dist=dist, anchor=anchor, solid_name=solid_name,
-                               component=component, **kwargs)
+                               component=component, axis_offset=self._axis(dip_offset), **kwargs)

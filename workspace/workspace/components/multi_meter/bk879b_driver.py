@@ -154,6 +154,40 @@ class BK879B:
             log.warning("BK879B %s: discarded %d stale byte(s) before %s: %r",
                         self.port, len(stale), before, stale)
 
+    def _resync(self, cmd: str, got: bytes, quiet_s: float = 0.5) -> None:
+        """After a query got no answer: read until the port has been quiet
+        for ``quiet_s``, so a late reply is discarded here — and logged —
+        instead of being taken for the reply to the next query. ``_drain``
+        alone only clears bytes already arrived; a reply still in flight
+        lands after it.
+
+        WHY THIS IS A FIX, NOT A RECONNECT/RETRY HACK. The meter answers
+        strictly in order, one reply per command, on a link with no framing
+        or sequence numbers: the only way to know which reply belongs to
+        which command is that nothing else is in the pipe. The failure seen
+        in the field (``discarded 3 stale byte(s) ... b'D\\r\\n'``, then
+        ``meter did not select secondary D (asked: '', after setting: '')``)
+        was exactly a reply arriving AFTER its readline() timed out: it sat
+        in the buffer, was read as the answer to the next query, and every
+        answer after it was one step off. Resyncing here restores that
+        invariant at the point it breaks. It does not reopen the port,
+        resend anything or hide the failure — the query that got no answer
+        still returns "" / raises, and the late bytes are logged. Nothing is
+        retried; the meter just never starts a conversation out of step."""
+        late = b""
+        old_timeout = self.ser.timeout
+        self.ser.timeout = quiet_s
+        try:
+            while True:
+                chunk = self.ser.read(256)
+                if not chunk:
+                    break
+                late += chunk
+        finally:
+            self.ser.timeout = old_timeout
+        log.warning("BK879B %s: no answer to %s (got %r); late bytes discarded: %r",
+                    self.port, cmd, got, late)
+
     def _query(self, cmd: str) -> str:
         with self._lock:
             if not self.is_connected():
@@ -161,9 +195,13 @@ class BK879B:
             self._drain(cmd)
             self._send(cmd)
             raw = self.ser.readline()
-        if not raw:
-            return ""
-        text = raw.decode("ascii", errors="replace").strip()
+            text = raw.decode("ascii", errors="replace").strip()
+            if not text:
+                # No answer in time (or a bare line ending): the reply may
+                # still be on its way, and would be read as the answer to
+                # the NEXT query. Wait it out before anything else is sent.
+                self._resync(cmd, raw)
+                return ""
         m = _ERROR_RE.match(text)
         if m:
             codes = {"10": "Unknown command", "11": "Parameter error", "12": "Syntax error"}
@@ -222,15 +260,29 @@ class BK879B:
         return self._query("FUNCtion:impa?")
 
     def set_secondary(self, func: str) -> None:
-        """Select the second reading (D | Q | THETA | ESR). ASKS the meter
-        first and sends only on a difference — unlike the cached setters,
-        the second reading is one button away on the front panel, so a
-        cache could be stale; asking is silent, a change beeps."""
+        """Select the second reading (D | Q | THETA | ESR). The first time
+        (and after ``go_local``, which drops the cache) it ASKS the meter and
+        sends only on a difference — the operator may have pressed D/Q/θ.
+        After that it is cached like the other setters: in remote mode the
+        panel's D/Q/θ button is locked, and a query on every read lands
+        right after a fresh contact, while the meter is slow to answer.
+
+        Not a workaround: the old per-read ``impb?`` was the one query the
+        run could not afford at that moment (see ``_resync`` for the failure
+        it set off), and it protected against nothing — the panel button is
+        already locked in remote mode, and ``go_local`` drops this cache for
+        the one case where the operator really can change it."""
         func = func.upper()
         if func not in _SECONDARY_UNITS:
             raise ValueError(f"secondary must be one of {list(_SECONDARY_UNITS)}, got {func}")
         with self._lock:
+            if self._secondary == func:
+                return
             first = self.get_secondary()
+            if not first:
+                # No answer is not a different answer: sending the setting
+                # now would beep, restart the measurement and slow it more.
+                raise RuntimeError(f"meter did not answer FUNCtion:impb? (selecting secondary {func})")
             if first.strip().upper() != func:
                 self._send(f"FUNCtion:impb {func}")
                 second = self.get_secondary()

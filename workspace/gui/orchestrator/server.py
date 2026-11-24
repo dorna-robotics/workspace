@@ -53,7 +53,11 @@ from gui.orchestrator.handlers import (  # noqa: F401
     ProjectFilesSocket,
     ProjectUploadHandler,
     ProjectVersionHandler,
+    SystemHandler,
+    SystemLogHandler,
+    SystemSummaryHandler,
     LaunchConfigHandler,
+    SceneHandler,
     ProjectScreenFileHandler,
     RemoveWorkspaceHandler,
     UpdateKwargsHandler,
@@ -126,6 +130,7 @@ class OrchestratorHTTPServer:
             (r"/workspace/([^/]+)/status", WorkspaceStatusHandler, dict(orch=self.orch)),
             (r"/workspace/([^/]+)/logs", WorkspaceLogsHandler, dict(orch=self.orch)),
             (r"/workspace/([^/]+)/launch_config", LaunchConfigHandler, dict(orch=self.orch)),
+            (r"/workspace/([^/]+)/scene", SceneHandler, dict(orch=self.orch)),
             (r"/workspace/([^/]+)/setup/(.*)", ProjectScreenFileHandler, dict(orch=self.orch, key="setup")),
             (r"/workspace/([^/]+)/replan/(.*)", ProjectScreenFileHandler, dict(orch=self.orch, key="replan")),
             (r"/workspace/([^/]+)/kwargs", UpdateKwargsHandler, dict(orch=self.orch)),
@@ -134,6 +139,9 @@ class OrchestratorHTTPServer:
             (r"/workspace/([^/]+)/files/([^/]+)", ProjectFilesHandler, dict(orch=self.orch)),
             (r"/ws/files/([^/]+)", ProjectFilesSocket, dict(orch=self.orch)),
             (r"/workspace/([^/]+)/version", ProjectVersionHandler, dict(orch=self.orch)),
+            (r"/system", SystemHandler, dict(orch=self.orch)),
+            (r"/system/log", SystemLogHandler, dict(orch=self.orch)),
+            (r"/system/summary", SystemSummaryHandler, dict(orch=self.orch)),
 
             # ---- WebSocket live status ----
             (r"/ws/status", StatusWebSocket, dict(orch=self.orch)),
@@ -158,8 +166,10 @@ class OrchestratorHTTPServer:
                 loop.default_exception_handler(context)
         asyncio.get_event_loop().set_exception_handler(_ws_exception_handler)
 
+        # The orchestrator's handle on this IOLoop (Orchestrator.loop)
+        self.orch.loop = tornado.ioloop.IOLoop.current()
         # Start WS broadcast loop
-        tornado.ioloop.IOLoop.current().add_callback(_ws_poll_loop, self.orch)
+        self.orch.loop.add_callback(_ws_poll_loop, self.orch)
         print(f"Orchestrator server running on {self.host}:{self.port}")
         print(f"GUI: http://{self.host}:{self.port}/web/orchestrator.html")
         if ORCH_TOKEN:

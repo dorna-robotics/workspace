@@ -5,6 +5,55 @@ import { openFileBrowser } from "./files.js";
 const _resetSvg = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>`;
 const _lockSvg  = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`;
 
+// ── a launched run's parameters: the record ──────────────────────────
+// Once launched, Parameters shows what the run was STARTED with — the
+// orchestrator's run_kwargs, taken at Start — and says so in the header
+// of whatever surface shows it. Before the first Start the run has no
+// record yet; the values set for this launch are what it will get.
+export function frozenValues(launchConfig) {
+  return launchConfig?.run_kwargs || launchConfig?.kwargs_values || {};
+}
+
+export function recordChip(launchConfig) {
+  const t = launchConfig?.run_started;
+  let when = "not started yet";
+  if (t) {
+    const d = new Date(t * 1000);
+    const day = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    const hm = d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+    when = `as started <b>${day}, ${hm}</b>`;
+  }
+  return `<span class="pill kw-record">${_lockSvg}<span>Read-only · ${when}</span></span>`;
+}
+
+// ── the scene, read-only, for every project screen ───────────────────
+// ``api.scene`` on all three hosts (setup, Replan view, pendant screen):
+// the project's DECLARED scene — launch.yaml's scene files rendered and
+// merged by workspace/scene.py, the reader the run builds from — so a
+// screen reads scene facts (a pump's stroke, a rack's size) instead of
+// typing a copy that can drift. Frozen: a screen reads it, never edits
+// it. ``null`` when the scene cannot be read (the run could not build
+// either); the reason goes to the console, and a screen that needs a
+// fact says it is unavailable rather than guessing.
+function _deepFreeze(o) {
+  if (o && typeof o === "object" && !Object.isFrozen(o)) {
+    Object.freeze(o);
+    for (const v of Object.values(o)) _deepFreeze(v);
+  }
+  return o;
+}
+export async function loadScene(wsName) {
+  try {
+    const r = await fetch(`/orchestrator/api/workspace/${encodeURIComponent(wsName)}/scene`);
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || r.statusText);
+    return _deepFreeze(j.scene || {});
+  } catch (err) {
+    console.error(`api.scene: ${wsName}'s scene could not be read —`, err);
+    return null;
+  }
+}
+
 // ── the project's own run-setup screen (``setup:``) ──────────────────
 //
 // Same hosting contract as the pendant screen (hmi-guide §4b) with one
@@ -13,7 +62,7 @@ const _lockSvg  = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" s
 //
 //   HTML shape  — data-field="key" on an input/select/checkbox
 //   JS shape    — export default {css, mount(root, api), value(), validate()}
-//   api         — {schema, values, frozen, theme, onTheme}
+//   api         — {schema, values, frozen, scene, theme, onTheme, save}
 //
 // Served by the ORCHESTRATOR (same-origin), because Parameters is used
 // before launch, when the runtime server is not up yet.
@@ -112,7 +161,9 @@ async function mountProjectSetup(container, schema, values, frozen, wsName) {
   container._setupHost = host;
 
   try {
+    const scene = await loadScene(wsName);
     const api = {
+      scene,
       get schema() {
         const s = {};
         for (const [k, v] of Object.entries(schema || {})) {
@@ -184,13 +235,10 @@ export function renderKwargsForm(container, schema, values, frozen = false, wsNa
   // Launch buttons and schema validation. The generic form below is
   // for everyone else.
   container._setupHost = null;
-  // The banner is the modal's, not the form's, and only when it says
-  // something the operator must know: the parameters are locked. Every
-  // project's Parameters reads the same from the top down.
-  if (frozen) {
-    container.insertAdjacentHTML("beforeend",
-      `<div class="kwargs-banner frozen">${_lockSvg} Parameters are locked while the workspace is running</div>`);
-  }
+  // Frozen reads as a filled-in record, not greyed-out controls
+  // (style.css .kw-frozen); the surface's header says "Read-only"
+  // (recordChip), so the form carries no banner of its own.
+  container.classList.toggle("kw-frozen", !!frozen);
   if (schema && schema._setup) {
     mountProjectSetup(container, schema, values, frozen, wsName);
     return;
@@ -554,7 +602,8 @@ export function validateKwargsForm(container, schema) {
       if (field) {
         const errEl = document.createElement("div");
         errEl.className = "kw-error";
-        errEl.textContent = err;
+        errEl.innerHTML = `<span class="msg-mark sm" data-level="bad" aria-hidden="true">!</span>`;
+        errEl.append(err);
         field.appendChild(errEl);
       }
     }

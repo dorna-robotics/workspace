@@ -32,6 +32,7 @@ Scene yaml (see ``docs/liquid-handling.md`` for every setting)::
       critical: true
 
       syringe_volume_ul: 100.0          # µL the full plunger stroke sweeps
+      max_stroke_ul: 80.0               # optional — the plunger never stands above it
       valve_type: 3                     # see the table in DEFAULTS
       variant: "standard"
       high_resolution: true
@@ -140,6 +141,14 @@ class Pump:
         # ~125). Wrong value = every dose off by the same ratio.
         syringe_volume_ul=100.0,
 
+        # The highest the plunger may EVER stand, µL — a hard limit every
+        # move is checked against before anything moves (_stroke): a draw,
+        # an absolute move, the line ops' strokes, a prime fill. A target
+        # above it is refused, never clamped. None = the full barrel. It
+        # is not a scale: µL↔steps stays syringe_volume_ul. Must be above
+        # 0 and at most syringe_volume_ul, checked when the scene loads.
+        max_stroke_ul=None,
+
         # Valve BODY the firmware reports (?21000); initialize()
         # refuses on mismatch. None = skip the check.
         #   0 = 3-way 120° Y valve            (DIP 4-6: off/off/off, factory)
@@ -219,6 +228,10 @@ class Pump:
         self._port = str(prm["port"] or "")
         self._critical = bool(prm["critical"])
         self._syringe_ul = float(prm["syringe_volume_ul"])
+        self._max_stroke_ul = self._check_max_stroke(prm["max_stroke_ul"], self._syringe_ul)
+        if self._max_stroke_ul is False:
+            raise ValueError(f"{name}: max_stroke_ul must be above 0 and at most syringe_volume_ul "
+                             f"({self._syringe_ul:g}), got {prm['max_stroke_ul']!r}")
 
         self._ports = self._parse_ports(prm["valve_ports"], prm["outlets"])
         self._names: dict[str, int] = {v["name"]: k for k, v in self._ports.items()}
@@ -266,7 +279,8 @@ class Pump:
                     critical=self._critical,
                     meta={"port": self._port, "driver": prm["driver"],
                           "address": prm["address"],
-                          "syringe_volume_ul": self._syringe_ul, "ports": self.ports()},
+                          "syringe_volume_ul": self._syringe_ul,
+                          "max_stroke_ul": self._max_stroke_ul, "ports": self.ports()},
                     recover_factory=lambda: AutoRecover(
                         recover_fn=self.pump.recover, set_status=self.pump._set_state,
                         log_label=self.pump.id),
@@ -403,6 +417,30 @@ class Pump:
         Change it with ``initialize(syringe_volume_ul=…)``."""
         return self._syringe_ul
 
+    @staticmethod
+    def _check_max_stroke(value, syringe_ul: float):
+        """``max_stroke_ul`` as a float, ``None`` when unset, ``False``
+        when it is not a volume in (0, syringe_ul]."""
+        if value is None:
+            return None
+        try:
+            v = float(value)
+        except (TypeError, ValueError):
+            return False
+        return v if 0 < v <= syringe_ul else False
+
+    @pure
+    def stroke_volume(self) -> float:
+        """µL one stroke may hold — ``min(syringe_volume, max_stroke_ul)``:
+        the most a single fill can take. Size stroke loops from this,
+        never from the barrel."""
+        return self._syringe_ul if self._max_stroke_ul is None else min(self._syringe_ul, self._max_stroke_ul)
+
+    def _limit_steps(self) -> int:
+        """The highest plunger position allowed, in whole steps — rounded
+        DOWN, so the limit is never exceeded by a fraction of a step."""
+        return int(math.floor(self.stroke_volume() / self._syringe_ul * self.pump.max_steps() + 1e-9))
+
     def _ul_to_steps(self, ul: float) -> int:
         return int(round(float(ul) / self._syringe_ul * self.pump.max_steps()))
 
@@ -419,26 +457,55 @@ class Pump:
     def _stroke(self, op: str, target_steps: int, port: int, speed,
                 sim_return: bool = True) -> bool:
         """Valve to ``port``, optional speed, plunger to ``target_steps``.
-        Refuses overflow/underflow before touching hardware.
+        THE ONE PLACE a plunger position is commanded, so the one place
+        its bounds are checked: below 0, or above the stroke limit
+        (``max_stroke_ul``, else the barrel), is refused before anything
+        moves — never clamped.
+
+        ``speed`` — the one rule every op's ``speed`` goes through: a
+        number (0-100) runs this stroke at it; a pair ``[fill, empty]``
+        runs it at ``fill`` when the plunger draws (the barrel fills,
+        whatever the port) and at ``empty`` when it pushes. So an op
+        that strokes both ways — ``aspirate_line`` emptying into its
+        return port, ``dispense_line`` refilling from it, ``prime`` —
+        gives each direction its own speed. ``None`` leaves the register
+        as it stands.
 
         STEPS ARE THE TRUTH. The plunger only stands on whole steps, so
         every bound is checked in steps — never in µL against a
         stepped read-back: a 998 µL draw lands on 38,323 steps
         (997.995 µL) and a µL check then refused the 998 µL dispense of
         the very same liquid (bench, 2026-10-12)."""
+        if isinstance(speed, (list, tuple)) and len(speed) != 2:
+            raise ValueError(f"{self.name}: {op}: speed is a number or [fill, empty], got {speed!r}")
         t0 = time.monotonic()
         ok = False
         target_steps = int(target_steps)
         held = self.pump.position_steps()
+        stroke_speed = None
         try:
-            if target_steps < 0 or target_steps > self.pump.max_steps():
-                self.pump.last_error = (3, f"{op}: target {self._fmt(target_steps)} outside the "
-                                           f"barrel, 0-{self._fmt(self.pump.max_steps())}")
+            limit = self._limit_steps()
+            if target_steps < 0 or target_steps > limit:
+                bound = "the barrel" if self._max_stroke_ul is None else "the stroke limit (max_stroke_ul)"
+                holding = "" if held is None else f", holding {self._fmt(held)}"
+                self.pump.last_error = (3, f"{op}: target {self._fmt(target_steps)} outside "
+                                           f"0-{self._fmt(limit)}, {bound}{holding}")
                 return False
-            if not self.pump.initialized and not self.pump.initialize(sim_return=sim_return):
-                return False
-            if speed is not None and float(speed) != self.pump.speed():
-                if not self.pump.set_speed(float(speed), sim_return=sim_return):
+            start = held
+            if not self.pump.initialized:
+                if not self.pump.initialize(sim_return=sim_return):
+                    return False
+                start = self.pump.position_steps()      # homed
+            if isinstance(speed, (list, tuple)):
+                if start is None:
+                    self.pump.last_error = (-1, f"{op}: plunger position unknown — a [fill, empty] "
+                                                f"speed needs the stroke's direction")
+                    return False
+                stroke_speed = speed[0] if target_steps > start else speed[1]
+            else:
+                stroke_speed = speed
+            if stroke_speed is not None and float(stroke_speed) != self.pump.speed():
+                if not self.pump.set_speed(float(stroke_speed), sim_return=sim_return):
                     return False
             if self.pump.valve_port() != port and not self.pump.valve_to(port, sim_return=sim_return):
                 return False
@@ -451,7 +518,9 @@ class Pump:
             return ok
         finally:
             rec = {"op": op, "port": port, "name": self.name_of(port),
-                   "target_ul": round(self._steps_to_ul(target_steps), 3), "seconds": round(time.monotonic() - t0, 3),
+                   "target_ul": round(self._steps_to_ul(target_steps), 3),
+                   "speed": None if stroke_speed is None else float(stroke_speed),
+                   "seconds": round(time.monotonic() - t0, 3),
                    "ok": ok, "error": None if ok else self.pump.last_error[1]}
             self._last_op = rec
             self._op_log.append(rec)
@@ -460,23 +529,33 @@ class Pump:
     # ── atomic ops (PumpLink-compatible signatures) ───────────────
 
     def initialize(self, syringe_volume_ul=None, half_force: bool = True,
-                   sim_return: bool = True) -> bool:
+                   max_stroke_ul=None, sim_return: bool = True) -> bool:
         """Configure the pump and home the plunger and valve. Homing
         expels the barrel through the output port — clear the deck
         first.
 
         Pass ``syringe_volume_ul`` for a barrel swap without touching
         the scene: it rescales every volumetric call from here on.
+        Pass ``max_stroke_ul`` to set the stroke limit; the limit must
+        fit the barrel (the new one, on a swap), else nothing changes.
         """
+        syr = self._syringe_ul
         if syringe_volume_ul is not None:
             try:
-                v = float(syringe_volume_ul)
+                syr = float(syringe_volume_ul)
             except (TypeError, ValueError):
-                v = 0.0
-            if v <= 0:
+                syr = 0.0
+            if syr <= 0:
                 self.pump.last_error = (3, f"syringe volume must be > 0, got {syringe_volume_ul!r}")
                 return False
-            self._syringe_ul = v
+        cap = self._max_stroke_ul if max_stroke_ul is None else max_stroke_ul
+        cap = self._check_max_stroke(cap, syr)
+        if cap is False:
+            self.pump.last_error = (3, f"max_stroke_ul must be above 0 and at most the syringe volume "
+                                       f"({syr:g} µL), got "
+                                       f"{max_stroke_ul if max_stroke_ul is not None else self._max_stroke_ul!r}")
+            return False
+        self._syringe_ul, self._max_stroke_ul = syr, cap
         ok = self.pump.initialize(half_force=half_force, sim_return=sim_return)
         if ok:
             self._material_in_barrel = None
@@ -500,17 +579,13 @@ class Pump:
                  sim_return: bool = True, **_) -> bool:
         """Draw ``volume_ul`` in through ``port`` (default: the single
         outlet): the plunger moves ``volume_ul``'s whole steps further.
-        Refuses if the barrel would overflow."""
+        Refused (by :meth:`_stroke`) past the stroke limit."""
         p = self._resolve(port)
         held = self.pump.position_steps()
         if held is None:
             self.pump.last_error = (-1, "aspirate: pump unreachable")
             return False
         n = self._ul_to_steps(volume_ul)
-        if held + n > self.pump.max_steps():
-            self.pump.last_error = (3, f"aspirate {float(volume_ul):.3f} µL ({n} steps) would overflow: "
-                                       f"holding {self._fmt(held)} of {self._fmt(self.pump.max_steps())}")
-            return False
         if not self._stroke("aspirate", held + n, p, speed, sim_return):
             return False
         if not self._ports[p]["outlet"]:
@@ -565,13 +640,14 @@ class Pump:
 
     def prime_cycles(self, from_port: PortRef, to_port: PortRef = None) -> int:
         """Cycles needed so the pushed volume exceeds the line's dead
-        volume: ceil((tube_in + tube_out) / barrel) + 1 margin cycle.
+        volume: ceil((tube_in + tube_out) / stroke) + 1 margin cycle —
+        a stroke is :meth:`stroke_volume`, the most one fill takes.
         The only inputs are the declared tube_volume_ul values — an
         outlet's must therefore include the fitted needle's bore (its
         definition is valve→tip). Ports with tube_volume_ul 0
         contribute nothing; with no tube volumes declared this is 1."""
         dead = self.tube_volume(from_port) + self.tube_volume(self._resolve(to_port))
-        return max(1, math.ceil(dead / self._syringe_ul - 1e-9) + (1 if dead > 0 else 0))
+        return max(1, math.ceil(dead / self.stroke_volume() - 1e-9) + (1 if dead > 0 else 0))
 
     def prime(self, cycles: Optional[int] = None, volume_ul=None, from_port: PortRef = None,
               to_port: PortRef = None, aspiration_speed=None, dispensing_speed=None,
@@ -582,14 +658,15 @@ class Pump:
 
         cycles=None → computed from the declared tube volumes via
         :meth:`prime_cycles`, so a 25 µL barrel behind 150 µL of
-        tubing gets 7 cycles, not 1. volume_ul=None → full barrel.
+        tubing gets 7 cycles, not 1. volume_ul=None → a full stroke
+        (:meth:`stroke_volume`); a larger volume_ul is cut to it.
         Under-priming returns success with no error signature — size
         the tube volumes from the real plumbing.
         """
         src, dst = self._resolve_source(from_port), self._resolve(to_port)
         if cycles is None:
             cycles = self.prime_cycles(src, dst)
-        full = self._syringe_ul if volume_ul is None else min(float(volume_ul), self._syringe_ul)
+        full = self.stroke_volume() if volume_ul is None else min(float(volume_ul), self.stroke_volume())
         for _ in range(int(cycles)):
             if not self.move_to_volume(full, port=src, speed=aspiration_speed,
                                        sim_return=sim_return):
@@ -622,10 +699,13 @@ class Pump:
         """Draw ``volume_ul`` in through ``port`` (default: the single
         outlet) — MORE than the barrel holds when needed. The drawn
         liquid is held in the outlet's LINE, not the barrel: whenever
-        the barrel is full, the valve turns to ``return_port`` and the
+        the barrel is at the stroke limit (:meth:`stroke_volume`), the
+        valve turns to ``return_port`` and the
         barrel empties there (the line's own system liquid going back
-        where it came from), then turns back and draws on. ``speed``
-        runs every stroke, the draws and the empties.
+        where it came from), then turns back and draws on. ``speed``: a
+        number runs every stroke, the draws and the empties; a pair
+        ``[fill, empty]`` draws at ``fill`` and empties into the return
+        port at ``empty`` (:meth:`_stroke`).
 
         ``return_port``: the call's, else the outlet's from the scene,
         else refused. The line must be primed with that port's liquid.
@@ -655,9 +735,10 @@ class Pump:
             if held is None:
                 self.pump.last_error = (-1, "aspirate_line: pump unreachable")
                 return False
-            room = self.pump.max_steps() - held
+            room = self._limit_steps() - held
             if room <= 0:
-                # Barrel full: its liquid back to the return port.
+                # At the stroke limit: the barrel's liquid back to the
+                # return port.
                 if not self._stroke("aspirate_line: return", 0, rp, speed, sim_return):
                     return False
                 continue
@@ -672,8 +753,11 @@ class Pump:
         """Push ``volume_ul`` out of ``port`` (default: the single
         outlet) — the mirror of :meth:`aspirate_line`: whatever the
         barrel holds goes out first, then the barrel refills from
-        ``return_port`` and pushes again, until ``volume_ul`` has left
-        the tip. ``speed`` runs every stroke.
+        ``return_port`` (at most a stroke, :meth:`stroke_volume`) and
+        pushes again, until ``volume_ul`` has left
+        the tip. ``speed``: a number runs every stroke; a pair ``[fill,
+        empty]`` refills from the return port at ``fill`` and pushes
+        out of the tip at ``empty`` (:meth:`_stroke`).
 
         Refuses before anything moves when the line holds less than
         ``volume_ul`` (:meth:`line_volume`)."""
@@ -696,7 +780,7 @@ class Pump:
                 return False
             if held <= 0:
                 # Barrel empty: refill from the return port.
-                fill = min(left, self.pump.max_steps())
+                fill = min(left, self._limit_steps())
                 if not self._stroke("dispense_line: refill", fill, rp, speed, sim_return):
                     return False
                 self._material_in_barrel = self.name_of(rp)
@@ -760,14 +844,32 @@ class Pump:
         return {
             "connected": self.is_connected(), "sim": self._simulation_mode,
             "initialized": self.pump.initialized, "barrel_ul": self.volume(),
-            "syringe_ul": self._syringe_ul, "material_in_barrel": self._material_in_barrel,
+            "syringe_ul": self._syringe_ul, "stroke_ul": self.stroke_volume(),
+            "material_in_barrel": self._material_in_barrel,
             "material_at": dict(self._material_at), "open_port": self.open_port_name(),
             "line_ul": {self.name_of(p): round(self._steps_to_ul(s), 3) for p, s in self._line_steps.items()},
             "speed": self.speed(), "valve_type": self.pump.valve_type(),
             "ports": self.ports(), "status": self.status(), "last_op": self.last_op(),
         }
 
-    # ── operator actions (component-guide §8) ─────────────────────
+    # ── operator facts + actions (component-guide §8) ─────────────
+
+    def operator_facts(self) -> list[dict]:
+        """The Devices tab's glance — BOOKKEEPING ONLY, no serial query:
+        it is asked every few seconds while on screen, run or not, and a
+        query must never interleave with a move on the line."""
+        op = self._last_op or {}
+        last = "—" if not op else (f"{op['op']} → {op['target_ul']:g} µL · "
+                                   f"{'ok' if op['ok'] else 'failed'} · {op['seconds']:g} s")
+        lines = " · ".join(f"{self.name_of(p)} {self._steps_to_ul(s):.1f} µL"
+                           for p, s in self._line_steps.items()) or "—"
+        return [
+            {"label": "Last op", "value": last},
+            {"label": "In barrel", "value": self._material_in_barrel or "—"},
+            {"label": "Line", "value": lines},
+            {"label": "Stroke", "value": f"{self.stroke_volume():g} of {self._syringe_ul:g} µL"},
+        ]
+
 
     def initialize_pump(self):
         return self.initialize()
@@ -811,12 +913,12 @@ class Pump:
 
     def operator_actions(self) -> list[dict]:
         return [
-            {"label": "Initialize", "method": "initialize_pump", "icon": "power",     "group": "run"},
-            {"label": "Stop",       "method": "stop_pump",       "icon": "power-off", "group": "run"},
-            {"label": "Empty",      "method": "empty_pump",      "icon": "forward",   "group": "fluid"},
-            {"label": "Report",     "method": "report",          "icon": "eye",       "group": "fluid"},
-            {"label": "Reconnect",  "method": "reconnect",       "icon": "rotate",    "group": "conn"},
-            {"label": "Release",    "method": "release_pump",    "icon": "link-off",  "group": "conn"},
+            {"label": "Initialize", "method": "initialize_pump", "icon": "power",     "group": "Pump"},
+            {"label": "Stop",       "method": "stop_pump",       "icon": "power-off", "group": "Pump"},
+            {"label": "Empty",      "method": "empty_pump",      "icon": "forward",   "group": "Pump"},
+            {"label": "Report",     "method": "report",          "icon": "eye",       "group": "Status"},
+            {"label": "Reconnect",  "method": "reconnect",       "icon": "rotate",    "group": "Connection"},
+            {"label": "Release",    "method": "release_pump",    "icon": "link-off",  "group": "Connection"},
         ]
 
     # ── teardown ──────────────────────────────────────────────────

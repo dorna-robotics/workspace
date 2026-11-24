@@ -20,7 +20,8 @@ description: "Use when building or changing ANY platform GUI surface — orchest
 - §2 tokens — colors, radius scale, `--space-1..6`, `--text-xs..xl`,
   shadows, `--motion-*`. Raw hex/px in page CSS is a defect.
 - §3 surface catalogue — reuse before inventing (cards, pills, step
-  rows, modals, toasts)
+  rows, modals, messages — §3.3b: every message goes to the top bar's
+  line via `toast` / `notify`, never a page's own banner or popup)
 - §6 anti-patterns — no tinted state backgrounds, no gradients, no
   inline style overrides, no new colors
 - §8 state matrix — every interactive element ships

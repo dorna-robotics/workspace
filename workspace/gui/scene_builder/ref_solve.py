@@ -28,6 +28,7 @@ import tempfile
 
 import yaml
 from workspace.j2 import render_text
+from workspace.scene import load_scene, scene_paths
 
 
 def main(project_dir):
@@ -45,20 +46,10 @@ def main(project_dir):
     with open(os.path.join(project_dir, "launch.yaml")) as f:
         launch = yaml.safe_load(f) or {}
 
-    scene = launch.get("scene") or []
-    if isinstance(scene, str):
-        scene = [scene]
-    scene = [os.path.join(project_dir, p) for p in scene]
-
-    # Merge the scene the way Workspace does (render j2, later files
-    # override), then force EVERY component into simulation so nothing
+    # The scene as Workspace reads it (workspace/scene.py — the one
+    # reader), then EVERY component forced into simulation so nothing
     # touches hardware from a builder click.
-    cfgs = {}
-    for p in scene:
-        text = open(p).read()
-        if p.endswith(".j2") or "{%" in text or "{{" in text:
-            text = render_text(text, os.path.dirname(os.path.abspath(p)))
-        cfgs.update(yaml.safe_load(text) or {})
+    cfgs = load_scene(scene_paths(project_dir, launch))
     for name, cfg in cfgs.items():
         if isinstance(cfg, dict):
             cfg["simulation"] = True

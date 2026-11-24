@@ -1,16 +1,18 @@
-// Note: this page opens 2 WebSocket connections:
+// Note: this page opens these WebSocket connections:
 //   1. /ws       — multiplexed (steps + status + devices + ops + schedule).
 //                  Supports a client→server subscribe envelope for
 //                  future thin clients that want only a subset of
 //                  event types.
 //   2. /ws/logs  — logs streaming on the orchestrator (high-volume,
-//                  different owner, kept separate)
+//                  different owner, kept separate); the Logs panel
+//                  reads its tail, and while the launch card shows, a
+//                  second one reads that wait (?since=boot / run).
 // Legacy endpoints (/ws/steps, /ws/status, /ws/devices,
 // /ws/operator_actions, /ws/schedule) remain on the server for back-
 // compat — the orchestrator subscriber + 3D viewer still use
 // /ws/status. See docs/internal/ws-multiplexing-plan.md.
-import { apiFetch, stateVariant, stateLabel, isRunning, isLaunched, isBooting, canStart, isStarted, isWaiting, fmtUptime, fmtTimestamp, esc, wsViewerUrl, connectStatusWS, confirmDialog, deviceFaultGate, wireCommand, feedback, downEdge, toast } from "./api.js";
-import { renderKwargsForm, readKwargsForm, validateKwargsForm, loadKwargsFromFile, loadKwargsFromBench, mountScreen } from "./kwargs.js";
+import { apiFetch, stateVariant, stateLabel, isRunning, isLaunched, isBooting, canStart, isStarted, isWaiting, fmtUptime, fmtTimestamp, esc, wsViewerUrl, connectStatusWS, confirmDialog, deviceFaultGate, wireCommand, feedback, downEdge, toast, notify, unnotify, notifyHost } from "./api.js";
+import { renderKwargsForm, readKwargsForm, validateKwargsForm, loadKwargsFromFile, loadKwargsFromBench, mountScreen, frozenValues, recordChip, loadScene } from "./kwargs.js";
 import { openFileBrowser } from "./files.js";
 import { resetSchedule, ingestScheduleEvent, attachSchedule, showSchedule, getScheduleCounts } from "./schedule.js";
 
@@ -150,15 +152,31 @@ $("btnDeviceModalClose").addEventListener("click", () => closeDeviceModal());
 _deviceModal.addEventListener("click", (e) => { if (e.target === _deviceModal) closeDeviceModal(); });
 
 // ── Version panel — this project vs its GitHub remote (project_git.py) ──
-// Three views in one modal: the STATE (what the bench runs, how it
-// compares, what is local), the CONFIRM (every risk as a warning, the
-// exact git commands it will run) and DONE (what moved, what was set
-// aside). Nothing is ever disabled for the bench's state — a run in
-// flight, local changes, no access are warnings the operator confirms
-// past; the server refuses only a plan that changed since it was shown.
+// Three views: the STATE (what the bench runs, how it compares, what is
+// local), the CONFIRM (every risk as a warning, the exact git commands it
+// will run) and DONE (what moved, what was set aside). Nothing is ever
+// disabled for the bench's state — a run in flight, local changes, no
+// access are warnings the operator confirms past; the server refuses
+// only a plan that changed since it was shown.
+//
+// TWO HOSTS, ONE PANEL: the desktop's dialog and the pendant's Version
+// page. A host is {title, body, foot, heading(view), close}; every view
+// draws into the host it was called for, so the two can never drift.
+// ``close`` is null on the page — nothing to close to, so no Close.
 const _verOverlay = $("versionModalOverlay");
 const _verApi = () => `/workspace/${encodeURIComponent(wsName)}/version`;
-let _ver = null;
+function closeVersion() { _verOverlay.classList.remove("show"); }
+const VER_MODAL = {
+  title: $("versionModalTitle"), body: $("versionModalBody"), foot: $("versionModalFoot"),
+  heading: view => view === "confirm" ? "Get latest from GitHub" : `Version — ${wsName}`,
+  close: closeVersion,
+};
+const VER_PAGE = {
+  title: $("pvTitle"), body: $("pvBody"), foot: $("pvFoot"),
+  heading: view => view === "confirm" ? "Get latest from GitHub" : "Version",
+  close: null,
+};
+const _ver = new Map();      // host → the last state it showed
 
 // The Status row's pill — how this bench compares with GitHub.
 function _verStatus(v) {
@@ -173,17 +191,21 @@ const _verCommit = (c) => c
   ? `<span class="ver-hash">${esc(c.hash)}</span> ${esc(c.subject)}<div class="ver-sub">${esc(c.date)}</div>` : "—";
 const _verWarn = (html, bad = false) =>
   `<div class="ver-warn${bad ? " bad" : ""}"><span class="bang">!</span><div>${html}</div></div>`;
-function _verFoot(btns) {
-  const foot = $("versionModalFoot"); foot.innerHTML = "";
+// The foot's buttons. A "close" entry is the host's own Close — dropped
+// where the host has nothing to close to (the page).
+function _verFoot(h, btns) {
+  h.foot.innerHTML = "";
   for (const [label, cls, fn] of btns) {
+    if (fn === "close" && !h.close) continue;
     const b = document.createElement("button");
-    b.className = `btn ${cls}`.trim(); b.textContent = label; b.addEventListener("click", fn);
-    foot.appendChild(b);
+    b.className = `btn ${cls}`.trim(); b.textContent = label;
+    b.addEventListener("click", fn === "close" ? h.close : fn);
+    h.foot.appendChild(b);
   }
 }
-function _verBusy(text) {
-  $("versionModalBody").innerHTML = `<div class="ver-busy">${esc(text)}</div>`;
-  $("versionModalFoot").querySelectorAll("button").forEach(b => { b.disabled = true; });
+function _verBusy(h, text) {
+  h.body.innerHTML = `<div class="ver-busy">${esc(text)}</div>`;
+  h.foot.querySelectorAll("button").forEach(b => { b.disabled = true; });
 }
 function _verLocal(v) {
   const n = (v.changes || []).length, a = v.ahead || 0;
@@ -192,13 +214,12 @@ function _verLocal(v) {
     .filter(Boolean).join(" · ");
 }
 
-function _verState(v) {
-  _ver = v;
-  $("versionModalTitle").textContent = `Version — ${wsName}`;
-  const body = $("versionModalBody");
+function _verState(h, v) {
+  _ver.set(h, v);
+  h.title.textContent = h.heading("state");
   if (!v.git) {
-    body.innerHTML = _verWarn(`This project is not a git repository: ${esc(v.error || "")}`, true);
-    _verFoot([["Close", "", closeVersion]]);
+    h.body.innerHTML = _verWarn(`This project is not a git repository: ${esc(v.error || "")}`, true);
+    _verFoot(h, [["Close", "", "close"]]);
     return;
   }
   let html = `<dl class="ver-rows">
@@ -215,12 +236,12 @@ function _verState(v) {
     html += _verWarn("This bench cannot reach the GitHub repository — no read key, or no network. Get latest will fail until it can.", true);
     html += `<div class="ver-err">${esc(v.fetch_error)}</div>`;
   }
-  body.innerHTML = html;
-  _verFoot([["Check again", "", () => loadVersion(true)], ["Get latest…", "btn-primary", () => _verConfirm(_ver)]]);
+  h.body.innerHTML = html;
+  _verFoot(h, [["Check again", "", () => loadVersion(h, true)], ["Get latest…", "btn-primary", () => _verConfirm(h, _ver.get(h))]]);
 }
 
-function _verConfirm(v) {
-  $("versionModalTitle").textContent = "Get latest from GitHub";
+function _verConfirm(h, v) {
+  h.title.textContent = h.heading("confirm");
   let html = `<div class="ver-sub">${esc(wsName)}, branch <b>${esc(v.branch)}</b>: `
     + `<span class="ver-hash">${esc(v.head && v.head.hash)}</span> → <span class="ver-hash">${esc(v.remote ? v.remote.hash : "?")}</span></div>`;
   if (v.platform) html += _verWarn("This project lives inside the WORKSPACE PLATFORM's own repository — Get latest resets the whole platform to GitHub's, not just this project. Platform updates also need the upgrade step (pip install -e .) and a restart of the orchestrator.", true);
@@ -237,25 +258,25 @@ function _verConfirm(v) {
   else html += `<div class="ver-label">Will run, in this order</div>
     <ul class="ver-cmds sh">${v.plan.map(c => `<li>${esc(c)}</li>`).join("")}</ul>`;
   html += `<div class="ver-sub">Git-ignored data is not touched: records, uploads, calibration, scene/bench.j2.</div>`;
-  $("versionModalBody").innerHTML = html;
+  h.body.innerHTML = html;
   const risky = v.platform || v.run_active || v.launched || n || v.ahead || v.reachable === false || v.plan_error;
-  _verFoot([["Cancel", "", () => _verState(_ver)], ["Get latest", risky ? "btn-warn" : "btn-primary", () => _verRun(v)]]);
+  _verFoot(h, [["Cancel", "", () => _verState(h, _ver.get(h))], ["Get latest", risky ? "btn-warn" : "btn-primary", () => _verRun(h, v)]]);
 }
 
-async function _verRun(v) {
-  _verBusy("Getting the latest from GitHub…");
+async function _verRun(h, v) {
+  _verBusy(h, "Getting the latest from GitHub…");
   try {
     const r = await apiFetch(_verApi(), { method: "POST", body: JSON.stringify({ confirmed: v.plan, stamp: v.stamp }) });
-    _verDone(r);
+    _verDone(h, r);
   } catch (e) {
-    $("versionModalBody").innerHTML = _verWarn(`Get latest failed — nothing after the failing step ran.`, true)
+    h.body.innerHTML = _verWarn(`Get latest failed — nothing after the failing step ran.`, true)
       + `<div class="ver-err">${esc(String(e))}</div>`;
-    _verFoot([["Close", "", closeVersion], ["Check again", "btn-primary", () => loadVersion(true)]]);
+    _verFoot(h, [["Close", "", "close"], ["Check again", "btn-primary", () => loadVersion(h, true)]]);
   }
 }
 
-function _verDone(r) {
-  $("versionModalTitle").textContent = `Version — ${wsName}`;
+function _verDone(h, r) {
+  h.title.textContent = h.heading("done");
   let html = `<div class="ver-ok"><span class="tick">✓</span><div>Updated `
     + `<span class="ver-hash">${esc(r.from && r.from.hash)}</span> → <span class="ver-hash">${esc(r.to && r.to.hash)}</span>`
     + ` <span class="ver-sub">${esc(r.to ? r.to.subject : "")}</span></div></div>`;
@@ -267,22 +288,24 @@ function _verDone(r) {
   }
   html += `<dl class="ver-rows"><dt>Status</dt><dd>${_verStatus(r.version)}</dd></dl>`;
   html += `<div class="ver-label">Ran</div><ul class="ver-cmds sh">${(r.ran || []).map(c => `<li>${esc(c)}</li>`).join("")}</ul>`;
-  $("versionModalBody").innerHTML = html;
-  _ver = r.version;
-  _verFoot([["Close", "btn-primary", closeVersion]]);
+  h.body.innerHTML = html;
+  _ver.set(h, r.version);
+  // The dialog closes; the page has nothing to close, so it offers the
+  // fresh state instead.
+  _verFoot(h, h.close ? [["Close", "btn-primary", "close"]]
+                      : [["Check again", "btn-primary", () => loadVersion(h, true)]]);
 }
 
-async function loadVersion(fetchRemote = true) {
-  _verBusy(fetchRemote ? "Checking with GitHub…" : "Reading the repository…");
+async function loadVersion(h, fetchRemote = true) {
+  _verBusy(h, fetchRemote ? "Checking with GitHub…" : "Reading the repository…");
   try {
-    _verState(await apiFetch(`${_verApi()}?fetch=${fetchRemote ? 1 : 0}`));
+    _verState(h, await apiFetch(`${_verApi()}?fetch=${fetchRemote ? 1 : 0}`));
   } catch (e) {
-    $("versionModalBody").innerHTML = _verWarn(esc(String(e)), true);
-    _verFoot([["Close", "", closeVersion], ["Check again", "btn-primary", () => loadVersion(true)]]);
+    h.body.innerHTML = _verWarn(esc(String(e)), true);
+    _verFoot(h, [["Close", "", "close"], ["Check again", "btn-primary", () => loadVersion(h, true)]]);
   }
 }
-function closeVersion() { _verOverlay.classList.remove("show"); }
-$("btnVersion").addEventListener("click", () => { _verOverlay.classList.add("show"); loadVersion(true); });
+$("btnVersion").addEventListener("click", () => { _verOverlay.classList.add("show"); loadVersion(VER_MODAL, true); });
 $("btnVersionModalClose").addEventListener("click", closeVersion);
 _verOverlay.addEventListener("click", (e) => { if (e.target === _verOverlay) closeVersion(); });
 
@@ -356,9 +379,11 @@ function mountParams(host, schema, values, frozen, wsName) {
   // The same buttons whether or not the project declares parameters:
   // with none, Set & Launch is how the run is launched (on the pendant,
   // the only way).
+  // Frozen: nothing to set. The header's record pill says what this is;
+  // the pendant pane has nowhere to close to, so its foot stays empty.
   if (frozen) {
     foot.innerHTML = host.cancel === false
-      ? `<div class="kwargs-empty">The run is using these values.</div>`
+      ? ""
       : `<button class="btn" id="${host.id}Cancel">Close</button>`;
     if (host.cancel !== false) $(`${host.id}Cancel`).addEventListener("click", done);
     return;
@@ -422,18 +447,21 @@ function mountParams(host, schema, values, frozen, wsName) {
 }
 
 async function openParamsModal(frozen) {
-  let schema = {}, values = {}, fetchError = false;
+  let schema = {}, values = {}, record = "", fetchError = false;
   try {
     const j = await _getLaunchConfig();
     schema = j.kwargs_schema || {};
-    values = j.kwargs_values || {};
-    _wsKwargsValues = values;
+    _wsKwargsValues = j.kwargs_values || {};
+    values = frozen ? frozenValues(j) : _wsKwargsValues;
+    record = frozen ? recordChip(j) : "";
   } catch {
     fetchError = true;
   }
 
   paramsTitle.textContent = `Parameters — ${wsName}`;
+  $("paramsRecord").innerHTML = record;
   $("btnParamsLoad").style.display = frozen ? "none" : "";
+  $("btnParamsBrowse").style.display = frozen ? "none" : "";
 
   if (fetchError) {
     paramsForm.innerHTML = `<div class="kwargs-empty">Could not load parameters</div>`;
@@ -469,6 +497,7 @@ async function refreshStatus() {
   try {
     const st = await apiFetch(`/workspace/${encodeURIComponent(wsName)}/status`);
     _lastHttpStatus = st || {};
+    setBoot(st);
     updateStatusUI(st);
     return st;
   } catch (e) {
@@ -509,9 +538,9 @@ async function refreshLogs() {
 //    would grow it into the megabytes and tank rendering.
 //
 // 2. DOM updates are coalesced via requestAnimationFrame. A burst of
-//    appends within one frame reflows the log panel ONCE, not per
-//    message. Without this the 250 ms file-poll cadence × MB of
-//    innerHTML can freeze the tab.
+//    appends within one frame (the stream pushes every line as it is
+//    written) reflows the log panel ONCE, not per message. Without
+//    this a burst × MB of innerHTML can freeze the tab.
 //
 // 3. innerHTML rewrites only run on actual content change AND skip
 //    when the operator has text selected — clobbering a selection
@@ -579,7 +608,9 @@ function _tryLogsWS(url) {
   ws.onmessage = (e) => {
     try {
       const msg = JSON.parse(e.data);
-      if (msg.type === "snapshot") {
+      // "reset": the file was cleared (Clear, here or in another tab) —
+      // the panel starts over from the text, like a snapshot.
+      if (msg.type === "snapshot" || msg.type === "reset") {
         lastLogs = msg.text || "";
         // Apply same buffer cap to a snapshot (in case a long-running
         // workspace produced more than 256 KB before we connected).
@@ -700,6 +731,7 @@ function updateStatusUI(st) {
   updateIframe(state, launched);
   if (typeof updatePendantUI === "function") updatePendantUI();
   if (typeof updateOperatorActionsGate === "function") updateOperatorActionsGate(state);
+  renderLaunchCard();
 
   // Reload run params on state change (e.g. NOT_LAUNCHED → IDLE after launch)
   if (prevUpper !== curUpper) {
@@ -708,6 +740,9 @@ function updateStatusUI(st) {
     // from the prior session.
     _invalidateLaunchConfig();
     loadRunParams();
+    // A Start writes a new record (run_kwargs / run_started): the
+    // Parameters tab picks it up; same record, no rebuild.
+    if (_pendantMode && isLaunched(state)) renderPendantParams();
   }
 }
 
@@ -721,6 +756,14 @@ let _prevStepRunning = false;
 // Steps start collapsed — auto-expands when the first step arrives.
 // Matches the empty-by-default behaviour for Devices below.
 let _stepsExpanded = false;
+
+// Open or close a .fold body (base.css): its height eases, the header's
+// chevron turns with it. Every collapsible section and card goes
+// through here — none snaps with display:none.
+function setFold(fold, open, chev) {
+  if (fold) fold.classList.toggle("shut", !open);
+  if (chev) chev.classList.toggle("open", open);
+}
 
 // ── Multiplexed runtime WS ──────────────────────────────────────────
 //
@@ -755,6 +798,7 @@ function connectWs(runtimeUrl) {
   _muxWsClosed = false;
   _muxWsRetryMs = 1000;
   _devices.clear();
+  _devicesSettled.clear();          // its outages are its own, not the last runtime's
   _devicesKnown = false;            // a new runtime: nothing reported yet
   _opActionsKnown = false;
   renderDevicesPanel();
@@ -791,6 +835,7 @@ function _tryMuxWs() {
   };
   ws.onclose = () => {
     _muxWsAlive = false;
+    _dvConnectionLost();
     if (_muxWsClosed) return;
     setTimeout(_tryMuxWs, _muxWsRetryMs);
     _muxWsRetryMs = Math.min(_muxWsRetryMs * 1.5, 8000);
@@ -805,6 +850,7 @@ function disconnectWs() {
   _muxWsUrl = "";
   _devicesKnown = false;            // no runtime: the lists say so, not "none"
   _opActionsKnown = false;
+  setRunStatus(null);
   renderDevicesPanel();
   renderOperatorActionsPanel();
 }
@@ -1039,7 +1085,9 @@ async function mountProjectPendant(spec) {
         st.textContent = def.css;
         shadow.appendChild(st);
       }
+      const scene = await loadScene(wsName);
       const api = {
+        scene,                  // the declared scene, read-only (kwargs.js loadScene)
         get values() { return { ..._opValues }; },
         // rt.record — the per-item audit rows. Read once at mount, then
         // subscribe: every delta hands the whole current table back.
@@ -1148,79 +1196,356 @@ function applyOpState(payload) {
   }
   applyProjectHmiValues();
   if (payload.snapshot || "notice" in (payload.set || {}) || (payload.unset || []).includes("notice")) {
-    renderPendantNotice();
+    renderNotice();
+  }
+}
+
+// The section rail's Devices badge: how many of the Devices tab's dots
+// are red (down), else amber (recovering) — the list's own states,
+// counted where the list is drawn, so the two can never disagree.
+let _devAttention = "";
+function _setDevicesAttention(down, recovering) {
+  const el = $("pendantDevBadge");
+  const n = down || recovering;
+  const key = n ? `${down ? "bad" : "warn"}:${n}` : "";
+  if (!el || key === _devAttention) return;
+  _devAttention = key;
+  el.hidden = !n;
+  el.textContent = n ? String(n) : "";
+  el.classList.toggle("warn", !down && !!recovering);
+  const tab = el.closest(".pendant-tab");
+  if (tab) {
+    const name = !n ? "Devices"
+      : down ? `Devices — ${down} down` : `Devices — ${recovering} recovering`;
+    tab.title = name;
+    tab.setAttribute("aria-label", name);
+  }
+}
+
+// The rail's Steps badge: the panel foot's own counts — faults (red),
+// else warnings (amber) — so it says what the closed panel would.
+let _stepsAttention = "";
+function _setStepsAttention(warns, faults) {
+  const el = $("pendantStepsBadge");
+  const n = faults || warns;
+  const key = n ? `${faults ? "bad" : "warn"}:${n}` : "";
+  if (!el || key === _stepsAttention) return;
+  _stepsAttention = key;
+  el.hidden = !n;
+  el.textContent = n ? String(n) : "";
+  el.classList.toggle("warn", !faults && !!warns);
+  const btn = el.closest(".pr-panel");
+  if (btn) {
+    const name = !n ? "Steps"
+      : faults ? `Steps — ${faults} fault${faults === 1 ? "" : "s"}`
+               : `Steps — ${warns} warning${warns === 1 ? "" : "s"}`;
+    btn.title = name;
+    btn.setAttribute("aria-label", name);
   }
 }
 
 // ── The operator notice (rt.notice) ─────────────────────────────────
 // ``notice`` is the platform's rt.op key: {level, title, text, img,
-// caption}. The FRAME draws it, the same for every project — a modal
-// over the body (tabs and pane), the bench dimmed behind it. The
-// RUNTIME owns its lifetime: set during a pause, unset when the run
-// leaves it — so this draws exactly what the key says, and runs only
-// when the key changes (applyOpState), never on a status tick. The
-// nav, the step rail and the control bar stay uncovered and live —
-// Park and Kill are never behind it. Resume in the modal is the bar's
-// own command (runPendantCmd, the device-fault gate included); Dismiss
-// hides this notice until a different one arrives. The backdrop has no
-// handler on purpose — a stray tap on the bench must not take it away.
-//
-// The host is FIXED and outside the overlay, synced to the body's box
-// like the 3D view: the 3D view floats above the overlay (z 10001), and
-// a notice must cover it too. The box is read when the notice appears
-// and when the body resizes — nothing else touches layout.
+// caption}. It is a QUESTION, drawn as a message (api.js notify, id
+// "notice", ask): in the top bar's cards like every other message, on
+// the desktop and the pendant alike, with its own Resume and Dismiss —
+// nothing else closes it. The RUNTIME owns its lifetime: set during a
+// pause, unset when the run leaves it — so this draws exactly what the
+// key says, and runs only when the key changes (applyOpState), never on
+// a status tick. Resume is the bar's own command (runPendantCmd, the
+// device-fault gate included); Dismiss hides it until a different one.
 const NOTICE_LEVELS = { warning: "Operator needed", error: "Run stopped", info: "Notice" };
+const NOTICE_MSG_LEVEL = { warning: "warn", error: "bad", info: "info" };
 const _noticeKey = n => JSON.stringify([n.level, n.title, n.text, n.img, n.caption]);
 let _noticeAck = null;       // the notice the operator dismissed (its key)
+let _noticeShown = "";       // the notice on screen (its key)
 
-function _positionPendantNotice() {
-  const el = $("pendantNotice");
+// The launch card covers the pendant's section rail and BODY in pendant
+// mode — the sections are not for switching while it waits; the Steps
+// rail and the bar stay live. On the desktop it covers the page
+// (.lc-page), unpositioned.
+function _positionLaunchCard() {
+  const el = $("launchCard");
+  if (!el || el.style.display === "none") return;
   const body = document.querySelector(".pendant-body");
-  if (!el || !body || el.style.display === "none") return;
+  if (!_pendantMode || !body) {
+    el.style.top = el.style.left = el.style.width = el.style.height = "";
+    return;
+  }
   const r = body.getBoundingClientRect();
+  const rail = $("pendantRail");
+  const left = rail ? rail.getBoundingClientRect().left : r.left;
   el.style.top = r.top + "px";
-  el.style.left = r.left + "px";
-  el.style.width = r.width + "px";
+  el.style.left = left + "px";
+  el.style.width = (r.right - left) + "px";
   el.style.height = r.height + "px";
 }
 
-function renderPendantNotice() {
-  const el = $("pendantNotice");
-  if (!el) return;
+function renderNotice() {
   const n = _opValues.notice;              // Runtime.notice's dict, or absent
   if (!n) _noticeAck = null;
   const key = n ? _noticeKey(n) : "";
-  const want = (_pendantMode && n && key !== _noticeAck) ? key : "";
-  if (el.dataset.key === want) return;                 // nothing changed
-  el.dataset.key = want;
-  if (!want) {
-    el.style.display = "none";
-    el.innerHTML = "";
+  const want = (n && key !== _noticeAck) ? key : "";
+  if (want === _noticeShown) return;                   // nothing changed
+  _noticeShown = want;
+  if (!want) { unnotify("notice"); return; }
+  const base = (_devicesUrl || "").replace(/\/$/, "");
+  notify({
+    id: "notice", ask: true, level: NOTICE_MSG_LEVEL[n.level], label: NOTICE_LEVELS[n.level],
+    title: n.title, text: n.text, img: n.img ? base + n.img : "", caption: n.caption,
+    actions: [
+      { label: "Resume", primary: true, wire: (b) => wireCommand(b, "start", () => runPendantCmd("start")) },
+      { label: "Dismiss", wire: (b) => b.addEventListener("click", () => { _noticeAck = key; renderNotice(); }) },
+    ],
+  });
+}
+
+// ── The launch card ─────────────────────────────────────────────────
+// One card — the wait card (.pn-card) — for the two waits an operator
+// otherwise watches in silence (docs/internal/launch_mockups/):
+//   boot    Launch until the runtime answers      _orch.boot.phase "starting"
+//   failed  the process ended while starting      _orch.boot.phase "failed"
+//   run     Start until the robot's first motion  status.preparing (Runtime.prepared)
+//   ready   the 2 s it stays green, after a boot THIS page watched end
+// Each comes from the server's state, never a guess here, and each from ONE
+// source: _boot from orchestrator statuses (setBoot — a runtime push carries
+// no _orch); the run's fields from the runtime's own stream (setRunStatus —
+// the orchestrator's relay of them can land late, and two sources would
+// flip the card). Under the card, that wait's console from its own log
+// WebSocket (?since=boot / run, LogStream): every line as written.
+const LC_READY_MS = 2000;
+const LC_TEXT_MAX = 256 * 1024;      // the console kept — LOGS_BUFFER_BYTES' rule
+let _boot = null;                    // _orch.boot of the newest orchestrator status
+let _runState = "";                  // the runtime's own state, preparing and run start
+let _preparing = false;
+let _runStartedAt = null;            // the run card's key
+const _lc = {
+  key: "", kind: "",                 // what the card shows now
+  hidden: "",                        // the key the operator hid (Hide / Close)
+  readyKey: "", readyTimer: null,    // the green "ready" moment
+  since: "", ws: null,               // the console's WebSocket
+  text: "", t0: 0, lastAt: 0,        // the console, its clock, its newest line
+  tick: null, renderQueued: false,
+  follow: true,                      // the console sticks to its newest line
+  readyAt: null,                     // seconds the watched boot took
+};
+// The Start hint (style.css .start-hint) — set by updateStatusUI.
+let _startHint = false;
+
+// Called with every ORCHESTRATOR status (WS or HTTP) — the only source of _boot.
+function setBoot(st) {
+  _boot = st?._orch?.boot || null;
+}
+
+// Called with every RUNTIME status on its own stream (the mux's
+// runtime_status), null when that stream is gone — the only source of the
+// run card's fields and the Start hint (launched, idle, nothing run yet).
+function setRunStatus(p) {
+  _runState = (p?.state || "").toUpperCase();
+  _preparing = !!p?.preparing;
+  _runStartedAt = p?.run_started_at ?? null;
+  _startHint = _runState === "IDLE" && p?.run_started_at == null;
+}
+
+function _lcPhase() {
+  if (_boot?.phase === "starting") return { kind: "boot", key: `b${_boot.started_at}`, since: "boot" };
+  if (_boot?.phase === "failed") return { kind: "failed", key: `b${_boot.started_at}`, since: "boot" };
+  if (_preparing && _runState === "RUNNING") {
+    return { kind: "run", key: `r${_runStartedAt}`, since: "run" };
+  }
+  if (_boot && _lc.readyKey === `b${_boot.started_at}`) return { kind: "ready", key: _lc.readyKey, since: "" };
+  return null;
+}
+
+function renderLaunchCard() {
+  const el = $("launchCard");
+  if (!el) return;
+  // A boot this page watched has just ended well: green, for LC_READY_MS.
+  if (_lc.kind === "boot" && _boot?.phase === "ready" && _lc.key === `b${_boot.started_at}`
+      && _lc.hidden !== _lc.key) {
+    _lc.readyKey = _lc.key;
+    clearTimeout(_lc.readyTimer);
+    _lc.readyTimer = setTimeout(() => { _lc.readyKey = ""; renderLaunchCard(); }, LC_READY_MS);
+  }
+  const p = _lcPhase();
+  const show = p && p.key !== _lc.hidden;
+  _lcReopenable(!!p && !show);
+  if (!show) {
+    _lcConnect("");
+    _lcStopTick();
+    if (_lc.kind) { el.style.display = "none"; el.innerHTML = ""; _lc.kind = ""; _lc.key = ""; }
     return;
   }
-  const base = (_devicesUrl || "").replace(/\/$/, "");
-  el.innerHTML = `<div class="pn-card" data-level="${n.level}" role="alertdialog" aria-live="assertive">
-    <div class="pn-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-      <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/>
-      <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
-    </svg></div>
-    <span class="pn-level">${NOTICE_LEVELS[n.level]}</span>
-    <h2>${esc(n.title)}</h2>
-    ${n.text ? `<p>${esc(n.text)}</p>` : ""}
-    ${n.img ? `<figure class="pn-img"><img src="${esc(base + n.img)}" alt="">
-      ${n.caption ? `<span class="pn-cap">${esc(n.caption)}</span>` : ""}</figure>` : ""}
-    <div class="pn-actions">
-      <button type="button" class="btn btn-primary pn-resume">Resume</button>
-      <button type="button" class="btn pn-dismiss">Dismiss</button>
-    </div>
-  </div>`;
-  wireCommand(el.querySelector(".pn-resume"), "start", () => runPendantCmd("start"));
-  el.querySelector(".pn-dismiss").addEventListener("click", () => {
-    _noticeAck = key;
-    renderPendantNotice();
+  if (p.kind === "ready" && _lc.kind === "boot") _lc.readyAt = (performance.now() - _lc.t0) / 1000;
+  if (p.key !== _lc.key || p.kind !== _lc.kind) {
+    _lc.key = p.key;
+    _lc.kind = p.kind;
+    el.innerHTML = _lcHtml(p.kind);
+    _lcWire(el, p.kind);
+    el.style.display = "";
+  }
+  el.classList.toggle("lc-page", !_pendantMode);
+  _positionLaunchCard();
+  _lcConnect(p.since);
+  if (p.kind === "boot" || p.kind === "run") _lcStartTick(); else _lcStopTick();
+  _lcRenderText();
+}
+
+const _LC_SPIN = `<div class="lc-spin" aria-hidden="true"></div>`;
+const _LC_CHECK = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>`;
+const _LC_ALERT = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`;
+
+function _lcHtml(kind) {
+  const name = esc(wsName);
+  const head = (level, ico, label, title, text) => `
+    <div class="pn-card" data-level="${level}" role="dialog" aria-live="polite">
+      <div class="pn-ico">${ico}</div>
+      <span class="pn-level">${label}</span>
+      <h2>${title}</h2>
+      ${text ? `<p>${text}</p>` : ""}`;
+  const now = `<div class="lc-now"><span class="lc-now-text"></span><span class="lc-now-age"></span></div>`;
+  const log = `<pre class="lc-log"></pre>`;
+  const waitActions = `<div class="pn-actions">
+      <button type="button" class="btn lc-hide">Hide</button>
+      <button type="button" class="btn btn-danger lc-kill">Kill</button>
+    </div></div>`;
+  if (kind === "boot") {
+    return head("info", _LC_SPIN, `Starting · <span class="lc-clock">0:00</span>`, `Starting ${name}`)
+      + now + log + waitActions;
+  }
+  if (kind === "run") {
+    return head("info", _LC_SPIN, `Starting the run · <span class="lc-clock">0:00</span>`, "Preparing the run")
+      + now + log + waitActions;
+  }
+  if (kind === "failed") {
+    const code = _boot?.exit_code;
+    return head("error", _LC_ALERT, "Did not start", `${name} stopped while starting`,
+      `The process exited${code != null ? ` with code ${esc(String(code))}` : ""}. The reason is at the bottom of its log.`)
+      + log + `<div class="pn-actions"><button type="button" class="btn btn-primary lc-close">Close</button></div></div>`;
+  }
+  const took = _lc.readyAt != null ? ` · ${fmtUptime(_lc.readyAt)}` : "";
+  return head("ok", _LC_CHECK, `Ready${took}`, `${name} is ready`, "Press Start when the bench is loaded.") + "</div>";
+}
+
+function _lcWire(el, kind) {
+  const hide = () => { _lc.hidden = _lc.key; renderLaunchCard(); };
+  el.querySelector(".lc-hide")?.addEventListener("click", hide);
+  el.querySelector(".lc-close")?.addEventListener("click", hide);
+  const kill = el.querySelector(".lc-kill");
+  if (kill) wireCommand(kill, "kill", async () => { await sendCmd("kill"); await refreshStatus(); });
+  const log = el.querySelector(".lc-log");
+  if (log) log.addEventListener("scroll", () => {
+    _lc.follow = log.scrollHeight - log.scrollTop - log.clientHeight < 24;
   });
-  el.style.display = "";
-  _positionPendantNotice();
+  _lc.follow = true;
+}
+
+// Hidden with Hide: the state pill (desktop) and the state block
+// (pendant) bring the card back while its wait lasts.
+function _lcReopenable(on) {
+  for (const id of ["statePill", "pendantStateBlock"]) {
+    const t = $(id);
+    if (!t) continue;
+    t.classList.toggle("lc-reopen", on);
+    t.title = on ? "Show the progress" : "";
+  }
+}
+for (const id of ["statePill", "pendantStateBlock"]) {
+  $(id)?.addEventListener("click", () => {
+    if (!$(id).classList.contains("lc-reopen")) return;
+    _lc.hidden = "";
+    renderLaunchCard();
+  });
+}
+
+// The console: one WebSocket per section (since=boot / run), opened while
+// the card shows it. A snapshot first, then each line; "reset" when the
+// section starts over (a new launch / run, or Clear).
+function _lcConnect(since) {
+  if (since === _lc.since) return;
+  _lc.since = since;
+  if (_lc.ws) { const old = _lc.ws; _lc.ws = null; old.close(); }
+  _lc.text = "";
+  if (!since) return;
+  const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+  const ws = new WebSocket(`${proto}//${window.location.host}/orchestrator/ws/logs/`
+    + `${encodeURIComponent(wsName)}?since=${since}`);
+  _lc.ws = ws;
+  ws.onmessage = (e) => {
+    if (_lc.ws !== ws) return;
+    const m = JSON.parse(e.data);
+    const now = performance.now();
+    if (m.type === "snapshot") {
+      _lc.text = m.text || "";
+      _lc.t0 = now - (m.since_s ?? 0) * 1000;
+      _lc.lastAt = m.last_s != null ? now - m.last_s * 1000 : now;
+    } else if (m.type === "reset") {
+      _lc.text = m.text || "";
+      _lc.t0 = now;
+      _lc.lastAt = now;
+    } else if (m.type === "append") {
+      _lc.text += m.text;
+      _lc.lastAt = now;
+    } else {
+      return;
+    }
+    if (_lc.text.length > LC_TEXT_MAX) {
+      const cut = _lc.text.indexOf("\n", _lc.text.length - LC_TEXT_MAX);
+      _lc.text = _lc.text.slice(cut + 1);
+    }
+    _lcRenderText();
+  };
+  // The orchestrator restarted, or the network blinked: the same section
+  // again, a fresh snapshot — while the card still wants it.
+  ws.onclose = () => {
+    if (_lc.ws !== ws) return;
+    _lc.ws = null;
+    setTimeout(() => {
+      if (_lc.since !== since || _lc.ws) return;
+      _lc.since = "";
+      _lcConnect(since);
+    }, 1000);
+  };
+}
+
+// "[2026-11-02 09:20:56] text" → "09:20:56  text" (workspace_info._now_str)
+const _lcLine = (line) => line.replace(/^\[\d{4}-\d\d-\d\d (\d\d:\d\d:\d\d)\] /, "$1  ");
+
+function _lcRenderText() {
+  if (_lc.renderQueued) return;
+  _lc.renderQueued = true;
+  requestAnimationFrame(() => {
+    _lc.renderQueued = false;
+    const el = $("launchCard");
+    const log = el?.querySelector(".lc-log");
+    if (log) {
+      log.innerHTML = colorizeLogs(_lc.text.split("\n").map(_lcLine).join("\n"));
+      if (_lc.follow) log.scrollTop = log.scrollHeight;
+    }
+    const nowText = el?.querySelector(".lc-now-text");
+    if (nowText) {
+      const lines = _lc.text.trimEnd().split("\n");
+      nowText.textContent = (lines[lines.length - 1] || "").replace(/^\[[^\]]*\] /, "");
+    }
+    _lcRenderClock();
+  });
+}
+
+function _lcRenderClock() {
+  const el = $("launchCard");
+  const clock = el?.querySelector(".lc-clock");
+  if (clock && _lc.ws) clock.textContent = fmtUptime((performance.now() - _lc.t0) / 1000) || "0:00";
+  const age = el?.querySelector(".lc-now-age");
+  if (age && _lc.text) age.textContent = `${Math.max(0, Math.round((performance.now() - _lc.lastAt) / 1000))} s ago`;
+}
+
+function _lcStartTick() {
+  if (!_lc.tick) _lc.tick = setInterval(_lcRenderClock, 1000);
+}
+
+function _lcStopTick() {
+  clearInterval(_lc.tick);
+  _lc.tick = null;
 }
 
 // ── Per-item records (rt.record) ────────────────────────────────────
@@ -1324,6 +1649,7 @@ function _dispatchMuxMessage(env) {
       break;
     }
     case "runtime_status": {
+      setRunStatus(payload);
       // Merge cached HTTP fields under the fresh WS snapshot — same
       // pattern as the legacy /ws/status handler.
       updateStatusUI({ ..._lastHttpStatus, ...payload });
@@ -1361,9 +1687,21 @@ function _dispatchMuxMessage(env) {
       _opActionsKnown = true;
       renderOperatorActionsPanel();
       updateOperatorActionsGate(_lastState);
+      dvRender();                             // hints + fields the sidebar does not draw
+      break;
+    }
+    case "operator_components": {
+      _opComponents = Array.isArray(payload.components) ? payload.components : [];
+      _syncDeviceMessages();                  // a device message names the component
+      dvRender();
+      break;
+    }
+    case "facts": {
+      _dvOnFacts(payload);
       break;
     }
     case "invoke_result": {
+      if (_dvOnResult(payload)) break;        // shown in its row on the Devices tab
       const tag = `${payload.component}.${payload.method}`;
       if (payload.ok) toast(`${tag} ✓`, "ok");
       else            toast(`${tag}: ${payload.msg || "failed"}`, "bad");
@@ -1395,16 +1733,435 @@ const _devicesSettled = new Map();   // id → last settled state (api.js downEd
 const _devicesPending = new Map();
 const RECOVER_FALLBACK_MS = 35_000;
 
+// ── Devices tab (pendant) ───────────────────────────────────────────
+// ONE page for every component an operator works with: the list on the
+// left (status dot, the scene's label or a readable name, its address
+// and mode; anything down pinned on top), the selected one on the right
+// (state, facts, actions). Fed by three snapshots that already stream:
+// devices (_devices), operator actions (_opActions) and the components
+// behind them (_opComponents: label, type, device ids, facts). Each
+// action is a row that opens to its DECLARED fields and its output —
+// the method's return value as text. Drawn in parts (the list, the
+// head, the facts, the actions), each only when its HTML changes; what
+// the operator types is on screen already, so it never redraws a field
+// (see keep in _wireDevicesTab). Drawn only while the tab is on screen.
+let _opComponents = [];               // operator_components snapshot
+let _dvSel = null;                    // selected component name
+let _dvQuery = "";                    // search text
+let _dvChip = "all";                  // "all" | "attention"
+const _dvOpen = new Set();            // "comp.method" rows open
+const _dvFolded = new Set();          // "comp|group" groups folded
+const _dvArgs = new Map();            // "comp.method" → {field: value}
+const _dvResult = new Map();          // "comp.method" → {ok, text, msg, at, seconds}
+const _dvRunning = new Set();         // "comp.method" in flight from this tab — sent, no reply yet
+const _dvFacts = new Map();           // comp → {facts, error, at}
+let _dvTimer = null;                  // facts + ages, while the tab is up
+let _dvShown = false;                 // the tab is on screen (pendant up, Devices tab)
+const _dvSig = {};                    // last-drawn signature per part
+
+const _dvKey = (c, m) => `${c}.${m}`;
+const _dvHuman = s => { const t = String(s || "").replace(/_/g, " ").trim(); return t.charAt(0).toUpperCase() + t.slice(1); };
+const _dvName = c => c.label || _dvHuman(c.name);
+const _dvAge = ts => {
+  if (!ts) return "—";
+  const s = Math.max(0, Date.now() / 1000 - (ts > 1e12 ? ts / 1000 : ts));
+  return s < 60 ? `${Math.round(s)} s ago` : s < 3600 ? `${Math.round(s / 60)} min ago` : `${Math.round(s / 3600)} h ago`;
+};
+const _dvClock = t => new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+
+// A device's state as every device view draws it — "ok", "recovering"
+// (a Recover click still settling) or the bus state — and whether it is
+// simulated. One rule for the sidebar list, its detail and this tab.
+function _deviceVisual(d) {
+  const p = _devicesPending.get(d.id);
+  return (p && p.until > Date.now()) ? "recovering" : (d.state || "down");
+}
+const _deviceIsSim = d => d.sim === true || d.claim === "sim";
+// An OUTAGE: the bus last SETTLED this device as down (downEdge keeps it;
+// "recovering" never settles), so AutoRecover's retries do not end it —
+// only an ok does. One rule for the Devices tab's Recover bar and the
+// device message (_syncDeviceMessages). ``why`` and ``online`` are what
+// both say: the reason, and whether Recover can reach the publisher.
+function _deviceOutage(d) {
+  if (_devicesSettled.get(d.id) !== "down") return null;
+  return { why: (d.msg || "").trim() || "not answering", online: d.online !== false };
+}
+const _outageAdvice = o => o.online ? "Check it, then Recover." : "Its publisher is offline — Recover cannot reach it.";
+const _recoverPending = id => { const p = _devicesPending.get(id); return !!p && p.until > Date.now(); };
+// The name an operator knows a device by: its component's.
+function _deviceName(id) {
+  const c = _opComponents.find(x => (x.devices || []).includes(id));
+  return c ? _dvName(c) : _dvAddr(id);
+}
+// The part of a device id worth a glance: what follows "kind:", shortened.
+function _dvAddr(id) {
+  const rest = String(id || "").split(":").slice(1).join(":") || String(id || "");
+  return rest.length > 26 ? `…${rest.slice(-24)}` : rest;
+}
+
+// A component's state from its devices: none (controls only), bad,
+// recovering or ok — the worst of its devices wins.
+function _dvState(c) {
+  const ds = (c.devices || []).map(id => _devices.get(id)).filter(Boolean);
+  if (!(c.devices || []).length) return { cls: "none", devs: [] };
+  if (!ds.length) return { cls: "bad", devs: [], why: "not reported" };
+  const v = ds.map(_deviceVisual);
+  if (v.some(x => x !== "ok" && x !== "recovering")) return { cls: "bad", devs: ds };
+  if (v.includes("recovering")) return { cls: "warn", devs: ds };
+  return { cls: "ok", devs: ds };
+}
+
+// The fold chevron: one right-pointing glyph, .section-chevron turns it (base.css).
+const _dvChev = open => `<svg class="section-chevron${open ? " open" : ""}" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>`;
+const _dvActions = name => _opActions.filter(a => a.component === name);
+
+// ── the list ──
+function _dvMatches(c) {
+  const q = _dvQuery.trim().toLowerCase();
+  if (!q) return { ok: true, hits: [] };
+  const own = [c.name, c.label, c.type, ...(c.devices || [])].some(x => x && String(x).toLowerCase().includes(q));
+  const hits = _dvActions(c.name).filter(a => a.label.toLowerCase().includes(q) || (a.hint || "").toLowerCase().includes(q));
+  return { ok: own || hits.length > 0, hits };
+}
+
+function _dvItemHtml(c, hits) {
+  const st = _dvState(c);
+  const d = st.devs[0];
+  let sub = "controls only";
+  if ((c.devices || []).length) {
+    const mode = d && _deviceIsSim(d) ? `<span class="mode sim">sim</span>` : `<span class="mode live">live</span>`;
+    sub = `${escHtml(_dvAddr(c.devices[0]))}${c.devices.length > 1 ? ` +${c.devices.length - 1}` : ""} · ${mode}`;
+  }
+  const hit = hits && hits.length ? `<div class="hit">→ ${hits.map(a => escHtml(a.label)).join(" · ")}</div>` : "";
+  return `<div class="dv-item${c.name === _dvSel ? " sel" : ""}" role="tab" tabindex="0" aria-selected="${c.name === _dvSel}" data-dv-comp="${escAttr(c.name)}">
+    <span class="dot ${st.cls === "warn" ? "warn pulse" : st.cls}"></span>
+    <div class="dv-it"><div class="nm">${escHtml(_dvName(c))}</div><div class="sb">${sub}</div>${hit}</div></div>`;
+}
+
+function _dvRenderList() {
+  const items = $("dvItems"), chips = $("dvChips"), up = $("dvUp");
+  if (!items) return;
+  const comps = _opComponents;
+  const bad = comps.filter(c => ["bad", "warn"].includes(_dvState(c).cls));
+  const withDev = comps.filter(c => (c.devices || []).length);
+  const upN = withDev.filter(c => _dvState(c).cls === "ok").length;
+  const chipHtml = `<button class="dv-chip${_dvChip === "all" ? " on" : ""}" data-dv-chip="all" role="tab" aria-selected="${_dvChip === "all"}">All <b>${comps.length}</b></button>`
+    + `<button class="dv-chip${bad.length ? " att" : ""}${_dvChip === "attention" ? " on" : ""}" data-dv-chip="attention" role="tab" aria-selected="${_dvChip === "attention"}">${bad.length ? "● " : ""}Attention <b>${bad.length}</b></button>`;
+  let html;
+  if (!comps.length) {
+    html = `<div class="dv-empty">${_opActionsKnown ? "No devices or controls in this project" : "Not running"}</div>`;
+  } else if (_dvQuery.trim()) {
+    const m = comps.map(c => [c, _dvMatches(c)]).filter(([, r]) => r.ok);
+    html = m.length ? `<div class="dv-sec">${m.length} match${m.length === 1 ? "" : "es"}</div>` + m.map(([c, r]) => _dvItemHtml(c, r.hits)).join("")
+                    : `<div class="dv-empty">Nothing matches “${escHtml(_dvQuery.trim())}”</div>`;
+  } else if (_dvChip === "attention") {
+    html = bad.length ? bad.map(c => _dvItemHtml(c)).join("") : `<div class="dv-empty">Nothing needs attention</div>`;
+  } else {
+    html = (bad.length ? `<div class="dv-sec att">Needs attention</div>` + bad.map(c => _dvItemHtml(c)).join("") + `<div class="dv-sec">Everything else</div>` : "")
+      + comps.filter(c => !bad.includes(c)).map(c => _dvItemHtml(c)).join("");
+  }
+  const sig = chipHtml + html + upN + withDev.length;
+  if (_dvSig.list === sig) return;
+  _dvSig.list = sig;
+  chips.innerHTML = chipHtml;
+  items.innerHTML = html;
+  if (up) up.textContent = withDev.length ? `${upN}/${withDev.length} up` : "";
+}
+
+// ── the detail ──
+function _dvSelected() {
+  let c = _opComponents.find(x => x.name === _dvSel);
+  if (!c && _opComponents.length) {
+    // First look: the first that needs attention, else the first.
+    c = _opComponents.find(x => ["bad", "warn"].includes(_dvState(x).cls)) || _opComponents[0];
+    _dvSel = c.name;
+  }
+  return c || null;
+}
+
+function _dvHeadHtml(c) {
+  const st = _dvState(c);
+  const d = st.devs[0];
+  let pills;
+  if (st.cls === "none") pills = `<span class="pill off">controls only</span>`;
+  else {
+    const txt = st.cls === "ok" ? "Connected" : st.cls === "warn" ? "Recovering" : "Down";
+    const pc = st.cls === "ok" ? "ok" : st.cls === "warn" ? "warn" : "bad";
+    pills = `<span class="pill ${pc}"><span class="dot ${pc}"></span>${txt}</span>`
+      + `<span class="device-pill device-pill--${d && _deviceIsSim(d) ? "sim" : "live"}">${d && _deviceIsSim(d) ? "SIM" : "LIVE"}</span>`;
+  }
+  const ids = (c.devices || []).join(" · ");
+  return `<div class="dv-hd"><h2>${escHtml(_dvName(c))}</h2>
+    <div class="meta">${pills}<span class="id">${escHtml(ids ? `${ids} · ${c.name}` : c.name)}</span></div></div>`;
+}
+
+// The Recover bar: shown for the whole outage (_deviceOutage) — through
+// AutoRecover's retries too — or while a declared device has not
+// reported at all.
+function _dvAlertHtml(c) {
+  const ids = c.devices || [];
+  if (!ids.length) return "";
+  const out = ids.map(id => _devices.get(id)).filter(Boolean).map(d => [d, _deviceOutage(d)]).find(([, o]) => o);
+  const silent = !out && ids.find(id => !_devices.has(id));
+  if (!out && !silent) return "";
+  const id = out ? out[0].id : silent;
+  const o = out ? out[1] : { why: "has not reported on the device bus", online: true };
+  const busy = _recoverPending(id);
+  return `<div class="dv-alert"><div class="t"><b>${escHtml(_dvAddr(id))}</b> — ${escHtml(o.why)}. ${_outageAdvice(o)}</div>`
+    + (o.online ? `<button class="btn btn-primary" data-dv-recover="${escAttr(id)}"${busy ? " disabled" : ""}>${busy ? "Recovering…" : "Recover"}</button>` : "") + `</div>`;
+}
+
+function _dvFactsHtml(c) {
+  const out = [];
+  const f = _dvFacts.get(c.name);
+  if (f && f.facts) for (const x of f.facts) out.push([x.label, x.value]);
+  if (f && f.error) out.push(["Facts", f.error]);
+  const st = _dvState(c);
+  for (const d of st.devs) {
+    const tag = st.devs.length > 1 ? ` · ${_dvAddr(d.id)}` : "";
+    out.push([`Updated${tag}`, _dvAge(d.ts)]);
+    if (d.msg && _deviceVisual(d) === "ok") out.push([`Message${tag}`, d.msg]);
+  }
+  if (!out.length) return "";
+  return `<div class="dv-facts">${out.map(([k, v]) => `<div><div class="k">${escHtml(k)}</div><div class="v" title="${escAttr(v)}">${escHtml(v)}</div></div>`).join("")}</div>`;
+}
+
+// A field's value — what it shows AND what Run sends: the operator's
+// entry, else the declared default, else the type's first state (a
+// choice's first option, a bool off, an empty text or number).
+function _dvFieldValue(key, p) {
+  const v = (_dvArgs.get(key) || {})[p.name];
+  if (v !== undefined) return v;
+  if (p.default !== undefined) return p.default;
+  return p.type === "choice" ? p.options[0] : p.type === "bool" ? false : "";
+}
+const _dvAction = key => {
+  const i = key.lastIndexOf(".");
+  return _opActions.find(x => x.component === key.slice(0, i) && x.method === key.slice(i + 1));
+};
+
+function _dvFieldHtml(key, p) {
+  const v = _dvFieldValue(key, p);
+  const lab = `${escHtml(p.label)}${p.unit ? ` (${escHtml(p.unit)})` : ""}`;
+  const data = `data-dv-arg="${escAttr(key)}" data-dv-field="${escAttr(p.name)}"`;
+  let input;
+  if (p.type === "choice") {
+    // an option is sent as declared (a number stays a number): the
+    // select carries its index
+    input = `<select class="input" ${data}>${p.options.map((o, i) => `<option value="${i}"${o === v ? " selected" : ""}>${escHtml(o)}</option>`).join("")}</select>`;
+  } else if (p.type === "bool") {
+    input = `<label class="dv-bool"><input type="checkbox" ${data}${v ? " checked" : ""}> ${v ? "on" : "off"}</label>`;
+  } else {
+    const num = p.type === "int" || p.type === "float";
+    input = `<input class="input" ${data} ${num ? `type="number" inputmode="decimal" step="${p.type === "int" ? 1 : "any"}"` : `type="text"`}`
+      + `${p.min !== undefined ? ` min="${escAttr(p.min)}"` : ""}${p.max !== undefined ? ` max="${escAttr(p.max)}"` : ""} value="${escAttr(v)}">`;
+  }
+  return `<div class="dv-f"><label>${lab}</label>${input}</div>`;
+}
+
+function _dvActionHtml(a) {
+  const key = _dvKey(a.component, a.method);
+  const open = _dvOpen.has(key), running = _dvRunning.has(key);
+  const r = _dvResult.get(key);
+  const gated = isRunning(_lastState);
+  const last = running ? `<span class="dv-last">running…</span>`
+    : r ? `<span class="dv-last">${r.ok ? `<span class="ok">✓</span>` : `<span class="bad">✕</span>`} ${_dvClock(r.at)}</span>` : "";
+  const fields = (a.params || []).length ? `<div class="dv-params">${a.params.map(p => _dvFieldHtml(key, p)).join("")}</div>` : "";
+  let out = "";
+  if (r) {
+    const head = `<div class="h">${r.ok ? `<span class="ok">✓ Done</span>` : `<span class="bad">✕ Failed</span>`} · ${_dvClock(r.at)}${r.seconds != null ? ` · ${r.seconds} s` : ""}</div>`;
+    const body = r.ok ? (r.text != null ? `<pre>${escHtml(r.text)}</pre>` : `<div class="none">no output</div>`) : `<pre>${escHtml(r.msg || "failed")}</pre>`;
+    out = `<div class="dv-out">${head}${body}</div>`;
+  }
+  const body = fields || out ? `<div class="dv-ab">${fields}${out}</div>` : "";
+  return `<div class="dv-a" data-dv-act="${escAttr(key)}">
+    <div class="dv-ar"${body ? ` data-dv-toggle="${escAttr(key)}" aria-expanded="${open}"` : ""}><div class="ai">${opIcon(a.icon, 18) || `<span class="ai-dot"></span>`}</div>
+      <div class="dv-at"><div class="al">${escHtml(a.label)}</div>${a.hint ? `<div class="ad">${escHtml(a.hint)}</div>` : ""}</div>
+      <div class="rt">${last}<button class="btn" data-dv-run="${escAttr(key)}"${running || gated ? " disabled" : ""}>${running ? "Running…" : "Run"}</button></div></div>
+    ${body ? `<div class="fold${open ? "" : " shut"}"><div class="fold-in">${body}</div></div>` : ""}</div>`;
+}
+
+function _dvActionsHtml(c) {
+  const acts = _dvActions(c.name);
+  if (!acts.length) return "";
+  const groups = new Map();
+  for (const a of acts) {
+    const g = a.group || "";
+    if (!groups.has(g)) groups.set(g, []);
+    groups.get(g).push(a);
+  }
+  const gate = isRunning(_lastState)
+    ? `<div class="dv-gate">A run is in progress — actions are paused until it pauses or ends, so they cannot collide with it.</div>` : "";
+  return gate + [...groups].map(([g, list]) => {
+    const fk = `${c.name}|${g}`, folded = _dvFolded.has(fk);
+    return `<section class="dv-g"><button class="dv-gh" data-dv-fold="${escAttr(fk)}" aria-expanded="${!folded}">${_dvChev(!folded)}<span>${escHtml(g || "Actions")}</span><span class="n">${list.length}</span></button>`
+      + `<div class="fold${folded ? " shut" : ""}"><div class="fold-in">${list.map(_dvActionHtml).join("")}</div></div></section>`;
+  }).join("");
+}
+
+function _dvRenderDetail(force) {
+  const host = $("dvDetail");
+  if (!host) return;
+  const c = _dvSelected();
+  if (!c) {
+    if (_dvSig.detail !== "empty") { host.innerHTML = ""; _dvSig.detail = "empty"; }
+    return;
+  }
+  if (force || _dvSig.detail !== c.name) {
+    _dvSig.detail = c.name;
+    host.innerHTML = `<div class="dv-top" id="dvTop"></div><div id="dvAlert"></div><div id="dvFactsBox"></div><div class="dv-acts" id="dvActs"></div>`;
+    _dvSig.top = _dvSig.alert = _dvSig.facts = _dvSig.acts = null;
+  }
+  const parts = [["top", "dvTop", _dvHeadHtml(c)], ["alert", "dvAlert", _dvAlertHtml(c)],
+                 ["facts", "dvFactsBox", _dvFactsHtml(c)], ["acts", "dvActs", _dvActionsHtml(c)]];
+  for (const [k, id, html] of parts) {
+    if (_dvSig[k] === html) continue;
+    // The actions part holds fields the operator may be typing in: keep
+    // the focused one focused across a redraw.
+    const f = k === "acts" ? document.activeElement : null;
+    const fk = f && f.dataset ? [f.dataset.dvArg, f.dataset.dvField] : null;
+    _dvSig[k] = html;
+    $(id).innerHTML = html;
+    if (fk && fk[0]) {
+      const again = $(id).querySelector(`[data-dv-arg="${CSS.escape(fk[0])}"][data-dv-field="${CSS.escape(fk[1])}"]`);
+      if (again) again.focus();
+    }
+  }
+}
+
+// The whole tab, while it is on screen (dvVisible draws it on the way
+// in). The selection is settled first, so the list marks it.
+function dvRender() {
+  if (!_dvShown) return;
+  _dvSelected();
+  _dvRenderList();
+  _dvRenderDetail();
+}
+
+// Facts (operator_facts) and the ages under them: asked every 2 s while
+// the Devices tab is on screen, never otherwise.
+function _dvAskFacts() {
+  const c = _dvSelected();
+  if (c && c.facts && _muxWs && _muxWs.readyState === 1) {
+    try { _muxWs.send(JSON.stringify({ type: "facts", payload: { component: c.name } })); } catch (_) {}
+  }
+}
+function dvVisible(on) {
+  clearInterval(_dvTimer);
+  _dvTimer = null;
+  if (!on) return;
+  dvRender();
+  _dvAskFacts();
+  _dvTimer = setInterval(() => { _dvAskFacts(); _dvRenderDetail(); }, 2000);
+}
+function _dvOnFacts(p) {
+  _dvFacts.set(p.component, { facts: p.facts || null, error: p.error || null, at: Date.now() });
+  if (p.component === _dvSel) dvRender();
+}
+
+// A reply to an action this tab started: kept, its row opened to show it.
+// Returns true when it was ours (the caller then skips the toast).
+function _dvOnResult(p) {
+  const key = _dvKey(p.component, p.method);
+  if (!_dvRunning.has(key)) return false;
+  _dvRunning.delete(key);
+  _dvResult.set(key, { ok: !!p.ok, text: p.text != null ? p.text : null, msg: p.msg || "", seconds: p.seconds, at: Date.now() });
+  if (!p.ok || p.text != null) _dvOpen.add(key);     // something to read: open the row
+  dvRender();
+  return true;
+}
+
+// The socket dropped with actions in flight: their replies will never
+// come. Each such row says so — the action may have run.
+function _dvConnectionLost() {
+  if (!_dvRunning.size) return;
+  for (const key of _dvRunning) {
+    _dvResult.set(key, { ok: false, msg: "No reply — the connection to the runtime dropped. It may have run: check before running it again.", at: Date.now() });
+    _dvOpen.add(key);
+  }
+  _dvRunning.clear();
+  dvRender();
+}
+
+function _dvRun(key) {
+  const a = _dvAction(key);
+  if (!a || _dvRunning.has(key)) return;
+  const args = (a.params || []).length
+    ? Object.fromEntries(a.params.map(p => [p.name, _dvFieldValue(key, p)])) : undefined;
+  if (!runOperatorAction(a.component, a.method, args)) return;
+  _dvRunning.add(key);
+  dvRender();
+}
+
+// Open / close a group card or an action row IN PLACE: the fold beside
+// the header eases (setFold), and the actions part is marked drawn in
+// the new state so no redraw replaces it mid-motion. ``set`` holds the
+// folded groups (``inverted``) or the open rows.
+function _dvFlip(head, set, key, inverted) {
+  set.has(key) ? set.delete(key) : set.add(key);
+  const open = inverted ? !set.has(key) : set.has(key);
+  head.setAttribute("aria-expanded", String(open));
+  setFold(head.nextElementSibling, open, head.querySelector(".section-chevron"));
+  const c = _dvSelected();
+  if (c) _dvSig.acts = _dvActionsHtml(c);
+}
+
+function _wireDevicesTab() {
+  const pane = $("pendantDevicesPane");
+  $("dvSearch")?.addEventListener("input", e => { _dvQuery = e.target.value; _dvRenderList(); });
+  pane.addEventListener("click", async e => {
+    const chip = e.target.closest("[data-dv-chip]");
+    if (chip) { _dvChip = chip.dataset.dvChip; _dvRenderList(); return; }
+    const item = e.target.closest("[data-dv-comp]");
+    if (item) {
+      _dvSel = item.dataset.dvComp;
+      _dvRenderList(); _dvRenderDetail(true); _dvAskFacts();
+      const d = $("dvDetail"); if (d) d.scrollTop = 0;
+      return;
+    }
+    const rec = e.target.closest("[data-dv-recover]");
+    if (rec) { const id = rec.dataset.dvRecover; if (await _confirmRecover(id)) recoverDevice(id); return; }
+    const run = e.target.closest("[data-dv-run]");
+    if (run) { e.stopPropagation(); if (!run.disabled) _dvRun(run.dataset.dvRun); return; }
+    const fold = e.target.closest("[data-dv-fold]");
+    if (fold) { _dvFlip(fold, _dvFolded, fold.dataset.dvFold, true); return; }
+    if (e.target.closest(".dv-ab")) return;            // inside the open body: fields, output
+    const tog = e.target.closest("[data-dv-toggle]");
+    if (tog) _dvFlip(tog, _dvOpen, tog.dataset.dvToggle, false);
+  });
+  pane.addEventListener("keydown", e => {
+    if ((e.key === "Enter" || e.key === " ") && e.target.matches("[data-dv-comp]")) { e.preventDefault(); e.target.click(); }
+  });
+  // An entry is kept as the field's value, and the actions part is
+  // marked drawn with it: the screen shows it already, so no later
+  // redraw (a device update, the 2-s facts) rewrites the field.
+  const keep = e => {
+    const el = e.target;
+    if (!el.dataset || !el.dataset.dvArg) return;
+    const key = el.dataset.dvArg;
+    const p = (_dvAction(key)?.params || []).find(x => x.name === el.dataset.dvField);
+    if (!p) return;
+    const o = { ...(_dvArgs.get(key) || {}) };
+    o[p.name] = p.type === "bool" ? el.checked : p.type === "choice" ? p.options[+el.value] : el.value;
+    _dvArgs.set(key, o);
+    if (p.type === "bool") el.closest("label").lastChild.textContent = el.checked ? " on" : " off";
+    const c = _dvSelected();
+    if (c) _dvSig.acts = _dvActionsHtml(c);
+  };
+  pane.addEventListener("input", keep);
+  pane.addEventListener("change", keep);
+}
+
 // Confirm prompt before any device-side Recover (inline row OR modal
 // footer). Recover re-initializes a real device on the bus — a
 // fat-finger on a tablet shouldn't trigger it silently. Same dialog
 // shape Park / Kill already use.
 async function _confirmRecover(deviceId) {
   return await confirmDialog({
-    title: "Recover Device?",
-    body: `Re-initialize ${deviceId}. The device will reconnect and the runtime may resume.`,
-    confirmLabel: "Recover",
-    confirmVariant: "primary",
+    title: `Recover ${_deviceName(deviceId)}?`,
+    message: `Re-initialize ${deviceId}. The device will reconnect and the runtime may resume.`,
+    confirm: "Recover",
+    variant: "default",
   });
 }
 
@@ -1425,45 +2182,112 @@ function _pendingListHtml(what) {
          `<div class="skel-row"></div><div class="skel-row"></div><div class="skel-row"></div></div>`;
 }
 
+// ── Device outages in the message place ──
+// Every outage (_deviceOutage) of a device in use — not simulated: its
+// hardware is not driving anything — is ONE owned message, "dev:<id>":
+// "<name> is down", why it went down, and Recover. An error for a
+// critical device (it pauses the run), a warning otherwise. Posted on
+// the edge into the outage and kept through AutoRecover's retries (the
+// card is never rebuilt for a retry); re-posted only when what it says
+// changes (name, critical, online). When the device is ok again the
+// same message becomes "<name> is back" for a moment — in place, so a
+// flapping device never stacks up messages; it says so for every outage
+// it announced (× or not) while the device is in use. No runtime → gone.
+// Its × dismisses that outage: nothing re-posts it until the next one.
+const _devMsg = new Map();          // device id → {sig, why, announced, dismissed, btn}
+function _syncDeviceMessages() {
+  const want = new Map();
+  if (_devicesKnown) {
+    for (const d of _devices.values()) {
+      const o = _deviceOutage(d);
+      if (o && !_deviceIsSim(d)) want.set(d.id, { d, o, name: _deviceName(d.id) });
+    }
+  }
+  // An entry lives as long as its OUTAGE, not its message: a device
+  // switched to sim mid-outage loses the message, keeps the entry (its
+  // × included), and gets the message back if it returns to real still
+  // down.
+  for (const [id, m] of [..._devMsg]) {
+    if (want.has(id)) continue;
+    const d = _devicesKnown ? _devices.get(id) : null;
+    if (d && _deviceOutage(d)) {                 // still out — simulated now
+      if (m.sig) { unnotify(`dev:${id}`); m.sig = null; m.btn = null; }
+      continue;
+    }
+    _devMsg.delete(id);
+    // back, told: the operator heard of this outage (× or not) and the device is in use
+    if (d && _devicesSettled.get(id) === "ok" && m.announced && !_deviceIsSim(d)) {
+      notify({ id: `dev:${id}`, level: "ok", text: `${_deviceName(id)} is back`, ttl: 2500 });
+    } else {
+      unnotify(`dev:${id}`);
+    }
+  }
+  for (const [id, { d, o, name }] of want) {
+    const m = _devMsg.get(id) || { why: o.why, dismissed: false };   // why it WENT down: the outage's cause
+    _devMsg.set(id, m);
+    const sig = JSON.stringify([name, d.critical !== false, o.online]);
+    if (m.sig !== sig && !m.dismissed) {
+      m.sig = sig;
+      m.announced = true;
+      m.btn = null;
+      notify({
+        id: `dev:${id}`, level: d.critical !== false ? "bad" : "warn",
+        title: `${name} is down`, text: `Went down: ${m.why}. ${_outageAdvice(o)}`,
+        actions: o.online ? [{ label: "Recover", primary: true, wire: b => {
+          m.btn = b;
+          b.addEventListener("click", async () => {
+            if (!_recoverPending(id) && await _confirmRecover(id)) recoverDevice(id);
+          });
+        } }] : [],
+        onDismiss: () => { m.dismissed = true; m.btn = null; },
+      });
+    }
+    if (m.btn) {                    // the card's Recover says what the bar's says
+      const busy = _recoverPending(id);
+      m.btn.disabled = busy;
+      m.btn.textContent = busy ? "Recovering…" : "Recover";
+    }
+  }
+}
+
 function renderDevicesPanel() {
+  _syncDeviceMessages();
   const el = $("devicesList");
   const badge = $("devicesCountBadge");
   if (!el) return;
   const list = Array.from(_devices.values()).sort((a, b) => a.id.localeCompare(b.id));
   if (badge) badge.textContent = list.length ? `${list.length}` : "";
+  if (!list.length) _setDevicesAttention(0, 0);
   if (!list.length) {
     const emptyHtml = _devicesKnown ? `<div class="step-empty">No devices declared</div>`
                                     : _pendingListHtml("devices");
     if (_devicesListLastHtml !== emptyHtml) {
       el.innerHTML = emptyHtml;
       _devicesListLastHtml = emptyHtml;
-      const pList = $("pendantDevicesList");
-      if (pList) pList.innerHTML = emptyHtml;
-      const pMeta = $("pdDevMeta");
-      if (pMeta) pMeta.textContent = "";
     }
+    dvRender();
     return;
   }
   // Auto-expand the first time devices appear — empty-default UX
   // (collapsed) shouldn't hide real content from the operator.
   if (!_devicesExpanded) {
     _devicesExpanded = true;
-    el.style.display = "";
-    const chev = $("devicesChevron");
-    if (chev) chev.classList.add("open");
+    setFold($("devicesFold"), true, $("devicesChevron"));
   }
   const now = Date.now();
+  let nDown = 0, nRecovering = 0;
   const newHtml = list.map(d => {
     const state = d.state || "down";
-    const online = d.online !== false;  // default true for back-compat
+    const online = d.online !== false;
     const pending = _devicesPending.get(d.id);
-    const isPending = !!(pending && pending.until > now);
     if (pending && pending.until <= now) _devicesPending.delete(d.id);
 
-    // Visual state: pending click overrides server state until the bus
-    // confirms or the safety deadline elapses. Offline devices render
-    // distinctly and hide the recover button.
-    const visualState = isPending ? "recovering" : state;
+    // Visual state (_deviceVisual): a pending click overrides the server
+    // state until the bus confirms or the safety deadline elapses.
+    // Offline devices render distinctly and hide the recover button.
+    const visualState = _deviceVisual(d);
+    if (visualState === "recovering") nRecovering++;
+    else if (visualState !== "ok") nDown++;
     const dotClass = visualState === "ok"
       ? "ok pulse"
       : visualState === "recovering"
@@ -1483,8 +2307,7 @@ function renderDevicesPanel() {
     // camera that's physically down shows red dot + SIM pill — operator
     // sees both layers, neither hides the other.
     const isPublisherSim = d.sim === true;
-    const isProjectSim = d.claim === "sim";
-    const isSim = isPublisherSim || isProjectSim;
+    const isSim = _deviceIsSim(d);
     const simTitle = isPublisherSim
       ? "Device publisher is in simulation mode"
       : "This project uses this device in simulation mode";
@@ -1535,22 +2358,16 @@ function renderDevicesPanel() {
         ${modePill}
       </div>`;
   }).join("");
+  _setDevicesAttention(nDown, nRecovering);
   // Skip the DOM write when nothing visible changed. WS events stream
   // often during a run — this catches silent state events (e.g. only
   // ``ts`` or ``last_update`` changed) and avoids the layout + paint.
   if (newHtml !== _devicesListLastHtml) {
     el.innerHTML = newHtml;
     _devicesListLastHtml = newHtml;
-    // Pendant Devices tab shows the same list (same classes + the
-    // same delegated clicks); one cache guards both writes.
-    const pList = $("pendantDevicesList");
-    if (pList) pList.innerHTML = newHtml;
-    const pMeta = $("pdDevMeta");
-    if (pMeta) {
-      const up = list.filter(d => (d.state || "down") === "ok").length;
-      pMeta.textContent = `${up}/${list.length} up`;
-    }
   }
+  // The pendant's Devices tab draws from the same map, in its own parts.
+  dvRender();
 
   // Keep an open modal in sync as state events stream in.
   if (_openDeviceId && _devices.has(_openDeviceId)) {
@@ -1564,7 +2381,8 @@ function renderDevicesPanel() {
 // many. Delegated handlers also survive innerHTML rewrites; nothing
 // to re-wire.
 function _wireDevicesPanelDelegation() {
-  for (const id of ["devicesList", "pendantDevicesList"]) _wireDeviceListClicks($(id));
+  _wireDeviceListClicks($("devicesList"));
+  _wireDevicesTab();
 }
 
 // A robot down because of an ALARM (RobotStation: "robot alarm (code N)…")
@@ -1638,16 +2456,15 @@ function _renderDeviceModalBody(d) {
   const online = d.online !== false;
   const isPublisherSim = d.sim === true;
   const isProjectSim = d.claim === "sim";
-  const isSim = isPublisherSim || isProjectSim;
+  const isSim = _deviceIsSim(d);
 
-  // Pending-Recover overlay — same source of truth as the panel
-  // (``_devicesPending``) so the modal mirrors the row's
-  // "Recovering…" state instead of reverting to "DOWN + Recover".
-  const now = Date.now();
+  // Pending-Recover overlay — the same rule as the panel (_deviceVisual)
+  // so the modal mirrors the row's "Recovering…" state instead of
+  // reverting to "DOWN + Recover".
   const pending = _devicesPending.get(d.id);
-  if (pending && pending.until <= now) _devicesPending.delete(d.id);
-  const isPending = _devicesPending.has(d.id);
-  const visualState = isPending ? "recovering" : state;
+  if (pending && pending.until <= Date.now()) _devicesPending.delete(d.id);
+  const visualState = _deviceVisual(d);
+  const isPending = visualState === "recovering";
 
   const dotClass = visualState === "ok"
     ? "ok pulse"
@@ -1907,7 +2724,9 @@ async function _mountReplanView() {
   if (!spec) { _rpShowView(false); return; }
   const base = `/orchestrator/api/workspace/${encodeURIComponent(wsName)}/replan/`;
   const offered = new Set((_replan?.items || []).map(_rpKey));
+  const scene = await loadScene(wsName);
   const api = {
+    scene,                      // the declared scene, read-only (kwargs.js loadScene)
     items: (_replan?.items || []).map(it => ({ ...it })),
     get schema() {
       const s = {};
@@ -2037,8 +2856,8 @@ function renderReplanList() {
   $("rpStepConfirm").inert = applying;
   const st = $("rpState");
   st.className = "rp-state" + (_replan?.error ? " err" : applying ? " busy" : "");
-  st.textContent = _replan?.error ? `Not applied — ${_replan.error}. Nothing was changed.`
-    : applying ? (_replan.waiting ? `Applying — ${_replan.waiting}…` : "Applying…") : "";
+  st.innerHTML = _replan?.error ? `<span class="msg-mark sm" data-level="bad" aria-hidden="true">!</span><span>Not applied — ${escHtml(_replan.error)}. Nothing was changed.</span>`
+    : escHtml(applying ? (_replan.waiting ? `Applying — ${_replan.waiting}…` : "Applying…") : "");
   const go = $("btnReplanGo");
   go.disabled = !chosen.length || applying || !_rpCanRemove;
   go.textContent = applying ? "Applying…" : chosen.length ? `Remove ${chosen.length} & replan` : "Remove & replan";
@@ -2204,11 +3023,40 @@ $("btnReplanClose").addEventListener("click", () => $("replanModalOverlay").clas
 // handles both directions:
 //   server → client: ``{type:"actions", actions:[...]}`` on connect
 //                    (and any future refresh)
-//   client → server: ``{type:"invoke", component, method}`` per click,
-//                    reply: ``{type:"invoke_result", ok, msg?, result?}``
+//   client → server: ``{type:"invoke", component, method, args?}`` per click,
+//                    reply: ``{type:"invoke_result", ok, msg?, text?, seconds}``
 // Connection lives for the workspace session — every button click is
 // a single ws.send() with no HTTP handshake, so the round-trip is
 // sub-millisecond on the LAN.
+// Named icon set for operator buttons — components pick by name in
+// their operator_actions() declaration ({icon: "power"}). Unknown or
+// missing names render text-only; icons are enhancement, not contract.
+// One visual system: every glyph is pure stroke (2 px, round caps,
+// no fills), and every "-off" variant is its base glyph plus the SAME
+// diagonal slash — no per-icon improvisation.
+const OP_SLASH = '<line x1="4" y1="4" x2="20" y2="20"/>';
+const OP_BASE = {
+  "power":    '<path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/>',
+  "zap":      '<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>',
+  "link":     '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
+  "eye":      '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>',
+  "forward":  '<polyline points="13 17 18 12 13 7"/><polyline points="6 17 11 12 6 7"/>',
+  "backward": '<polyline points="11 17 6 12 11 7"/><polyline points="18 17 13 12 18 7"/>',
+  "rotate":   '<polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>',
+  "activity": '<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>',
+  "bell":     '<path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>',
+};
+const OP_ICONS = {
+  ...OP_BASE,
+  "power-off": OP_BASE["power"] + OP_SLASH,
+  "zap-off":   OP_BASE["zap"]   + OP_SLASH,
+  "link-off":  OP_BASE["link"]  + OP_SLASH,
+  "bell-off":  OP_BASE["bell"]  + OP_SLASH,
+};
+const opIcon = (name, size = 14) => (name && OP_ICONS[name])
+  ? `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${OP_ICONS[name]}</svg>`
+  : "";
+
 let _opActions = [];              // [{component, label, method}, ...]
 let _opActionsKnown = false;      // the runtime has sent operator_actions at least once
 let _opActionsExpanded = false;   // sidebar section collapsed by default
@@ -2222,34 +3070,6 @@ function _opActionsHtml(disabled) {
     if (!groups.has(a.component)) groups.set(a.component, []);
     groups.get(a.component).push(a);
   }
-  // Named icon set for operator buttons — components pick by name in
-  // their operator_actions() declaration ({icon: "power"}). Unknown or
-  // missing names render text-only; icons are enhancement, not contract.
-  // One visual system: every glyph is pure stroke (2 px, round caps,
-  // no fills), and every "-off" variant is its base glyph plus the SAME
-  // diagonal slash — no per-icon improvisation.
-  const OP_SLASH = '<line x1="4" y1="4" x2="20" y2="20"/>';
-  const OP_BASE = {
-    "power":    '<path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/>',
-    "zap":      '<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>',
-    "link":     '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
-    "eye":      '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>',
-    "forward":  '<polyline points="13 17 18 12 13 7"/><polyline points="6 17 11 12 6 7"/>',
-    "backward": '<polyline points="11 17 6 12 11 7"/><polyline points="18 17 13 12 18 7"/>',
-    "rotate":   '<polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>',
-    "activity": '<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>',
-    "bell":     '<path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>',
-  };
-  const OP_ICONS = {
-    ...OP_BASE,
-    "power-off": OP_BASE["power"] + OP_SLASH,
-    "zap-off":   OP_BASE["zap"]   + OP_SLASH,
-    "link-off":  OP_BASE["link"]  + OP_SLASH,
-    "bell-off":  OP_BASE["bell"]  + OP_SLASH,
-  };
-  const opIcon = (name) => (name && OP_ICONS[name])
-    ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${OP_ICONS[name]}</svg>`
-    : "";
   if (!groups.size) {
     return _opActionsKnown ? `<div class="step-empty">No operator controls declared</div>`
                            : _pendingListHtml("operator controls");
@@ -2309,10 +3129,7 @@ function renderOperatorActionsPanel() {
   }
   const modalBody = $("opActionsModalBody");
   if (modalBody) modalBody.innerHTML = html;
-  const pOps = $("pendantOpActionsList");
-  if (pOps) pOps.innerHTML = html;
-  const pMeta = $("pdOpMeta");
-  if (pMeta) pMeta.textContent = _opActions.length ? "manual actions" : "";
+  dvRender();
 }
 
 function updateOperatorActionsGate(state) {
@@ -2321,21 +3138,23 @@ function updateOperatorActionsGate(state) {
   if (_opActions.length) renderOperatorActionsPanel();
 }
 
-function runOperatorAction(component, method) {
-  // Fire-and-forget over the open WS. Reply comes back as an
-  // ``invoke_result`` message handled in ``ws.onmessage`` and shown
-  // via toast — no per-click promise / await needed.
+function runOperatorAction(component, method, args) {
+  // Fire-and-forget over the open WS; returns whether it was sent. The
+  // reply comes back as an ``invoke_result``: the Devices tab's row
+  // shows it when the tab started it, a message otherwise.
   if (!_muxWs || _muxWs.readyState !== 1) {
     toast(`${component}.${method}: not connected`, "bad");
-    return;
+    return false;
   }
   try {
     _muxWs.send(JSON.stringify({
       type: "invoke",
-      payload: { component, method },
+      payload: args ? { component, method, args } : { component, method },
     }));
+    return true;
   } catch (e) {
     toast(`${component}.${method}: ${e}`, "bad");
+    return false;
   }
 }
 
@@ -2343,13 +3162,10 @@ function runOperatorAction(component, method) {
 // devices / steps sections).
 function _wireOpActionsSection() {
   const header = $("btnToggleOpActions");
-  const list = $("opActionsList");
-  const chev = $("opActionsChevron");
-  if (!header || !list) return;
+  if (!header) return;
   header.addEventListener("click", () => {
     _opActionsExpanded = !_opActionsExpanded;
-    list.style.display = _opActionsExpanded ? "" : "none";
-    if (chev) chev.classList.toggle("open", _opActionsExpanded);
+    setFold($("opActionsFold"), _opActionsExpanded, $("opActionsChevron"));
   });
 }
 
@@ -2366,7 +3182,6 @@ function _wireOpActionsClicks() {
   };
   $("opActionsList")?.addEventListener("click", handler);
   $("opActionsModalBody")?.addEventListener("click", handler);
-  $("pendantOpActionsList")?.addEventListener("click", handler);
 }
 
 // Pendant Controls button — opens the modal. Modal closes via the X
@@ -2427,9 +3242,7 @@ function renderStep(step, running) {
   // Auto-expand when first step arrives
   if (steps.length === 1 && !_stepsExpanded) {
     _stepsExpanded = true;
-    el.style.display = "";
-    const chev = $("stepChevron");
-    if (chev) chev.classList.add("open");
+    setFold($("stepFold"), true, $("stepChevron"));
   }
 
   el.innerHTML = steps.map((s, i) =>
@@ -2447,17 +3260,27 @@ function stepCardHtml(s, cls) {
   return `<div class="step-card ${cls}" data-level="${esc(level)}"><span class="step-dot-wrap"><span class="step-dot"></span></span><span class="step-text">${esc(label)}</span></div>`;
 }
 
-// Track the last step for the pendant and the banners.
+// Track the last step. A problem step (error / warning) is a message —
+// the top bar's line and its cards, id "step": shown once (status ticks
+// repeat the step), replaced by the next problem, cleared — and
+// forgotten — by any other step, so the same error coming back later
+// (an action raising again after Resume) shows again. An error also
+// sounds and raises a browser notification.
+let _problemStep = "";
 function noteLastStep(lastStep) {
   const lastLevel = (typeof lastStep === "object" && lastStep.level) ? lastStep.level : "info";
   const lastLabel = typeof lastStep === "string" ? lastStep : (lastStep.label || "");
   _lastStepLabel = lastLabel;
   _lastStepLevel = lastLevel;
-  if ((lastLevel === "error" || lastLevel === "warning") && lastLabel !== _lastBannerMsg) {
-    _lastBannerMsg = lastLabel;
-    _showBanner(lastLabel, lastLevel);
-  } else if (lastLevel === "info") {
-    _hideBanner();
+  if (lastLevel === "error" || lastLevel === "warning") {
+    if (lastLabel !== _problemStep) {
+      _problemStep = lastLabel;
+      notify({ id: "step", level: lastLevel === "warning" ? "warn" : "bad", text: lastLabel });
+      if (lastLevel === "error") { feedback.alarm(); _alarmNotify(lastLabel); }
+    }
+  } else if (_problemStep) {
+    _problemStep = "";
+    unnotify("step");
   }
 }
 
@@ -2486,63 +3309,8 @@ function appendStep(entry, total, running) {
   noteLastStep(entry);
 }
 
-let _lastBannerMsg = "";
 let _lastStepLabel = "";
 let _lastStepLevel = "info";
-
-function _showBanner(msg, level) {
-  // Main banner — the text and level; whether it SHOWS is _layoutBanner's
-  // call (one banner per page: the pendant has its own strip).
-  const banner = $("alarmBanner");
-  const text = $("alarmText");
-  if (banner && text) {
-    text.textContent = msg;
-    banner.setAttribute("data-level", level);
-    banner.setAttribute("data-active", "1");
-  }
-  // Pendant banner
-  const pAlarm = $("pendantAlarm");
-  const pText = $("pendantAlarmText");
-  if (pAlarm && pText) {
-    pText.textContent = msg;
-    pAlarm.style.display = "";
-    pAlarm.setAttribute("data-level", level);
-  }
-  _layoutBanner();
-  // Audio + notification for errors only
-  if (level === "error") {
-    feedback.alarm();
-    _alarmNotify(msg);
-  }
-}
-
-// ONE alarm line per page. The page-top banner is for the desktop
-// pages; in pendant mode the pendant's own strip under its nav carries
-// the same line, and the top banner stays hidden — both were showing,
-// one above the other (bench, 2026-10-08). Called whenever the banner
-// or the mode changes; it also keeps the page and the pendant overlay
-// pushed down by exactly the banner that is visible.
-function _layoutBanner() {
-  const banner = $("alarmBanner");
-  if (!banner) return;
-  const overlay = $("pendantOverlay");
-  const inPendant = !!(overlay && overlay.style.display !== "none");
-  const show = banner.getAttribute("data-active") === "1" && !inPendant;
-  banner.style.display = show ? "" : "none";
-  const h = show ? banner.offsetHeight : 0;
-  document.body.style.paddingTop = h ? h + "px" : "";
-  if (overlay) overlay.style.top = h ? h + "px" : "";
-  const exitBtn = $("pendantExit");
-  if (exitBtn) exitBtn.style.top = h ? (h + 16) + "px" : "";
-}
-
-function _hideBanner() {
-  const banner = $("alarmBanner");
-  if (banner) banner.setAttribute("data-active", "0");
-  const pAlarm = $("pendantAlarm");
-  if (pAlarm) pAlarm.style.display = "none";
-  _layoutBanner();
-}
 
 function _alarmNotify(msg) {
   if (!("Notification" in window)) return;
@@ -2616,6 +3384,7 @@ function renderControls(state, launched, running) {
       if (cmd === "launch") loadRunParams();
     });
     controls.appendChild(b);
+    return b;
   };
 
   if (!launched) {
@@ -2638,7 +3407,8 @@ function renderControls(state, launched, running) {
     // The slot's *meaning* is "begin or continue the run", and
     // post-start that meaning is Resume regardless of enabled state.
     const startLabel = isStarted(s) ? "Resume" : "Start";
-    addBtn(startLabel, "start", { primary: true, disabled: !canStart(s) });
+    addBtn(startLabel, "start", { primary: true, disabled: !canStart(s) })
+      .classList.toggle("start-hint", _startHint);
     addBtn("Pause",    "pause", { disabled: !active });
     // Park only makes sense when the workflow is actually in flight.
     // Before Start the runtime is IDLE — clicking Park there would
@@ -2788,7 +3558,7 @@ try {
   connectStatusWS((statuses) => {
     _wsConnected = true;
     const st = statuses[wsName];
-    if (st) updateStatusUI(st);
+    if (st) { setBoot(st); updateStatusUI(st); }
   });
 } catch (_) { /* WS unavailable — polling handles it */ }
 
@@ -2918,10 +3688,7 @@ async function init() {
 // Collapse / expand steps
 $("btnToggleSteps")?.addEventListener("click", () => {
   _stepsExpanded = !_stepsExpanded;
-  const el = $("stepTimeline");
-  if (el) el.style.display = _stepsExpanded ? "" : "none";
-  const chevron = $("stepChevron");
-  if (chevron) chevron.classList.toggle("open", _stepsExpanded);
+  setFold($("stepFold"), _stepsExpanded, $("stepChevron"));
 });
 
 // Collapse / expand devices
@@ -2929,10 +3696,7 @@ $("btnToggleSteps")?.addEventListener("click", () => {
 let _devicesExpanded = false;
 $("btnToggleDevices")?.addEventListener("click", () => {
   _devicesExpanded = !_devicesExpanded;
-  const el = $("devicesList");
-  if (el) el.style.display = _devicesExpanded ? "" : "none";
-  const chevron = $("devicesChevron");
-  if (chevron) chevron.classList.toggle("open", _devicesExpanded);
+  setFold($("devicesFold"), _devicesExpanded, $("devicesChevron"));
 });
 
 // ---- Run Parameters section ----
@@ -2941,9 +3705,7 @@ const paramsPre = $("paramsPre");
 
 $("btnToggleParams")?.addEventListener("click", () => {
   _paramsExpanded = !_paramsExpanded;
-  paramsPre.style.display = _paramsExpanded ? "" : "none";
-  const chevron = $("paramsChevron");
-  if (chevron) chevron.classList.toggle("open", _paramsExpanded);
+  setFold($("paramsFold"), _paramsExpanded, $("paramsChevron"));
 });
 
 $("btnCopyParams")?.addEventListener("click", (e) => {
@@ -3007,9 +3769,7 @@ $("btnFollowLogs")?.addEventListener("click", (e) => {
 let _logsExpanded = false;
 $("btnToggleLogs").addEventListener("click", () => {
   _logsExpanded = !_logsExpanded;
-  logPre.style.display = _logsExpanded ? "" : "none";
-  const chevron = document.getElementById("logChevron");
-  if (chevron) chevron.classList.toggle("open", _logsExpanded);
+  setFold($("logFold"), _logsExpanded, $("logChevron"));
   if (_logsExpanded) refreshLogs();
 });
 
@@ -3019,10 +3779,9 @@ $("btnToggleLogs").addEventListener("click", () => {
 // Clear both the server-side log buffer and the panel — the Clear-logs
 // button only. A Start no longer clears: each run keeps its own console
 // and steps in log/<run stamp>/ (the orchestrator's log pump).
+// The panel empties when the log stream says so ("reset"), in every tab.
 async function clearLogs() {
   await apiFetch(`/workspace/${encodeURIComponent(wsName)}/logs`, { method: "DELETE" });
-  lastLogs = "";
-  logPre.innerHTML = "";
 }
 
 $("btnClearLogs").addEventListener("click", async (e) => {
@@ -3098,32 +3857,56 @@ function _positionPendant3d() {
   area.style.height = r.height + "px";
 }
 
-// THE ONE PLACE pane visibility is decided: the tab strip and the four
+// THE ONE PLACE pane visibility is decided: the section rail and the four
 // panes (run setup, the project's screen, the 3D view, Devices) always
 // agree because nothing else writes their display. Whatever changes
 // what a pane holds — a screen mounting, the fallback widgets, a launch
 // — calls this afterwards instead of showing the pane itself.
+let _versionShown = false;     // the Version section is up (load once per opening)
 function _applyPendantTab() {
+  const launched = isLaunched(_lastState);
+  // Parameters is a tab only while launched; before that the setup IS
+  // the Main tab, so a remembered Parameters tab lands on Main.
+  const paramsTab = $("pendantTabParams");
+  if (paramsTab) paramsTab.style.display = launched ? "" : "none";
+  if (_pendantTab === "params" && !launched) _pendantTab = "project";
   const is3d = _pendantTab === "3d";
   const isDevices = _pendantTab === "devices";
-  document.querySelectorAll(".pendant-tab").forEach(t =>
-    t.classList.toggle("active", t.dataset.ptab === _pendantTab));
+  const isParams = _pendantTab === "params";
+  const isVersion = _pendantTab === "version";
+  document.querySelectorAll(".pendant-tab").forEach(t => {
+    const on = t.dataset.ptab === _pendantTab;
+    t.classList.toggle("active", on);
+    t.setAttribute("aria-selected", on ? "true" : "false");
+  });
   const hmi = $("pendantHmi");
   const pane = $("pendant3dPane");
   const dev = $("pendantDevicesPane");
   const pp  = $("pendantParamsPane");
+  const ver = $("pendantVersionPane");
   // Project screens mount into a SHADOW root — check both trees.
   const hasScreen = !!(hmi && (hmi.childElementCount || hmi.shadowRoot?.childElementCount));
   // Before the run is up, the Main tab IS the run setup — the operator
   // sets the parameters and launches from here. After that the
-  // project's own screen owns the tab.
-  const showParams = !is3d && !isDevices && !isLaunched(_lastState);
+  // project's own screen owns Main, and the same pane, frozen, is the
+  // Parameters tab.
+  const isMain = !is3d && !isDevices && !isParams && !isVersion;
+  const showParams = launched ? isParams : isMain;
   if (pp) pp.style.display = showParams ? "" : "none";
-  if (hmi) hmi.style.display = (is3d || isDevices || !hasScreen || showParams) ? "none" : "";
+  if (hmi) hmi.style.display = (!isMain || !hasScreen || showParams) ? "none" : "";
   if (pane) pane.style.display = is3d ? "" : "none";
   if (dev) dev.style.display = isDevices ? "" : "none";
+  // The Devices tab asks for facts only while it is on screen.
+  const dvUp = _pendantMode && isDevices;
+  if (dvUp !== _dvShown) { _dvShown = dvUp; dvVisible(dvUp); }
+  if (ver) ver.style.display = isVersion ? "" : "none";
+  // Version checks GitHub each time the section is OPENED (as the
+  // desktop's dialog does on open) — not on every call of this.
+  const versionUp = isVersion && _pendantMode;
+  if (versionUp && !_versionShown) loadVersion(VER_PAGE, true);
+  _versionShown = versionUp;
   const hero = $("pendantHero");
-  if (hero) hero.style.display = (isLaunched(_lastState) && !is3d && !isDevices && heroWanted()) ? "" : "none";
+  if (hero) hero.style.display = (launched && isMain && heroWanted()) ? "" : "none";
   // The 3D tab IS the desktop viewer area, chips and all.
   _applyViewerTab();
   if (is3d) requestAnimationFrame(_positionPendant3d);
@@ -3171,11 +3954,14 @@ function applyPendantRenderState() {
 }
 
 function togglePendant(on) {
+  // From here on the overlay is this function's: the head script's
+  // first-paint class (?pendant=1) has done its job.
+  document.documentElement.classList.remove("pendant-boot");
   _pendantMode = on !== undefined ? on : !_pendantMode;
   pendantOverlay.style.display = _pendantMode ? "" : "none";
-  _layoutBanner();            // the page-top banner shows only outside pendant mode
+  notifyHost($(_pendantMode ? "pendantMsg" : "deskMsg"));   // the messages hang under the bar on screen
   _applyPendantTab();
-  renderPendantNotice();
+  renderLaunchCard();
 
   // Deep-linkable: mirror the mode into ?pendant=1 (replaceState — no
   // history entries added, back button untouched) so kiosk tablets can
@@ -3197,26 +3983,34 @@ function togglePendant(on) {
 // screen at the bench, so entering the pendant before launch must not
 // be a dead end — Start refuses without parameters, and until now
 // nothing on the pendant could set them.
-let _pendantParamsFor = null;          // the state we last built for
+// Launched, the pane is the run's record: what the last Start sent, and
+// when — rebuilt when a new Start writes a new record, not per tick.
+let _pendantParamsFor = null;          // the setup / record we last built
 async function renderPendantParams(force) {
   const pane = $("pendantParamsPane");
   if (!pane) return;
   const launched = isLaunched(_lastState);
-  const key = launched ? "launched" : "setup";
-  if (!force && _pendantParamsFor === key) return;
-  _pendantParamsFor = key;
   const form = $("pendantParamsForm");
   const foot = $("pendantParamsFoot");
+  let j;
   try {
-    const j = await _getLaunchConfig();
-    mountParams(
-      { form, foot, id: "pp", cancel: false },          // nowhere to close TO
-      j.kwargs_schema || {}, j.kwargs_values || {}, launched, wsName);
+    j = await _getLaunchConfig();
   } catch (_) {
     form.innerHTML = `<div class="kwargs-empty">Could not load parameters</div>`;
     foot.innerHTML = "";
     _pendantParamsFor = null;                            // try again next time
+    return;
   }
+  const key = launched ? `run:${j.run_started}` : "setup";
+  if (!force && _pendantParamsFor === key) return;
+  _pendantParamsFor = key;
+  $("ppRecord").innerHTML = launched ? recordChip(j) : "";
+  $("ppUpload").style.display = launched ? "none" : "";
+  $("ppOpen").style.display = launched ? "none" : "";
+  mountParams(
+    { form, foot, id: "pp", cancel: false },            // nowhere to close TO
+    j.kwargs_schema || {}, launched ? frozenValues(j) : (j.kwargs_values || {}),
+    launched, wsName);
 }
 
 function updatePendantUI() {
@@ -3412,6 +4206,7 @@ function updatePendantUI() {
     }
     peFoot.textContent = (rail && rail.children.length)
       ? `${warns} warning${warns === 1 ? "" : "s"} · ${faults} fault${faults === 1 ? "" : "s"}` : "";
+    _setStepsAttention(warns, faults);
   }
   const peDot = $("peDot");
   if (peDot) peDot.className = "dot " + variant + (running ? " pulse" : "");
@@ -3429,6 +4224,7 @@ function updatePendantUI() {
   // disabled too — api.js canStart, the same rule as the sidebar and
   // the dashboard card, so the pendant can never offer Start mid-boot.
   $("pendantStart").disabled   = !canStart(state);
+  $("pendantStart").classList.toggle("start-hint", _startHint);
   $("pendantStart").title      = !launched
     ? "Set the run parameters on the Main tab, then Set & Launch"
     : isBooting(state) ? "Starting…" : "";
@@ -3455,8 +4251,8 @@ function updatePendantUI() {
 // dashboard cards: the tap answers at once (sound, vibration, pressed),
 // Park and Kill are hold-to-activate (the tile fills and ticks for two
 // seconds under the finger, releasing early cancels).
-// One run command from the pendant — the bar's tiles and the notice's
-// Resume press exactly this.
+// One run command from the pendant — the bar's tiles and the pause
+// question's Resume (renderNotice) press exactly this.
 async function runPendantCmd(cmd) {
   if (cmd === "replan" && _replan) { openReplanModal(); return false; }
   // Device-fault gate also covers the pendant Start/Resume — same
@@ -3492,17 +4288,47 @@ document.querySelectorAll(".viewer-tab").forEach(t => {
 });
 document.querySelectorAll(".pendant-tab").forEach(t => {
   t.addEventListener("click", () => {
+    const changed = _pendantTab !== t.dataset.ptab;
     _pendantTab = t.dataset.ptab;
     try { localStorage.setItem("pendant_tab", _pendantTab); } catch (_) {}
     _applyPendantTab();
+    // A tab opens at its top, not wherever the last visit scrolled to.
+    if (changed) {
+      document.querySelectorAll(".pendant-body, .pp-scroll, .dv-items, .dv-detail")
+        .forEach(el => { el.scrollTop = 0; });
+    }
   });
 });
-$("peCollapse")?.addEventListener("click", () => {
-  const rail = $("pendantEvents");
-  const collapsed = rail.classList.toggle("collapsed");
-  $("peCollapse").title = collapsed ? "Expand event log" : "Collapse event log";
-  if (_pendantTab === "3d") requestAnimationFrame(_positionPendant3d);
+// The section rail: collapsed by default, the toggle expands it, and
+// this screen remembers which (a kiosk tablet keeps its choice).
+function _setRailExpanded(on) {
+  const rail = $("pendantRail"), btn = $("pendantRailToggle");
+  if (!rail || !btn) return;
+  rail.classList.toggle("expanded", on);
+  btn.setAttribute("aria-expanded", on ? "true" : "false");
+  btn.title = on ? "Collapse" : "Expand";
+}
+try { _setRailExpanded(localStorage.getItem("pendant_rail_expanded") === "1"); } catch (_) {}
+$("pendantRailToggle")?.addEventListener("click", () => {
+  const on = !$("pendantRail").classList.contains("expanded");
+  _setRailExpanded(on);
+  try { localStorage.setItem("pendant_rail_expanded", on ? "1" : "0"); } catch (_) {}
 });
+// The Steps panel: opened beside any section from the rail's Steps
+// toggle, closed from there or its own chevron. Closed by default; this
+// screen remembers the operator's choice. The 3D view and the covers
+// follow the pane's box through their ResizeObservers.
+function _setStepsOpen(on) {
+  const panel = $("pendantEvents"), btn = $("pendantStepsToggle");
+  if (!panel || !btn) return;
+  panel.classList.toggle("collapsed", !on);
+  btn.setAttribute("aria-pressed", on ? "true" : "false");
+  try { localStorage.setItem("pendant_steps_open", on ? "1" : "0"); } catch (_) {}
+}
+try { _setStepsOpen(localStorage.getItem("pendant_steps_open") === "1"); } catch (_) {}
+$("pendantStepsToggle")?.addEventListener("click", () =>
+  _setStepsOpen($("pendantEvents").classList.contains("collapsed")));
+$("peCollapse")?.addEventListener("click", () => _setStepsOpen(false));
 window.addEventListener("resize", () => { if (_pendantMode) _positionPendant3d(); });
 // The iframe + chip strip are FIXED (they must outrank the overlay),
 // but the pane they cover lives in a scrolling, reflowing column —
@@ -3517,10 +4343,10 @@ if (window.ResizeObserver) {
   });
   const _p3d = $("pendant3dPane");
   if (_p3d) _paneRO.observe(_p3d);
-  // The notice covers the body (tabs + pane) — it follows the body's box
-  // as the window resizes and the step rail collapses.
+  // The launch card covers the section rail + body — it follows the body's
+  // box as the window resizes and either rail collapses or expands.
   const _body = document.querySelector(".pendant-body");
-  if (_body) new ResizeObserver(() => _positionPendantNotice()).observe(_body);
+  if (_body) new ResizeObserver(() => _positionLaunchCard()).observe(_body);
 }
 
 // Enter pendant directly from the URL (kiosk mode):
@@ -3532,12 +4358,5 @@ if (["1", "true"].includes((params.get("pendant") || "").toLowerCase())) {
 }
 
 
-
-// Alarm dismiss
-$("alarmDismiss").addEventListener("click", () => _hideBanner());
-
-// Expose for console testing
-window._showBanner = _showBanner;
-window._hideBanner = _hideBanner;
 
 init();
