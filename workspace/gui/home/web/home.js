@@ -4,9 +4,9 @@
 // controls the dashboard has (api.js wireCommand: Park and Kill are
 // hold-to-activate). The name renames on double-click; the ⋯ button and
 // a right-click open the card menu: Make a copy, Rename, GitHub, Delete.
-// Logged in (/account/api/status — gui/account) adds New project, the
-// Developer button and the developer links; logged out is the offline
-// mode: run the projects that are here.
+// Logged in (/account/api/status — gui/account) adds New project, Import
+// and the Developer button; logged out is the offline mode: run the
+// projects that are here.
 import { apiFetch, stateVariant, stateLabel, isRunning, isLaunched, isBooting, canStart,
          isStarted, isWaiting, fmtUptime, esc, connectStatusWS, deviceFaultGate,
          wireCommand, toast, getToken } from "/orchestrator/api.js";
@@ -53,13 +53,11 @@ async function refreshAccount() {
   // Offline: run existing projects only — no new, import, copy, rename, delete.
   $("btnNew").hidden = !loggedIn;
   $("btnImport").hidden = !loggedIn;
-  document.querySelectorAll("[data-dev]").forEach((el) => { el.hidden = !loggedIn; });
   cardHtml.clear();
   render();
 }
 window.addEventListener("account:change", refreshAccount);
 setInterval(refreshAccount, 30000);
-$("cardJupyter").href = `http://${location.hostname}:8888/doc/workspaces/auto`;
 
 // ---- data ----
 async function loadProjects() {
@@ -168,11 +166,11 @@ function render() {
   if (!projects.length) {
     grid.innerHTML = loggedIn
       ? `<div class="home-empty"><h3>No projects yet</h3>
-      <p>Import a project from GitHub, a zip or a folder on this robot, or start a new one.</p>
-      <button class="btn btn-primary" id="emptyImport">Import a project</button></div>`
+      <p>Start one for a Core 500 or Core 1000, or bring one in from GitHub, a zip or a folder with Import (top right).</p>
+      <button class="btn btn-primary" id="emptyNew">New project</button></div>`
       : `<div class="home-empty"><h3>No projects yet</h3>
-      <p>Log in (top right) to import a project or start a new one. Without logging in, this robot runs the projects it already has.</p></div>`;
-    $("emptyImport")?.addEventListener("click", openImport);
+      <p>Log in (top right) to create or import a project. Without logging in, this robot runs the projects it already has.</p></div>`;
+    $("emptyNew")?.addEventListener("click", openNew);
     cardHtml.clear();
     return;
   }
@@ -413,7 +411,8 @@ $("chassisPick").addEventListener("click", (e) => {
   document.querySelectorAll(".chassis-opt").forEach((o) => o.classList.toggle("active", o === b));
   $("newName").placeholder = chassis.replace("_", "");
 });
-$("btnNew").addEventListener("click", () => { showErr("newErr", ""); showModal("newModal"); });
+function openNew() { showErr("newErr", ""); showModal("newModal"); }
+$("btnNew").addEventListener("click", openNew);
 $("newGo").addEventListener("click", () => busy($("newGo"), "Creating…", async () => {
   showErr("newErr", "");
   try {

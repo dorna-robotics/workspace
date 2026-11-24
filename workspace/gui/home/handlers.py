@@ -2,6 +2,7 @@
 
     GET  /                                    the page (web/index.html)
     GET  /home/<file>                         its script + styles
+    GET  /home/api/version                    {version} — this Workspace (the top bar's Updates panel)
     GET  /home/api/projects                   the cards: registry + thumb, chassis, git
     GET  /home/api/projects/<n>/thumb         <project>/.workspace/thumb.png (404 if none)
     POST /home/api/projects/<n>/thumb         {image: "data:image/png;base64,…"}
@@ -34,15 +35,22 @@ WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
 
 
 class HomePageHandler(tornado.web.RequestHandler):
+    def get(self):
+        self.set_header("Content-Type", "text/html; charset=utf-8")
+        self.set_header("Cache-Control", "no-store")
+        with open(os.path.join(WEB_DIR, "index.html"), encoding="utf-8") as f:
+            self.write(f.read())
+
+
+class VersionHandler(tornado.web.RequestHandler):
+    """The installed Workspace version (workspace.version) — read by the
+    top bar's Updates panel (vendor/nav.js) on every page."""
     def initialize(self, version: str = ""):
         self.version = version
 
     def get(self):
-        with open(os.path.join(WEB_DIR, "index.html"), encoding="utf-8") as f:
-            html = f.read()
-        self.set_header("Content-Type", "text/html; charset=utf-8")
         self.set_header("Cache-Control", "no-store")
-        self.write(html.replace("__WS_VERSION__", self.version))
+        self.write({"version": self.version})
 
 
 def logged_in() -> bool:
@@ -164,7 +172,8 @@ def home_routes(orch, version: str = ""):
     """The main page's routes, for gui/server.py make_app()."""
     o = dict(orch=orch)
     return [
-        (r"/", HomePageHandler, dict(version=version)),
+        (r"/", HomePageHandler),
+        (r"/home/api/version", VersionHandler, dict(version=version)),
         (r"/home/api/projects", ProjectsListHandler, o),
         (r"/home/api/projects/([^/]+)/thumb", ProjectThumbHandler, o),
         (r"/home/api/projects/([^/]+)/(rename|copy|delete)", ProjectActionHandler, o),

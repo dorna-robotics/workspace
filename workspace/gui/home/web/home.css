@@ -116,21 +116,6 @@
 .home-empty h3 { color: var(--text); font-size: var(--text-lg); margin-bottom: var(--space-2); }
 .home-empty .btn { margin-top: var(--space-5); min-height: 44px; }
 
-/* Quiet links under the grid: Dorna Lab, Vision (+ developer tools when logged in) */
-.home-links { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-top: var(--space-6); }
-.home-link {
-  display: inline-flex; align-items: center; gap: var(--space-2); min-height: 44px;
-  padding: 0 var(--space-5); border-radius: var(--radius-sm);
-  background: var(--surface); border: 1px solid var(--border2);
-  color: var(--text); font-size: var(--text-md); font-weight: 600;
-}
-.home-link:hover { border-color: var(--accent); color: var(--text); }
-.home-link[hidden] { display: none; }
-.home-link .card-hint { color: var(--muted); font-weight: 400; font-size: var(--text-sm); }
-.home-link .card-hint:empty { display: none; }
-.home-link.card-off { opacity: 0.6; cursor: default; pointer-events: none; }
-.home-footer { margin-top: var(--space-6); font-size: var(--text-xs); color: var(--muted); font-family: var(--mono); }
-
 /* ── Card menu ─────────────────────────────────────────────────────── */
 .menu {
   position: fixed; z-index: 50001; min-width: 200px; max-width: 280px;

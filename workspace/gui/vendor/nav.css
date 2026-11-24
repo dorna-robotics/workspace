@@ -201,3 +201,32 @@ html.nav-expanded .app-nav ~ .launch-card {
   .burger-btn { display: flex !important; }
   .app-nav-collapse { display: none; }
 }
+
+/* ── Updates: the top bar's button + panel (nav.js, #updatesSlot) ───────
+   The account panel's shell (account.css .acct-menu), so the two
+   top-right panels read as one family. */
+.updates-slot { display: contents; }
+.upd-btn { position: relative; }
+.upd-dot {
+  position: absolute; right: 6px; top: 6px; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--accent); box-shadow: 0 0 0 2px var(--surface); pointer-events: none;
+}
+.upd-dot[hidden] { display: none; }
+.app-nav ~ .upd-menu, .upd-menu {
+  position: fixed; z-index: 60010; margin: 0; width: 340px; max-width: calc(100vw - 32px);
+  background: var(--surface); color: var(--text); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); padding: var(--space-5);
+  display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-4);
+  font-family: var(--font); font-size: var(--text-md);
+}
+.upd-menu[hidden] { display: none; }
+.upd-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); }
+.upd-name { font-size: var(--text-lg); font-weight: 600; white-space: nowrap; }
+.upd-ver { font-family: var(--mono); font-size: var(--text-sm); }
+.upd-head .pill { flex-shrink: 0; }
+.upd-rows { gap: var(--space-2) var(--space-4); }
+.upd-parts ul { margin: var(--space-2) 0 0; padding-left: var(--space-5); display: grid; gap: 2px; }
+.upd-note { display: grid; gap: var(--space-3); }
+.upd-log { color: var(--muted); font-size: var(--text-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.upd-foot { display: flex; justify-content: flex-end; gap: var(--space-3); padding-top: var(--space-4); border-top: 1px solid var(--border2); }
+.upd-foot .btn { min-height: 44px; }

@@ -45,7 +45,7 @@ if WS_ROOT not in sys.path:
 
 from workspace.version import version as _ws_version
 
-# Once per process — the main page stamps it into its footer.
+# Once per process — the top bar's Updates panel reads it (/home/api/version).
 _WS_VERSION = _ws_version()
 
 # ---------------------------------------------------------------------------
@@ -115,9 +115,9 @@ from gui.home.handlers import home_routes
 
 
 # What this unit is — /etc/dorna/unit.json, written per unit type by the
-# upgrade (os/setup.sh), never guessed here: `links` (where the Dorna Lab
-# and Vision cards and nav item point — vendor/nav.js) and `system` (the app
-# that owns the System page). Read per request, so an upgrade's new
+# upgrade (os/setup.sh), never guessed here: `links` (where Dorna Lab and
+# the vision server are) and `system` (the app that owns the System page);
+# the top bar's Updates panel (vendor/nav.js) shows the unit from it. Read per request, so an upgrade's new
 # declaration needs no restart; {} before the upgrade has written it.
 UNIT_DECLARATION = "/etc/dorna/unit.json"
 
