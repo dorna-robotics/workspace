@@ -8,21 +8,52 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--
 .dv-title #dvProject { font-size: var(--text-lg); font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px; }
 .dv-kicker { font-size: var(--text-xs); color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
 
-.dv-tabs { display: flex; gap: var(--space-1); background: var(--surface2); padding: var(--space-1); border-radius: var(--radius-sm); }
-.dv-tabs button, .dv-seg button {
+.dv-seg button {
   min-height: 44px; padding: 0 var(--space-5); border: none; border-radius: var(--radius-xs);
   background: transparent; color: var(--muted); font: inherit; font-weight: 600; cursor: pointer;
 }
-.dv-tabs button:hover, .dv-seg button:hover { color: var(--text); }
-.dv-tabs button.on, .dv-seg button.on { background: var(--surface); color: var(--text); box-shadow: var(--shadow-sm); }
+.dv-seg button:hover { color: var(--text); }
+.dv-seg button.on { background: var(--surface); color: var(--text); box-shadow: var(--shadow-sm); }
 .dv-seg { display: flex; gap: var(--space-1); background: var(--surface2); padding: var(--space-1); border-radius: var(--radius-sm); }
 
 .dv-banner { padding: var(--space-3) var(--space-5); background: var(--accent-dim); color: var(--text); font-size: var(--text-md); display: flex; gap: var(--space-4); align-items: center; }
 .dv-banner.bad { background: var(--surface2); color: var(--red); }
 
-.dv-main { flex: 1; min-height: 0; position: relative; }
-.dv-pane { position: absolute; inset: 0; display: flex; flex-direction: column; min-height: 0; }
-.dv-pane[hidden] { display: none; }
+.dv-body { flex: 1; min-height: 0; display: flex; }
+
+/* The rail: Scene · Workflow · HMI · Calibration — the scene builder's
+   rail grammar (muted at rest, surface on hover, accent when active) */
+.dv-rail { flex: 0 0 80px; width: 80px; display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-3) var(--space-2);
+  border-right: 1px solid var(--border2); background: var(--surface); box-sizing: border-box; }
+.dv-rail button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-1);
+  min-height: 56px; padding: var(--space-2) 0; border: none; border-radius: var(--radius-sm); background: none;
+  color: var(--muted); font: inherit; cursor: pointer;
+  transition: color var(--motion-fast) var(--ease), background var(--motion-fast) var(--ease); }
+.dv-rail button span { font-size: 11px; font-weight: 500; }
+.dv-rail button:hover { color: var(--text); background: var(--surface2); }
+.dv-rail button:focus-visible { outline: none; box-shadow: var(--glow); }
+.dv-rail button.on { color: var(--accent); background: var(--accent-dim); }
+.dv-rail button.on span { font-weight: 600; }
+
+/* One stage per tab. Scene: the tools over the builder (its panel and
+   3D view). Workflow: the panel beside the same 3D view. HMI and
+   Calibration fill it. */
+.dv-main { flex: 1; min-width: 0; min-height: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+.dv-main > * { min-height: 0; min-width: 0; }
+#sbBar { grid-column: 1 / -1; grid-row: 1; }
+.dv-wf { grid-column: 1; grid-row: 1 / -1; width: 380px; }
+.dv-view { grid-column: 1 / -1; grid-row: 2; position: relative; display: flex; }
+.dv-pane { grid-column: 1 / -1; grid-row: 1 / -1; display: flex; flex-direction: column; }
+.dv-main:not([data-tab="scene"]) #sbBar,
+.dv-main:not([data-tab="workflow"]) .dv-wf,
+.dv-main[data-tab="hmi"] .dv-view, .dv-main[data-tab="calibration"] .dv-view,
+.dv-main:not([data-tab="hmi"]) [data-pane="hmi"],
+.dv-main:not([data-tab="calibration"]) [data-pane="calibration"] { display: none; }
+.dv-main[data-tab="workflow"] .dv-view { grid-column: 2; grid-row: 1 / -1; }
+.dv-main:not([data-tab="workflow"]) .dv-viewsw, .dv-main:not([data-tab="workflow"]) .dv-flow { display: none; }
+.dv-view .dv-frame[hidden] { display: block !important; visibility: hidden; position: absolute; inset: 0; }
+.dv-viewsw { position: absolute; top: var(--space-3); left: 50%; transform: translateX(-50%); z-index: 5; box-shadow: var(--shadow-sm); }
+
 .dv-toolbar { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border2); background: var(--surface); flex-wrap: wrap; }
 .dv-toolbar .btn { min-height: 44px; }
 .dv-sep { width: 1px; align-self: stretch; background: var(--border2); margin: 0 var(--space-2); }
@@ -30,7 +61,99 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--
 .dv-frame { flex: 1; width: 100%; min-height: 0; border: none; background: var(--bg); display: block; }
 .dv-small { font-size: var(--text-sm); }
 
-/* Simulation window */
+/* Workflow panel — the AI builder's: controls, the chart, steps, devices */
+.dv-wf { display: flex; flex-direction: column; background: var(--surface); border-right: 1px solid var(--border2); overflow-y: auto; }
+.dv-wf-in { padding: var(--space-4) var(--space-5); display: flex; flex-direction: column; gap: var(--space-5); }
+.dv-wf .section-label { margin: 0 0 var(--space-2); display: flex; align-items: center; gap: var(--space-2); }
+.dv-wf .btn { min-height: 44px; }
+.dv-ctrls { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
+.dv-ctrls .spacer { flex: 1; }
+.dv-card { background: var(--surface2); border-radius: var(--radius-md); padding: var(--space-3) var(--space-4); display: flex; flex-direction: column; gap: var(--space-2); }
+.dv-card b { font-weight: 600; }
+.dv-row2 { display: flex; gap: var(--space-2); flex-wrap: wrap; align-items: center; }
+.dv-row2 .btn[aria-pressed="true"] { background: var(--accent-dim); color: var(--accent); }
+.dv-fold { display: flex; align-items: center; gap: var(--space-2); width: 100%; min-height: 44px; padding: 0; border: none; background: none;
+  color: inherit; font: inherit; cursor: pointer; text-align: left; }
+.dv-fold .section-label { margin: 0; flex: 1; }
+.dv-fold svg { transition: transform var(--motion-fast) var(--ease); color: var(--muted); }
+.dv-fold[aria-expanded="true"] svg { transform: rotate(90deg); }
+.dv-count { font-size: var(--text-xs); color: var(--muted); font-weight: 600; }
+.dv-steps { margin: 0; padding: 0 0 0 var(--space-5); display: flex; flex-direction: column; gap: var(--space-2); }
+.dv-steps li { line-height: 1.4; }
+.dv-steps li small { display: block; color: var(--muted); font-size: var(--text-sm); }
+.dv-steps .mono { font-family: var(--mono); font-size: var(--text-xs); }
+.dv-tag { display: inline-block; font-size: var(--text-xs); font-weight: 600; color: var(--accent); background: var(--accent-dim); border-radius: var(--radius-xs); padding: 0 var(--space-2); margin-left: var(--space-1); }
+.dv-err { color: var(--red); font-size: var(--text-sm); line-height: 1.4; word-break: break-word; }
+.dv-link { align-self: flex-start; }
+
+/* hold-to-activate (api.js holdToActivate) — the orchestrator's sweep */
+.hold { position: relative; overflow: hidden; isolation: isolate; user-select: none; -webkit-user-select: none; touch-action: none; }
+.hold::before { content: ""; position: absolute; inset: 0; z-index: -1;
+  background: repeating-linear-gradient(-45deg, var(--hold-color, currentColor) 0 8px, transparent 8px 16px);
+  background-size: 22.63px 100%; opacity: 0.6; clip-path: inset(0 100% 0 0);
+  transition: clip-path var(--motion-fast) var(--ease); will-change: clip-path; }
+.hold.holding::before { clip-path: inset(0 0 0 0); transition: clip-path var(--hold-ms, 2000ms) linear; animation: dv-hold 0.5s linear infinite; }
+@keyframes dv-hold { to { background-position: 22.63px 0; } }
+.hold-kill { --hold-color: var(--red); }
+.hold-park { --hold-color: var(--amber); }
+.btn.btn-warn.hold { --hold-color: rgba(0, 0, 0, 0.55); }
+
+/* the flowchart, over the 3D view (flow.js — the AI builder's editor) */
+.dv-flow { position: absolute; inset: var(--space-4); z-index: 6; display: flex; flex-direction: column; overflow: hidden; container-type: inline-size;
+  background: var(--bg); border: 1px solid var(--border2); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); }
+.dv-flow-bar { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3) var(--space-3) var(--space-3) var(--space-4); border-bottom: 1px solid var(--border2); flex: none; }
+.dv-flow-row { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.dv-flow-row .spacer { flex: 1; min-width: 0; }
+.dv-flow-center { justify-content: center; flex-wrap: wrap; }
+.dv-flow-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-lg); font-weight: 650; }
+.dv-flow-pill { flex: none; display: inline-flex; align-items: center; gap: var(--space-2); padding: 2px var(--space-3); border-radius: 99px; font-size: var(--text-xs); font-weight: 600;
+  background: color-mix(in srgb, var(--green) 14%, transparent); color: var(--green); white-space: nowrap; }
+.dv-flow-pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.dv-flow-pill.dirty { background: color-mix(in srgb, var(--amber) 16%, transparent); color: var(--amber); }
+.dv-flow-pill:empty { display: none; }
+.dv-flow-x { min-width: 44px; min-height: 44px; justify-content: center; flex: none; }
+.dv-flow-tools .btn { min-height: 44px; white-space: nowrap; flex: none; }
+.dv-flow-sep { width: 1px; height: 20px; background: var(--border); margin: 0 var(--space-1); flex: none; }
+.dv-flow-add { position: relative; flex: none; }
+.dv-flow-menu { position: absolute; top: calc(100% + 6px); left: 0; z-index: 5; min-width: 180px; padding: var(--space-2); display: grid; gap: 2px;
+  border-radius: var(--radius-md); background: var(--surface); border: 1px solid var(--border2); box-shadow: var(--shadow-lg); }
+.dv-flow-menu[hidden] { display: none; }
+.dv-flow-menu button { all: unset; display: flex; align-items: center; gap: var(--space-3); min-height: 44px; padding: 0 var(--space-3); box-sizing: border-box;
+  border-radius: var(--radius-sm); font: 500 var(--text-md) var(--font); color: var(--text); cursor: pointer; }
+.dv-flow-menu button:hover, .dv-flow-menu button:focus-visible { background: var(--accent-dim); }
+.dv-flow-sw { width: 10px; height: 10px; border-radius: 3px; border: 1.5px solid var(--sw); background: color-mix(in srgb, var(--sw) 22%, transparent); flex: none; }
+.dv-flow-sidebtn { display: none !important; }
+.dv-flow-body { flex: 1; min-height: 0; display: flex; }
+.dv-flow-paper { flex: 1; min-width: 0; position: relative; overflow: hidden; cursor: grab;
+  background-image: radial-gradient(var(--border2) 1px, transparent 1px); background-size: 20px 20px; }
+.dv-flow-side { width: clamp(220px, 28%, 300px); flex: none; border-left: 1px solid var(--border2); padding: var(--space-3) var(--space-4); overflow-y: auto;
+  display: flex; flex-direction: column; gap: var(--space-3); font-size: var(--text-sm); box-sizing: border-box; }
+.dv-flow-side .section-label { margin: 0; }
+@container (max-width: 700px) {
+  .dv-flow-sidebtn { display: inline-flex !important; }
+  .dv-flow-body { position: relative; }
+  .dv-flow-side { position: absolute; top: 0; right: 0; bottom: 0; width: min(300px, 86%); z-index: 3; background: var(--bg);
+    box-shadow: var(--shadow-lg); transform: translateX(105%); visibility: hidden;
+    transition: transform var(--motion-med) var(--ease), visibility 0s linear var(--motion-med); }
+  .dv-flow.side-open .dv-flow-side { transform: none; visibility: visible; transition: transform var(--motion-med) var(--ease); }
+  .dv-flow.side-open .dv-flow-sidebtn { background: var(--accent-dim) !important; color: var(--accent) !important; }
+}
+@container (max-width: 560px) { .dv-flow-tools { flex-wrap: wrap; row-gap: var(--space-2); } .dv-flow-sidebtn span, .dv-flow-sep { display: none; } }
+.dv-kw { display: grid; gap: var(--space-1); }
+.dv-kw > span { color: var(--muted); font-size: var(--text-xs); }
+.dv-kw .input { width: 100%; box-sizing: border-box; min-height: 44px; font: inherit; }
+.dv-kw textarea.input { min-height: 0; resize: vertical; }
+.dv-check { display: flex; gap: var(--space-2); align-items: center; min-height: 44px; }
+.dv-flow-msgs { max-height: 150px; overflow-y: auto; border-top: 1px solid var(--border2); padding: var(--space-2) var(--space-4); font-size: var(--text-sm); display: grid; gap: var(--space-1); }
+.dv-flow-msgs:empty { display: none; }
+.dv-flow-empty { margin: auto; max-width: 460px; text-align: center; color: var(--muted); padding: var(--space-6); display: grid; gap: var(--space-3); }
+.dv-flow-empty h3 { margin: 0; color: var(--text); font-size: var(--text-lg); }
+.dv-flow-empty p { margin: 0; line-height: 1.5; }
+.dv-flow-paper .af-sel [joint-selector="body"] { stroke: var(--accent) !important; stroke-width: 3 !important; }
+.dv-flow-paper .af-sel [joint-selector="line"] { stroke: var(--accent) !important; stroke-width: 2.5 !important; }
+.dv-flow-paper .available-magnet { fill: var(--accent); }
+
+/* Devices: one row each, its simulation switch */
 .dv-note { background: var(--accent-dim); border-radius: var(--radius-md); padding: var(--space-3) var(--space-4); display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
 .dv-grp { font-size: var(--text-xs); color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; margin: var(--space-3) 0 var(--space-1); }
 .dv-row { display: flex; align-items: center; gap: var(--space-3); min-height: 48px; border-bottom: 1px solid var(--border2); }

@@ -79,6 +79,12 @@
     </div>
     <div class="sidebar-scroll">
 
+      <!-- Developer mode opens Recipes and Replay from its Workflow
+           panel (the rail is the host's): this closes them again. -->
+      <button class="btn btn-ghost sb-dev-close" id="sbDevClose" type="button" title="Close — back to the Workflow panel">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>Workflow
+      </button>
+
       <!-- Controls -->
       <div data-sbtab="scene">
         <div class="section-label">Controls</div>
@@ -129,7 +135,7 @@
       </div>
 
       <!-- Config YAML preview -->
-      <div data-sbtab="scene">
+      <div data-sbtab="scene" id="sbConfigSection">
         <div class="section-label">Config
           <div class="spacer"></div>
           <button class="btn btn-sm btn-ghost btn-icon" id="btnSave" title="Download"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>

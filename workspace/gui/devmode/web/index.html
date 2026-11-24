@@ -17,15 +17,10 @@
 
 <div class="dv-shell">
   <header class="topbar dv-top">
-    <a class="btn btn-ghost btn-sm btn-icon" href="/" title="Back to projects"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg></a>
+    <a class="btn btn-ghost btn-sm btn-icon" href="/" title="Back to projects" aria-label="Back to projects"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg></a>
     <div class="dv-title"><span class="dv-kicker">Developer mode</span><span id="dvProject">—</span></div>
     <span class="pill off" id="dvState"><span class="dot"></span><span>—</span></span>
-    <div class="dv-tabs" role="tablist">
-      <button role="tab" data-tab="scene">Scene builder</button>
-      <button role="tab" data-tab="workflow">Workflow</button>
-      <button role="tab" data-tab="hmi">HMI</button>
-      <button role="tab" data-tab="calibration">Calibration</button>
-    </div>
+    <div class="msg-line" hidden></div>
     <div class="spacer"></div>
     <div class="topbar-actions">
       <button class="btn btn-ghost btn-sm btn-icon js-theme-toggle" id="btnTheme" title="Toggle theme"></button>
@@ -34,10 +29,30 @@
 
   <div class="dv-banner" id="dvBanner" hidden></div>
 
-  <main class="dv-main">
-    <!-- 1 · Scene builder -->
-    <section class="dv-pane" data-pane="scene" hidden>
-      <div class="dv-toolbar">
+  <div class="dv-body">
+    <!-- The rail: one view at a time, the scene builder's rail grammar -->
+    <nav class="dv-rail" id="dvRail" role="tablist" aria-label="Developer mode" aria-orientation="vertical">
+      <button role="tab" data-tab="scene" title="Scene" aria-label="Scene">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+        <span>Scene</span>
+      </button>
+      <button role="tab" data-tab="workflow" title="Workflow" aria-label="Workflow">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="6" height="5" rx="1"/><rect x="15" y="15" width="6" height="5" rx="1"/><path d="M6 9v4a2 2 0 0 0 2 2h7"/></svg>
+        <span>Workflow</span>
+      </button>
+      <button role="tab" data-tab="hmi" title="HMI — the operator screens" aria-label="HMI">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+        <span>HMI</span>
+      </button>
+      <button role="tab" data-tab="calibration" title="Calibration" aria-label="Calibration">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><line x1="12" y1="1" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="23"/><line x1="1" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="23" y2="12"/></svg>
+        <span>Calibration</span>
+      </button>
+    </nav>
+
+    <main class="dv-main" id="dvMain" data-tab="scene">
+      <!-- Scene: the builder's tools over its panel + 3D view -->
+      <div class="dv-toolbar" id="sbBar">
         <button class="btn btn-primary" id="sbNew"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>New component</button>
         <button class="btn" id="sbSave" title="Write the builder's scene into the project's scene files">Save to project</button>
         <div class="dv-sep"></div>
@@ -48,45 +63,46 @@
         <div class="spacer"></div>
         <button class="btn btn-ghost" id="sbThumb" title="Use the current view as this project's picture on the Projects page">Save picture</button>
       </div>
-      <iframe class="dv-frame" id="sbFrame" title="Scene builder"></iframe>
-    </section>
 
-    <!-- 2 · Workflow: the project page itself (3D view, run controls,
-         steps, devices and their buttons), with the scene's simulation
-         switches one click away -->
-    <section class="dv-pane" data-pane="workflow" hidden>
-      <div class="dv-toolbar">
-        <button class="btn" id="wfSimBtn" title="Which devices are simulated — saved to the project's scene"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="10" rx="5"/><circle cx="16" cy="12" r="3"/></svg><span id="wfSimSum">Simulation</span></button>
-        <div class="spacer"></div>
-        <a class="btn btn-ghost" id="wfOperator" target="_blank" rel="noopener" title="The project page in its own tab">Open in a new tab</a>
-      </div>
-      <iframe class="dv-frame" id="wfFrame" title="Project page"></iframe>
-    </section>
+      <!-- Workflow: the panel beside the 3D view (dev.js renders it) -->
+      <aside class="dv-wf" id="wfPanel" aria-label="Workflow"></aside>
 
-    <!-- 3 · HMI -->
-    <section class="dv-pane" data-pane="hmi" hidden>
-      <div class="dv-toolbar">
-        <div class="dv-seg" id="hmiSeg">
-          <button data-v="both" class="on">Side by side</button><button data-v="main">Main</button><button data-v="setup">Parameters</button>
+      <!-- The 3D view: the scene builder (Scene, and Workflow before a
+           launch), or the running project's own viewer (Workflow, Live) -->
+      <div class="dv-view" id="dvView">
+        <iframe class="dv-frame" id="sbFrame" title="Scene builder"></iframe>
+        <iframe class="dv-frame" id="liveFrame" title="The running project" hidden></iframe>
+        <div class="dv-seg dv-viewsw" id="viewSw" hidden>
+          <button data-v="scene" class="on">Scene</button><button data-v="live">Live</button>
         </div>
-        <span class="muted dv-small" id="hmiMsg"></span>
-        <div class="spacer"></div>
-        <button class="btn btn-ghost" id="hmiReload">Reload</button>
+        <div class="dv-flow" id="flowView" hidden></div>
       </div>
-      <div class="dv-hmi" id="hmiGrid" data-v="both">
-        <div class="dv-hmi-col" data-screen="main"><div class="section-label">Main</div><iframe class="dv-frame" id="hmiMain" title="Main page"></iframe></div>
-        <div class="dv-hmi-col" data-screen="setup"><div class="section-label">Parameters</div><iframe class="dv-frame" id="hmiSetup" title="Parameters page"></iframe></div>
-      </div>
-    </section>
 
-    <!-- 4 · Calibration -->
-    <section class="dv-pane" data-pane="calibration" hidden>
-      <iframe class="dv-frame" id="calFrame" title="Calibration"></iframe>
-    </section>
-  </main>
+      <!-- HMI -->
+      <section class="dv-pane" data-pane="hmi">
+        <div class="dv-toolbar">
+          <div class="dv-seg" id="hmiSeg">
+            <button data-v="both" class="on">Side by side</button><button data-v="main">Main</button><button data-v="setup">Parameters</button>
+          </div>
+          <span class="muted dv-small" id="hmiMsg"></span>
+          <div class="spacer"></div>
+          <button class="btn btn-ghost" id="hmiReload">Reload</button>
+        </div>
+        <div class="dv-hmi" id="hmiGrid" data-v="both">
+          <div class="dv-hmi-col" data-screen="main"><div class="section-label">Main</div><iframe class="dv-frame" id="hmiMain" title="Main page"></iframe></div>
+          <div class="dv-hmi-col" data-screen="setup"><div class="section-label">Parameters</div><iframe class="dv-frame" id="hmiSetup" title="Parameters page"></iframe></div>
+        </div>
+      </section>
+
+      <!-- Calibration -->
+      <section class="dv-pane" data-pane="calibration">
+        <iframe class="dv-frame" id="calFrame" title="Calibration"></iframe>
+      </section>
+    </main>
+  </div>
 </div>
 
-<!-- floating windows (Parameters, Camera, Simulation) -->
+<!-- floating windows (Settings, Camera) -->
 <div id="dvWins"></div>
 
 <script src="/vendor/theme.js"></script>

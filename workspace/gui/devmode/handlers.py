@@ -15,6 +15,9 @@ offline mode runs existing projects and nothing else).
     GET  /dev/api/projects/<n>/hmi                     the HMI screens' specs + a change signature
     GET  /dev/api/projects/<n>/hmi/pendant/<file>      the Main screen's files, before launch
     GET  /dev/api/projects/<n>/calibration/plan        the calibration plan (gui/calibration/plan.py)
+    GET  /dev/api/projects/<n>/workflow                the workflow: steps (actions), stations (recipes), charts (flow/)
+    GET  /dev/api/projects/<n>/flowchart?name=         one chart (flow/<name>.json) and its checks
+    POST /dev/api/projects/<n>/flowchart               {name, doc} → checked; saved only when it checks out
 """
 import asyncio
 import json
@@ -28,7 +31,7 @@ import tornado.web
 
 from gui.orchestrator.handlers import ProjectScreenFileHandler
 
-from . import access, camera, params, scene_edit
+from . import access, camera, params, scene_edit, workflow
 
 DEV_DIR = os.path.dirname(os.path.abspath(__file__))
 WEB_DIR = os.path.join(DEV_DIR, "web")
@@ -350,6 +353,40 @@ class PendantFileHandler(ProjectScreenFileHandler):
             self.finish({"error": "login required"})
 
 
+class WorkflowHandler(_Base):
+    async def get(self, name):
+        p = self.project(name)
+        if not p:
+            return
+        self.finish({"ok": True, **await _off_loop(workflow.info, p[1])})
+
+
+class FlowchartHandler(_Base):
+    def get(self, name):
+        p = self.project(name)
+        if not p:
+            return
+        chart = self.get_argument("name", "")
+        try:
+            out = workflow.load_chart(p[1], chart)
+        except (OSError, ValueError) as e:
+            return self.fail(404, f"no flowchart {chart!r}: {e}")
+        self.finish({"ok": True, "name": chart, **out})
+
+    def post(self, name):
+        p = self.project(name)
+        if not p:
+            return
+        b = self.body()
+        if not isinstance(b.get("doc"), dict):
+            return self.fail(400, "{name, doc}")
+        try:
+            check = workflow.save_chart(p[1], b.get("name") or "", b["doc"])
+        except (OSError, ValueError) as e:
+            return self.fail(400, str(e))
+        self.finish({"ok": True, "saved": check["ok"], "check": check})
+
+
 # ── calibration plan ────────────────────────────────────────────────
 _plan_lock = asyncio.Lock()
 _plan_cache = {}              # main.py → (signature, result)
@@ -415,5 +452,7 @@ def routes(orch):
         (P + r"/hmi", HmiHandler, o),
         (P + r"/hmi/pendant/(.*)", PendantFileHandler, dict(orch=orch, key="pendant")),
         (P + r"/calibration/plan", CalibrationPlanHandler, o),
+        (P + r"/workflow", WorkflowHandler, o),
+        (P + r"/flowchart", FlowchartHandler, o),
         (r"/dev/(.*)", DevStaticHandler, {"path": WEB_DIR}),
     ]
