@@ -166,10 +166,13 @@ function cardInner(p) {
 function render() {
   $("projCount").textContent = projects.length ? String(projects.length) : "";
   if (!projects.length) {
-    grid.innerHTML = `<div class="home-empty"><h3>No projects yet</h3>
-      <p>Import a project from GitHub, a zip or a folder on this robot${loggedIn ? ", or start a new one" : ""}.</p>
-      <button class="btn btn-primary" id="emptyImport">Import a project</button></div>`;
-    $("emptyImport").addEventListener("click", openImport);
+    grid.innerHTML = loggedIn
+      ? `<div class="home-empty"><h3>No projects yet</h3>
+      <p>Import a project from GitHub, a zip or a folder on this robot, or start a new one.</p>
+      <button class="btn btn-primary" id="emptyImport">Import a project</button></div>`
+      : `<div class="home-empty"><h3>No projects yet</h3>
+      <p>Log in (top right) to import a project or start a new one. Without logging in, this robot runs the projects it already has.</p></div>`;
+    $("emptyImport")?.addEventListener("click", openImport);
     cardHtml.clear();
     return;
   }

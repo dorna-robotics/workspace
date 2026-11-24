@@ -224,7 +224,7 @@ async function saveThumb(quiet) {
   if (!png) { if (!quiet) banner("The 3D view is not ready yet.", true); return; }
   try {
     const r = await fetch(`/home/api/projects/${encodeURIComponent(PROJECT)}/thumb`, {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ png }),
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ image: png }),
     });
     if (!r.ok) throw new Error(r.status);
     thumbDone = true;
