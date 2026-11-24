@@ -1,0 +1,779 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Calibration — mockup</title>
+<script>(function(){ document.documentElement.setAttribute("data-theme", localStorage.getItem("orch_theme")||"light"); if(localStorage.getItem("nav_expanded")==="1")document.documentElement.classList.add("nav-expanded"); })();</script>
+<link rel="stylesheet" href="../../../workspace/gui/vendor/base.css"/>
+<link rel="stylesheet" href="../../../workspace/gui/vendor/nav.css"/>
+<link rel="stylesheet" href="../../../workspace/gui/orchestrator/web/admin/style.css"/>
+<style>
+/* Calibration (Developer › Calibration) — MOCKUP on the real tokens.
+   Disposable: the grammar it settles goes into design-system.md. */
+body { min-height: 100vh; }
+.main { margin-left: 48px; min-height: calc(100vh - 54px); }
+.page { max-width: 1440px; margin: 0 auto; padding: var(--space-6); }
+.page h1 { font-size: var(--text-xl); font-weight: 700; margin: 0; }
+.page-head { display: flex; align-items: center; gap: var(--space-4); margin-bottom: var(--space-5); flex-wrap: wrap; }
+.page-head .sub { color: var(--muted); font-size: var(--text-sm); }
+.panel { position: relative; background: var(--surface); border-radius: var(--radius-lg);
+         box-shadow: var(--shadow-sm); padding: var(--space-5); }
+.panel + .panel { margin-top: var(--space-5); }
+.panel h2 { font-size: var(--text-lg); font-weight: 600; margin: 0 0 var(--space-3); }
+.view[hidden] { display: none !important; }
+.row { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+.chip { display: inline-flex; align-items: center; gap: var(--space-2); padding: 3px 10px;
+        border-radius: var(--radius-xs); background: var(--surface2); font-size: var(--text-sm);
+        color: var(--text); white-space: nowrap; }
+.chip .k { color: var(--muted); }
+.chip.big { font-size: var(--text-md); padding: 6px 12px; border-radius: var(--radius-sm); }
+.mono { font-family: var(--mono); }
+.grow { flex: 1; min-width: 0; }
+.sc-body.one { grid-template-columns: minmax(0, 1fr); }
+
+/* ── open ── */
+.open-card { max-width: 720px; margin: 8vh auto 0; }
+.open-card label { display: block; font-size: var(--text-sm); color: var(--muted); margin-bottom: var(--space-2); }
+.open-row { display: flex; gap: var(--space-3); }
+.recent { margin-top: var(--space-5); }
+.recent-row { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4);
+              border-radius: var(--radius-md); cursor: pointer; transition: background var(--motion-fast) var(--ease); }
+.recent-row:hover { background: var(--surface2); }
+.recent-row .p { flex: 1; min-width: 0; }
+.open-err { margin-top: var(--space-2); font-size: var(--text-sm); color: var(--red); }
+
+/* ── setup ── */
+.setup-grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: var(--space-5); align-items: start; }
+.bench svg { width: 100%; height: auto; display: block; }
+.st-table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
+.st-table th { text-align: left; font-size: var(--text-xs); font-weight: 600; color: var(--muted);
+               text-transform: uppercase; letter-spacing: 0.08em; padding: 0 var(--space-3) var(--space-2); }
+.st-table td { padding: var(--space-3); border-top: 1px solid var(--border2); vertical-align: middle; }
+.st-table tr.sel td { background: var(--accent-dim); }
+.st-table tr { cursor: pointer; }
+.st-table tr:hover td { background: var(--surface2); }
+.st-table tr.sel:hover td { background: var(--accent-dim); }
+.st-name { font-weight: 600; }
+.st-where { color: var(--muted); }
+.mark { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px;
+        border-radius: 50%; font-size: var(--text-xs); font-weight: 700; flex-shrink: 0; }
+.mark.ok   { background: var(--green); color: #fff; }
+.mark.warn { background: var(--amber); color: #fff; }
+.mark.bad  { background: var(--red);   color: #fff; }
+.mark.off  { border: 2px solid var(--muted2); }
+.filters { display: flex; gap: var(--space-2); margin-bottom: var(--space-3); }
+.seg { display: inline-flex; background: var(--surface2); border-radius: var(--radius-sm); padding: 2px; }
+.seg button { border: 0; background: none; color: var(--muted); font: inherit; font-size: var(--text-sm);
+              padding: 5px 12px; border-radius: var(--radius-xs); cursor: pointer; }
+.seg button.on { background: var(--surface); color: var(--text); box-shadow: var(--shadow-sm); font-weight: 600; }
+.start-bar { display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap; }
+.start-bar .what { flex: 1; min-width: 220px; }
+.toggle { display: inline-flex; align-items: center; gap: var(--space-2); cursor: pointer; font-size: var(--text-sm); user-select: none; }
+.toggle input { accent-color: var(--accent); width: 16px; height: 16px; }
+
+/* ── input 7 ── */
+.in7 { display: flex; align-items: center; gap: var(--space-4); }
+.in7-lamp { width: 44px; height: 44px; border-radius: 50%; border: 3px solid var(--muted2); flex-shrink: 0;
+            display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: var(--text-lg);
+            color: var(--muted); transition: background var(--motion-fast) var(--ease), box-shadow var(--motion-fast) var(--ease); cursor: pointer; }
+.in7-lamp.on { background: var(--accent); border-color: var(--accent); color: #fff; box-shadow: 0 0 14px var(--accent); }
+.in7 .lbl { font-weight: 600; }
+.in7 .st { font-size: var(--text-sm); color: var(--muted); }
+.in7 .st b { color: var(--text); }
+.trace { width: 100%; height: 28px; display: block; margin-top: var(--space-3); }
+.trace path { fill: none; stroke: var(--accent); stroke-width: 2; }
+.trace .base { stroke: var(--border); stroke-width: 1; }
+.seen { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--text-sm); }
+
+/* ── run ── */
+.run-grid { display: grid; grid-template-columns: 270px minmax(0, 1fr) 300px; gap: var(--space-5); align-items: start; }
+.steps { display: flex; flex-direction: column; gap: 2px; max-height: calc(100vh - 190px); overflow: auto; padding-right: var(--space-2); }
+.step-card.cal-step { padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); font-size: var(--text-sm); cursor: default; }
+.step-card.cal-step .step-dot { width: 8px; height: 8px; margin-top: 6px; }
+.step-card.cal-step .t { flex: 1; min-width: 0; }
+.step-card.cal-step .n { font-variant-numeric: tabular-nums; color: var(--muted); font-weight: 500; }
+.step-card.cal-step.active { background: var(--surface2); }
+.steps .grp { font-size: var(--text-xs); font-weight: 600; color: var(--muted); text-transform: uppercase;
+              letter-spacing: 0.08em; margin: var(--space-4) 0 var(--space-1) var(--space-3); }
+.steps .grp:first-child { margin-top: 0; }
+
+.stepcard::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; border-radius: var(--radius-lg) 0 0 var(--radius-lg);
+                    background: var(--surface3); transition: background var(--motion-med) var(--ease); }
+.stepcard[data-state="running"]::before { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+.stepcard[data-state="done"]::before    { background: var(--green); box-shadow: var(--glow-ok); }
+.stepcard[data-state="failed"]::before,
+.stepcard[data-state="halted"]::before  { background: var(--red); box-shadow: var(--glow-bad); }
+.stepcard[data-state="sim"]::before     { background: #5ec8ff; }
+.sc-kicker { font-size: var(--text-xs); font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+.sc-title { font-size: var(--text-xl); font-weight: 700; margin: var(--space-1) 0 var(--space-3); }
+.sc-chips { display: flex; gap: var(--space-2); flex-wrap: wrap; margin-bottom: var(--space-4); }
+.sc-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-5); }
+.do-list { margin: 0; padding: 0; list-style: none; counter-reset: d; display: flex; flex-direction: column; gap: var(--space-3); }
+.do-list li { counter-increment: d; display: flex; gap: var(--space-3); font-size: var(--text-lg); line-height: 1.45; }
+.do-list li::before { content: counter(d); flex-shrink: 0; width: 24px; height: 24px; border-radius: 50%;
+                      background: var(--surface2); color: var(--text); font-size: var(--text-sm); font-weight: 700;
+                      display: flex; align-items: center; justify-content: center; margin-top: 1px; }
+.do-list li.check { cursor: pointer; }
+.do-list li.check::before { content: ""; border: 2px solid var(--muted2); background: none; width: 20px; height: 20px; }
+.do-list li.check.ticked::before { content: "✓"; background: var(--green); border-color: var(--green); color: #fff; }
+.do-list li.check.ticked { color: var(--muted); }
+.do-list .where { font-weight: 700; }
+.note { margin-top: var(--space-4); font-size: var(--text-sm); color: var(--muted); }
+.fig { background: var(--surface2); border-radius: var(--radius-md); padding: var(--space-3); }
+.fig svg { width: 100%; height: auto; display: block; }
+.fig-cap { font-size: var(--text-sm); color: var(--muted); margin-top: var(--space-2); display: flex; justify-content: space-between; gap: var(--space-3); }
+.statusline { margin-top: var(--space-5); padding-top: var(--space-4); border-top: 1px solid var(--border2);
+              display: flex; align-items: center; gap: var(--space-3); min-height: 32px; font-size: var(--text-md); }
+.statusline .msg { flex: 1; min-width: 0; }
+.statusline.failed .msg { color: var(--red); }
+.spin { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--accent-dim); border-top-color: var(--accent);
+        animation: spin 0.8s linear infinite; flex-shrink: 0; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.actions { display: flex; gap: var(--space-3); margin-top: var(--space-4); flex-wrap: wrap; }
+.actions .btn { min-height: 44px; }
+.actions .btn-lg { min-width: 150px; justify-content: center; }
+.spin.on-fill { border-color: rgba(255,255,255,0.35); border-top-color: #fff; }
+.details { margin-top: var(--space-4); }
+.details summary { cursor: pointer; color: var(--muted); font-size: var(--text-sm); }
+.details pre { margin: var(--space-2) 0 0; font-family: var(--mono); font-size: var(--text-xs); color: var(--muted); white-space: pre-wrap; }
+
+.side .panel { padding: var(--space-4); }
+.side .section-label { margin-bottom: var(--space-3); }
+.kill { width: 100%; min-height: 52px; justify-content: center; font-size: var(--text-lg); font-weight: 700; }
+.kill-hint { font-size: var(--text-xs); color: var(--muted); margin-top: var(--space-2); text-align: center; }
+.modeline { display: flex; align-items: center; gap: var(--space-3); justify-content: space-between; }
+.log { font-family: var(--mono); font-size: var(--text-xs); color: var(--muted); max-height: 220px; overflow: auto;
+       display: flex; flex-direction: column-reverse; gap: 2px; }
+.banner { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); border-radius: var(--radius-md);
+          border: 1px solid var(--red); color: var(--red); margin-bottom: var(--space-4); font-weight: 600; }
+.banner[hidden] { display: none; }
+
+/* ── done ── */
+.sum-table td.n { font-variant-numeric: tabular-nums; }
+
+/* mockup-only strip */
+.mock-strip { position: fixed; right: var(--space-4); bottom: var(--space-4); z-index: 300; background: var(--surface);
+              border: 1px dashed var(--border); border-radius: var(--radius-md); padding: var(--space-2) var(--space-4);
+              font-size: var(--text-xs); color: var(--muted); display: flex; gap: var(--space-4); align-items: center; box-shadow: var(--shadow); }
+.mock-strip b { color: var(--text); }
+
+@media (max-width: 1180px) {
+  .run-grid { grid-template-columns: minmax(0, 1fr); }
+  .steps { max-height: 260px; }
+  .setup-grid, .sc-body { grid-template-columns: minmax(0, 1fr); }
+}
+</style>
+</head>
+<body>
+<nav class="app-nav">
+  <div class="app-nav-header">
+    <button class="app-nav-collapse" title="Toggle sidebar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg></button>
+  </div>
+  <div class="app-nav-links">
+    <a href="/" class="app-nav-link" title="Home">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+      <span>Home</span>
+    </a>
+    <a href="/orchestrator/" class="app-nav-link" title="Orchestrator" data-orch-link>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+      <span>Orchestrator</span>
+      <span class="app-nav-badge" id="navOrchCount" hidden></span>
+    </a>
+  </div>
+</nav>
+<div class="app-nav-overlay"></div>
+
+<header class="topbar">
+  <button class="burger-btn" id="btnBurger" title="Menu"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
+  <div class="spacer"></div>
+  <div class="topbar-actions">
+    <button class="btn btn-ghost btn-sm btn-icon js-fullscreen-toggle" id="btnFullscreen" title="Fullscreen"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg></button>
+    <button class="btn btn-ghost btn-sm btn-icon js-theme-toggle" id="btnTheme" title="Toggle theme"></button>
+  </div>
+</header>
+<main class="main">
+<div class="page">
+
+  <!-- ═══ 1 · open ═══ -->
+  <section class="view" id="vOpen">
+    <div class="panel open-card">
+      <h2>Calibration</h2>
+      <p class="muted">Open a project to see its bench and calibrate it, step by step.</p>
+      <label for="fPath">Path to main.py</label>
+      <div class="open-row">
+        <input class="input mono" id="fPath" type="text" placeholder="/home/dorna/Downloads/projects/my_project/main.py" spellcheck="false"/>
+        <button class="btn btn-primary" id="btnOpen">Open project</button>
+      </div>
+      <div class="open-err" id="openErr" hidden></div>
+      <div class="recent">
+        <div class="section-label">Recent</div>
+        <div id="recentList"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ 2 · setup ═══ -->
+  <section class="view" id="vSetup" hidden>
+    <div class="page-head">
+      <h1 id="projTitle"></h1>
+      <span class="sub mono" id="projPath"></span>
+      <span class="chip" id="planSource"></span>
+      <div class="spacer"></div>
+      <button class="btn btn-ghost btn-sm" id="btnChange">Change project</button>
+    </div>
+    <div class="setup-grid">
+      <div>
+        <div class="panel bench">
+          <div class="row"><h2>Your bench</h2><div class="spacer"></div>
+            <span class="row muted"><span class="mark ok">✓</span>calibrated <span class="mark warn">!</span>partly <span class="mark bad">!</span>not yet</span></div>
+          <div id="benchMap"></div>
+          <div class="fig-cap"><span>Seen from above, robot hidden. Boxes mark the stations you picked.</span><span class="mono" id="sceneFiles"></span></div>
+        </div>
+        <div class="panel">
+          <div class="section-label">Probe input 7</div>
+          <div class="in7">
+            <div class="in7-lamp" data-in7>7</div>
+            <div class="grow">
+              <div class="lbl" data-in7-text>Open</div>
+              <div class="st">Touch the probe tip with a finger. The lamp should light and go out when you let go.</div>
+              <svg class="trace" data-in7-trace viewBox="0 0 300 28" preserveAspectRatio="none"><line class="base" x1="0" y1="24" x2="300" y2="24"/><path d=""/></svg>
+            </div>
+            <div class="seen" id="seen7"><span class="mark off"></span>Not seen yet</div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="section-label">Rail</div>
+          <div class="row" id="railState"></div>
+        </div>
+      </div>
+      <div>
+        <div class="panel">
+          <div class="row"><h2>Stations</h2><div class="spacer"></div>
+            <div class="seg" id="filterSeg"><button data-f="need" class="on">Needs calibration</button><button data-f="all">All</button><button data-f="none">None</button></div></div>
+          <table class="st-table" id="stTable"><thead><tr><th></th><th>Station</th><th>Where</th><th>Points</th><th>Probe</th></tr></thead><tbody></tbody></table>
+          <div class="fig-cap"><span>Click a row to add or drop it.</span><span class="mono" id="calFile"></span></div>
+        </div>
+        <div class="panel">
+          <div class="start-bar">
+            <div class="what"><div class="st-name" id="startWhat"></div><div class="muted" id="startSub"></div></div>
+            <label class="toggle" title="Runs every step on the simulated robot: nothing moves, nothing is saved"><input type="checkbox" id="dryRun"/> Dry run in simulation</label>
+            <button class="btn btn-primary btn-lg" id="btnStart">Start calibration</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ 3 · run ═══ -->
+  <section class="view" id="vRun" hidden>
+    <div class="page-head">
+      <h1 id="runTitle"></h1>
+      <span class="sub" id="runProgress"></span>
+      <div class="spacer"></div>
+      <span class="pill off" id="modePill"><span class="dot"></span><span>Real robot</span></span>
+      <span class="chip big"><span class="k">On the robot</span> <b id="toolNow">no tool</b></span>
+    </div>
+    <div class="run-grid">
+      <div class="panel"><div class="steps" id="stepList"></div></div>
+
+      <div>
+        <div class="banner" id="haltBanner" hidden>
+          <span class="mark bad">!</span><span class="msg">Stopped. The robot is halted and the program has ended.</span>
+          <div class="spacer"></div>
+          <button class="btn btn-sm" id="btnResume">Restart from this step</button>
+        </div>
+        <div class="panel stepcard" id="stepCard"></div>
+      </div>
+
+      <div class="side">
+        <div class="panel">
+          <button class="btn btn-danger kill" id="btnKill">Kill</button>
+          <div class="kill-hint">Hold 2 s: stops the program and halts the robot.</div>
+        </div>
+        <div class="panel">
+          <div class="section-label">Probe input 7</div>
+          <div class="in7">
+            <div class="in7-lamp" data-in7>7</div>
+            <div><div class="lbl" data-in7-text>Open</div><div class="st" id="in7Count">0 touches this point</div></div>
+          </div>
+          <svg class="trace" data-in7-trace viewBox="0 0 300 28" preserveAspectRatio="none"><line class="base" x1="0" y1="24" x2="300" y2="24"/><path d=""/></svg>
+        </div>
+        <div class="panel">
+          <div class="section-label">Log</div>
+          <div class="log" id="log"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ 4 · done ═══ -->
+  <section class="view" id="vDone" hidden>
+    <div class="page-head"><h1>Calibration finished</h1><span class="sub" id="doneSub"></span></div>
+    <div class="panel">
+      <table class="st-table sum-table" id="sumTable"><thead><tr><th></th><th>Station</th><th>Measured</th><th>Skipped</th><th>Largest correction</th></tr></thead><tbody></tbody></table>
+      <div class="actions"><button class="btn" id="btnRunSkipped">Run the skipped points</button><button class="btn btn-primary" id="btnBack">Back to the bench</button></div>
+    </div>
+  </section>
+
+</div>
+</main>
+
+<div class="mock-strip"><b>Mockup</b> <span>Hold <b>7</b> (or the lamp) = probe touch</span>
+  <label class="toggle"><input type="checkbox" id="mockFail"/> next point fails</label>
+  <label class="toggle"><input type="checkbox" id="mockHomed" checked/> rail homed</label></div>
+
+<script src="../../../workspace/gui/vendor/theme.js"></script>
+<script src="../../../workspace/gui/vendor/nav.js"></script>
+<script src="plan.js"></script>
+<script>
+"use strict";
+let P = null, ST = {};
+const $ = (s, r = document) => r.querySelector(s), $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const plateNo = p => p ? p.replace("fixture_plate_", "") : "?";
+const PROBE = { probe_rod: "probe rod", probe_vertical: "vertical probe", probe_horizontal: "horizontal probe" };
+
+/* theme */
+
+/* ── views ── */
+function show(id) { $$(".view").forEach(v => v.hidden = v.id !== id); window.scrollTo(0, 0); }
+$("#fPath").value = "";
+for (const p of window.PLANS) {
+  const row = document.createElement("div");
+  row.className = "recent-row";
+  row.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+    <div class="p"><div><b>${esc(p.project)}</b></div><div class="mono muted truncate">${esc(p.main)}</div></div>
+    <span class="chip"><span class="k">last calibrated</span> ${p.last_calibrated || "never"}</span>`;
+  row.onclick = () => { $("#fPath").value = p.main; openProject(); };
+  $("#recentList").appendChild(row);
+}
+$("#btnOpen").onclick = openProject;
+$("#fPath").addEventListener("keydown", e => { if (e.key === "Enter") openProject(); });
+$("#btnChange").onclick = () => show("vOpen");
+
+function status(h) { const s = ST[h], n = s.points.length; return s.stored >= n ? "ok" : s.stored > 0 ? "warn" : "bad"; }
+function where(s) {
+  const pts = s.points.filter(p => p.hole);
+  if (!pts.length) return `Plate ${plateNo(s.plate)}`;
+  const byPlate = {};
+  pts.forEach(p => (byPlate[plateNo(p.plate)] ||= []).push(p.hole));
+  return Object.entries(byPlate).map(([k, v]) => `Plate ${k} · ${v.join(" ")}`).join("; ");
+}
+
+let selected = new Set();
+function openProject() {
+  const v = $("#fPath").value.trim();
+  if (!v) { $("#fPath").focus(); return; }
+  const p = window.PLANS.find(x => x.main === v);
+  $("#openErr").hidden = !!p;
+  if (!p) { $("#openErr").textContent = `No project with a launch.yaml at ${v}.`; return; }
+  P = p; ST = p.stations;
+  $("#projTitle").textContent = p.project;
+  $("#runTitle").textContent = `Calibrating ${p.project}`;
+  $("#projPath").textContent = v;
+  $("#planSource").innerHTML = p.source === "derived" ? `<span class="k">Plan</span> from the scene and recipes` : `<span class="k">Plan</span> ${esc(p.source)}`;
+  $("#sceneFiles").textContent = p.scene.map(f => f.split("/").pop()).join(" + ");
+  $("#calFile").textContent = "core/calibrate.json";
+  setFilter("need");
+  show("vSetup");
+}
+
+/* ── bench map (top view, y up) ── */
+// Real top-down renders of the project's scene (robot hidden), 2 px/mm over P.shot's world box
+function shot(which) {
+  const b = P.shot;
+  return `<image href="${P.images[which]}" x="${b.x0}" y="${-b.y1}" width="${b.x1 - b.x0}" height="${b.y1 - b.y0}"/>`;
+}
+function plateTag(n, x, y, k) {
+  return `<g transform="translate(${x},${y})"><rect width="${66 * k}" height="${20 * k}" rx="${5 * k}" fill="var(--surface)" fill-opacity="0.9"/>
+    <text x="${8 * k}" y="${14.5 * k}" font-size="${12 * k}" font-weight="700" fill="var(--text)">Plate ${plateNo(n)}</text></g>`;
+}
+function benchSVG(hl) {
+  const pl = Object.entries(P.plates);
+  const xs = pl.flatMap(([, p]) => [p.box[0], p.box[0] + p.box[2]]), ys = pl.flatMap(([, p]) => [p.box[1], p.box[1] + p.box[3]]);
+  const x0 = Math.min(...xs) - 20, x1 = Math.max(...xs) + 40, y0 = Math.min(...ys) - 20, y1 = Math.max(...ys) + 20;
+  let g = `<svg viewBox="${x0} ${-y1} ${x1 - x0} ${y1 - y0}">` + shot("prod");
+  const k = (x1 - x0) / 710;                                     // tags read the same on any bench size
+  for (const [n, p] of pl) g += plateTag(n, p.box[0] + 4 * k, -(p.box[1] + p.box[3]) + 4 * k, k);
+  for (const [h, s] of Object.entries(ST)) {
+    const st = status(h), on = selected.has(h), cur = hl === h;
+    const col = cur ? "var(--accent)" : st === "ok" ? "var(--muted)" : st === "warn" ? "var(--amber)" : "var(--red)";
+    if (on || cur) for (const [fx, fy, sx, sy] of s.footprint)   // see-through: the item stays visible under the box
+      g += `<rect x="${fx}" y="${-(fy + sy)}" width="${sx}" height="${sy}" rx="6" fill="${col}" fill-opacity="${cur ? 0.18 : 0.1}" stroke="${col}" stroke-width="${cur ? 6 : 4}"/>`;
+    const f = s.footprint[0]; if (!f) continue;
+    const cx = f[0] + f[2] - 4, cy = -(f[1] + f[3]) + 4;
+    g += `<g transform="translate(${cx},${cy})"><circle r="15" fill="${st === "ok" ? "var(--green)" : st === "warn" ? "var(--amber)" : "var(--red)"}" stroke="var(--surface)" stroke-width="3"/>
+          <text y="6" text-anchor="middle" font-size="18" font-weight="800" fill="#fff">${st === "ok" ? "✓" : "!"}</text></g>`;
+  }
+  return g + "</svg>";
+}
+
+/* ── station table ── */
+function setFilter(f) {
+  $$("#filterSeg button").forEach(b => b.classList.toggle("on", b.dataset.f === f));
+  selected = new Set(Object.keys(ST).filter(h => f === "all" || (f === "need" && status(h) !== "ok")));
+  renderSetup();
+}
+$$("#filterSeg button").forEach(b => b.onclick = () => setFilter(b.dataset.f));
+function renderSetup() {
+  renderRail();
+  $("#benchMap").innerHTML = benchSVG();
+  const tb = $("#stTable tbody"); tb.innerHTML = "";
+  for (const h of P.order) {
+    const s = ST[h], st = status(h), tr = document.createElement("tr");
+    tr.className = selected.has(h) ? "sel" : "";
+    tr.innerHTML = `<td><input type="checkbox" ${selected.has(h) ? "checked" : ""} tabindex="-1"/></td>
+      <td><div class="st-name">${esc(s.title)}</div></td><td class="st-where">${esc(where(s))}</td>
+      <td><span class="row"><span class="mark ${st}">${st === "ok" ? "✓" : "!"}</span>${s.stored}/${s.points.length}</span></td>
+      <td class="muted">${PROBE[s.probe]}</td>`;
+    tr.onclick = () => { selected.has(h) ? selected.delete(h) : selected.add(h); renderSetup(); };
+    tb.appendChild(tr);
+  }
+  const n = selected.size, pts = [...selected].reduce((a, h) => a + ST[h].points.length, 0);
+  const probes = new Set([...selected].map(h => ST[h].probe));
+  $("#startWhat").textContent = n ? `${n} station${n > 1 ? "s" : ""}, ${pts} points` : "Nothing selected";
+  $("#startSub").textContent = n ? `Uses the ${[...probes].map(p => PROBE[p]).join(" and the ")}. About ${Math.round(pts * 1.5 + 5)} min.` : "Pick stations on the left or in the table.";
+  $("#btnStart").disabled = !n; $("#btnStart").title = n ? "" : "Select at least one station";
+}
+
+/* ── input 7 (mock: hold 7 or the lamp) ── */
+let in7 = false, in7Seen = false, in7Touches = 0; const trace = [];
+function setIn7(v) {
+  if (v === in7) return; in7 = v;
+  if (v) { in7Touches++; if (!in7Seen) { in7Seen = true; $("#seen7").innerHTML = `<span class="mark ok">✓</span>Seen triggering`; } }
+  $$("[data-in7]").forEach(l => l.classList.toggle("on", v));
+  $$("[data-in7-text]").forEach(t => t.textContent = v ? "Triggered" : "Open");
+  $("#in7Count").textContent = `${in7Touches} touch${in7Touches === 1 ? "" : "es"} this point`;
+}
+setInterval(() => {
+  trace.push(in7 ? 1 : 0); if (trace.length > 150) trace.shift();
+  const d = trace.map((v, i) => `${i ? "L" : "M"}${(i * 2).toFixed(0)},${v ? 5 : 24}`).join(" ");
+  $$("[data-in7-trace] path").forEach(p => p.setAttribute("d", d));
+}, 100);
+document.addEventListener("keydown", e => { if (e.key === "7" && !e.repeat) setIn7(true); });
+document.addEventListener("keyup", e => { if (e.key === "7") setIn7(false); });
+$$("[data-in7]").forEach(l => { l.onpointerdown = () => setIn7(true); l.onpointerup = l.onpointerleave = () => setIn7(false); });
+
+/* ── the run: steps from the plan, in the project's order ── */
+let steps = [], cur = 0, results = {}, dry = false, toolOn = null, busy = false, halted = false;
+let railHomed = true;                  // the robot's is_homed(rail axis), read when the project opens
+function renderRail() {
+  $("#railState").innerHTML = railHomed
+    ? `<span class="mark ok">✓</span><span>Homed. Calibration starts without homing.</span>`
+    : `<span class="mark warn">!</span><span>Not homed. Calibration homes it first.</span>`;
+}
+$("#mockHomed").onchange = e => { railHomed = e.target.checked; renderRail(); };
+function buildSteps() {
+  const out = [{ kind: "prepare", group: "Get ready" }, ...(railHomed ? [] : [{ kind: "home", group: "Get ready" }])];
+  let tool = null;
+  for (const h of P.order) {
+    if (!selected.has(h)) continue;
+    const s = ST[h];
+    s.points.forEach((pt, i) => {
+      if (tool !== pt.probe) { out.push({ kind: tool ? "swap" : "mount", from: tool, to: pt.probe, group: "Tool" }); tool = pt.probe; }
+      out.push({ kind: "point", h, pt, i, n: s.points.length, group: s.recipe === "ToolRack" ? "Tool racks" : "Stations" });
+    });
+    if (s.lift_after) out.push({ kind: "lift", h, auto: true, group: "Stations" });
+  }
+  if (tool) out.push({ kind: "unmount", from: tool, group: "Finish" });
+  return out;
+}
+
+function stepLabel(s) {
+  switch (s.kind) {
+    case "prepare": return "Clear the bench";
+    case "home": return "Home the rail";
+    case "mount": return `Mount the ${PROBE[s.to]}`;
+    case "swap": return `Swap to the ${PROBE[s.to]}`;
+    case "unmount": return `Take the ${PROBE[s.from]} off`;
+    case "lift": return `Lift clear of the ${ST[s.h].title.toLowerCase()}`;
+    case "point": return ST[s.h].title;
+  }
+}
+
+function renderSteps() {
+  const box = $("#stepList"); box.innerHTML = ""; let grp = null, lastH = null;
+  steps.forEach((s, i) => {
+    if (s.kind === "point" && s.h === lastH) return;          // one row per station
+    lastH = s.kind === "point" ? s.h : null;
+    if (s.group !== grp) { grp = s.group; box.insertAdjacentHTML("beforeend", `<div class="grp">${grp}</div>`); }
+    let state = "", level = "", n = "";
+    if (s.kind === "point") {
+      const idx = steps.map((t, j) => [t, j]).filter(([t]) => t.kind === "point" && t.h === s.h);
+      const doneN = idx.filter(([t, j]) => results[j]?.state === "done").length;
+      const skipN = idx.filter(([t, j]) => results[j]?.state === "skipped").length;
+      const curIn = idx.some(([, j]) => j === cur);
+      state = curIn ? "active" : idx.every(([, j]) => results[j]) ? "done" : "";
+      level = idx.some(([, j]) => results[j]?.state === "failed") ? "error" : skipN ? "warning" : state === "done" ? "success" : curIn && busy ? "" : "";
+      n = `${doneN}/${s.n}`;
+    } else {
+      state = i === cur ? "active" : results[i] ? "done" : "";
+      level = results[i]?.state === "skipped" ? "warning" : results[i] ? "success" : "";
+    }
+    if (halted && state === "active") level = "error";
+    box.insertAdjacentHTML("beforeend", `<div class="step-card cal-step ${state}" ${level ? `data-level="${level}"` : ""}>
+      <span class="step-dot"></span><span class="t">${esc(stepLabel(s))}</span><span class="n">${n}</span></div>`);
+  });
+  const total = steps.filter(s => s.kind === "point").length, done = Object.entries(results).filter(([j, r]) => steps[j].kind === "point" && r.state === "done").length;
+  $("#runProgress").textContent = `${done} of ${total} points measured`;
+  $(".step-card.active")?.scrollIntoView({ block: "nearest" });
+}
+
+/* ── figures: the plate around a point, true to the scene ── */
+function pointFig(h, i) {
+  const s = ST[h], pt = s.points[i];
+  const fx = s.footprint.flatMap(f => [f[0], f[0] + f[2]]), fy = s.footprint.flatMap(f => [f[1], f[1] + f[3]]);
+  const px = s.points.map(p => p.xyz[0]), py = s.points.map(p => p.xyz[1]);
+  let x0 = Math.min(...fx, ...px) - 45, x1 = Math.max(...fx, ...px) + 45, y0 = Math.min(...fy, ...py) - 45, y1 = Math.max(...fy, ...py) + 45;
+  const w = Math.max(x1 - x0, (y1 - y0) * 1.3), hgt = w / 1.3, cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+  x0 = cx - w / 2; x1 = cx + w / 2; y0 = cy - hgt / 2; y1 = cy + hgt / 2;
+  const k = w / 400;                                        // scale strokes/text to the view
+  let g = `<svg viewBox="${x0} ${-y1} ${w} ${hgt}">`;
+  g += shot("cal");                                   // the bare plate, holes showing
+  g += `<clipPath id="fpClip">${s.footprint.map(([fx0, fy0, sx, sy]) => `<rect x="${fx0}" y="${-(fy0 + sy)}" width="${sx}" height="${sy}"/>`).join("")}</clipPath>
+        <g clip-path="url(#fpClip)" opacity="0.4">${shot("prod")}</g>`;    // the station's item, see-through
+  for (const [n, p] of Object.entries(P.plates)) {
+    const [bx, by, sx, sy] = p.box;
+    if (bx > x1 || bx + sx < x0 || by > y1 || by + sy < y0) continue;
+    g += plateTag(n, Math.max(bx + 6, x0 + 6 * k), -Math.min(by + sy - 6, y1 - 6 * k), k);
+  }
+  for (const [fx0, fy0, sx, sy] of s.footprint)                 // see-through highlight over the real item
+    g += `<rect x="${fx0}" y="${-(fy0 + sy)}" width="${sx}" height="${sy}" rx="${3 * k}" fill="var(--accent)" fill-opacity="0.1" stroke="var(--accent)" stroke-width="${2 * k}"/>`;
+  s.points.forEach((p, j) => {
+    if (j === i) return;
+    const r = results[steps.findIndex(t => t.kind === "point" && t.h === h && t.i === j)];
+    g += `<circle cx="${p.xyz[0]}" cy="${-p.xyz[1]}" r="${6 * k}" fill="${r?.state === "done" ? "var(--muted)" : "var(--surface)"}" fill-opacity="${r?.state === "done" ? 1 : 0.6}" stroke="var(--muted)" stroke-width="${1.5 * k}"/>`;
+  });
+  const [tx, ty] = pt.xyz;
+  g += `<circle cx="${tx}" cy="${-ty}" r="${13 * k}" fill="none" stroke="var(--surface)" stroke-width="${6 * k}"/>
+        <circle cx="${tx}" cy="${-ty}" r="${13 * k}" fill="none" stroke="var(--accent)" stroke-width="${3 * k}"/>
+        <circle cx="${tx}" cy="${-ty}" r="${4 * k}" fill="var(--accent)"/>`;
+  const lab = pt.hole || "here", right = tx < cx;
+  g += `<g transform="translate(${tx + (right ? 20 : -20) * k},${-ty - 14 * k})"><rect x="${right ? 0 : -60 * k}" y="${-16 * k}" width="${60 * k}" height="${24 * k}" rx="${6 * k}" fill="var(--accent)"/>
+        <text x="${right ? 30 * k : -30 * k}" y="${1 * k}" text-anchor="middle" font-size="${14 * k}" font-weight="800" fill="#fff">${esc(lab)}</text></g>`;
+  return g + "</svg>";
+}
+
+function stationNote(s) {
+  const n = [];
+  if (s.recipe === "ToolRack") n.push("The jig replaces the tool, so the rack must be empty.");
+  if (s.shares?.length) n.push(`Also calibrates ${s.shares.map(x => x.replace(/_/g, " ")).join(", ")}: same component and settings.`);
+  if (s.more?.length) n.push(`Its corners and middle are probed; ${s.more.length} more points are there if this station needs them.`);
+  return n.join(" ");
+}
+function pointTodo(s, pt, i) {
+  const items = [];
+  const plate = pt.plate ? `Plate ${plateNo(pt.plate)}` : `Plate ${plateNo(s.plate)}`;
+  if (i === 0 && s.remove.length) items.push(`Take off: <span class="where">${s.remove.map(esc).join(", ")}</span>.`);
+  if (pt.probe === "probe_horizontal") {
+    items.push(`Seat the three-pocket jig on the shelf's front edge (${plate}).`);
+  } else if (s.recipe === "ToolRack") {
+    items.push(`Lift off this rack's <span class="where">cable-routing pole</span>.`);
+    items.push(`Seat the three-pocket jig in this rack's tool seat (${plate}).`);
+  } else if (pt.hole && pt.height >= 50) {
+    items.push(`Screw a <span class="where">${pt.height} mm standoff</span> into ${plate} hole <span class="where">${pt.hole}</span>.`);
+    items.push(`Seat the jig on top of the standoff.`);
+  } else if (pt.hole) {
+    items.push(`Seat the jig flat in ${plate} hole <span class="where">${pt.hole}</span>.`);
+  } else {
+    items.push(`Seat the jig on the point marked in the picture (${plate}).`);
+  }
+  items.push(`Step back. The robot touches the jig with the ${PROBE[pt.probe]} and measures it.`);
+  return items;
+}
+
+const NOTE = {
+  prepare: () => {
+    const seen = new Set(), list = [];
+    for (const h of selected) for (const r of ST[h].remove) { const k = `${r} (Plate ${plateNo(ST[h].plate)})`; if (!seen.has(k)) { seen.add(k); list.push(k); } }
+    return list;
+  }
+};
+
+function renderCard() {
+  const s = steps[cur], card = $("#stepCard"), r = results[cur];
+  card.dataset.state = halted ? "halted" : r?.state === "failed" ? "failed" : busy ? (busy === "sim" ? "sim" : "running") : r?.state === "done" ? "done" : "";
+  let kicker = "", title = stepLabel(s), chips = [], todo = [], fig = "", note = "", primary = "", sec = [], details = "";
+  if (s.kind === "prepare") {
+    kicker = "Before you start";
+    title = "Clear the bench";
+    const rm = NOTE.prepare(), racks = [...selected].filter(h => ST[h].recipe === "ToolRack").length;
+    const probes = [...new Set(steps.filter(t => t.kind === "point").map(t => t.pt.probe))].map(p => PROBE[p]);
+    todo = [...rm.map(x => ({ check: true, html: `Take off the ${esc(x)}` })),
+            ...(racks ? [{ check: true, html: `Lift off the <span class="where">cable-routing poles</span> on the ${racks} tool rack${racks > 1 ? "s" : ""}.` }] : []),
+            { check: true, html: `Keep the ${probes.join(" and the ")} within reach. You mount ${probes.length > 1 ? "them" : "it"} by hand when asked.` }];
+    fig = benchSVG(); note = "Racks and tubes sit over the calibration holes, so everything on the selected stations comes off. Tick each line as you go.";
+    primary = "Next";
+  } else if (s.kind === "home") {
+    kicker = "Robot"; title = "Home the rail";
+    todo = ["Make sure nothing is in the robot's way along the rail.", "Press <b>Home rail</b>. The rail crawls slowly into its end stop, then backs off. That stall is normal."];
+    primary = r ? "Next" : "Home rail";
+  } else if (s.kind === "mount" || s.kind === "swap") {
+    kicker = "Tool change"; title = s.kind === "mount" ? `Mount the ${PROBE[s.to]}` : `Swap to the ${PROBE[s.to]}`;
+    chips = [`<span class="chip big"><span class="k">Use</span> <b>${PROBE[s.to]}</b></span>`];
+    todo = [...(s.from ? [`Take the <span class="where">${PROBE[s.from]}</span> off the robot's tool changer.`] : []),
+            `Lock the <span class="where">${PROBE[s.to]}</span> onto the robot's tool changer by hand.`,
+            `Press <b>I've mounted it</b>. The robot is switched to simulation, the probe is mounted there virtually, then it switches back.`];
+    const uses = steps.filter(t => t.kind === "point" && t.pt.probe === s.to).length;
+    note = `The ${PROBE[s.to]} does the next ${uses} point${uses > 1 ? "s" : ""}.` + (s.to === "probe_rod" ? "" : " It reads the three-pocket jig.");
+    primary = r ? "Next" : "I've mounted it";
+  } else if (s.kind === "unmount") {
+    kicker = "Finish"; title = `Take the ${PROBE[s.from]} off`;
+    todo = [`Take the <span class="where">${PROBE[s.from]}</span> off the tool changer by hand.`, "Put the tools, poles and racks back for production.", "Press <b>I've taken it off</b>."];
+    primary = r ? "Finish" : "I've taken it off";
+  } else if (s.kind === "lift") {
+    kicker = "Automatic"; title = stepLabel(s);
+    todo = ["The probe ends inside the station, so the robot moves straight up before its next planned move."];
+    primary = r ? "Next" : "Lift clear";
+  } else {
+    const st = ST[s.h], pt = s.pt;
+    kicker = `Point ${s.i + 1} of ${s.n}`;
+    chips = [`<span class="chip big"><span class="k">Probe</span> <b>${PROBE[pt.probe]}</b></span>`,
+             pt.hole ? `<span class="chip big"><span class="k">Hole</span> <b>Plate ${plateNo(pt.plate)} · ${pt.hole}</b></span>` : `<span class="chip big"><span class="k">On</span> <b>Plate ${plateNo(st.plate)}</b></span>`,
+             pt.mode === "precise" ? `<span class="chip big"><span class="k">Jig</span> <b>three-pocket</b></span>`
+               : pt.height >= 50 ? `<span class="chip big"><span class="k">Standoff</span> <b>${pt.height} mm</b></span>` : `<span class="chip big"><span class="k">Standoff</span> <b>none</b></span>`];
+    todo = pointTodo(st, pt, s.i);
+    fig = pointFig(s.h, s.i); note = stationNote(st);
+    primary = r?.state === "done" ? "Next" : "Probe this point";
+    details = `handle      ${s.h}\ncomponent   ${st.component}\nanchor      ${pt.clb}  ->  x ${pt.xyz[0]}  y ${pt.xyz[1]}  z ${pt.xyz[2]}\nmode        ${pt.mode}   recipe ${st.recipe}\nstored as   ${st.calibration_name}`;
+  }
+  const list = todo.map(t => typeof t === "string" ? `<li><span>${t}</span></li>` : `<li class="check" data-check><span>${t.html}</span></li>`).join("");
+  let stline = "";
+  if (halted) stline = `<span class="mark bad">!</span><span class="msg">Stopped by Kill. Nothing after the last finished point was saved.</span>`;
+  else if (busy) stline = `<span class="spin"></span><span class="msg" id="busyMsg">${esc(busyMsg)}</span>`;
+  else if (r?.state === "failed") stline = `<span class="mark bad">!</span><span class="msg">${esc(r.why)} Check the jig is seated, then retry, or skip this point.</span>`;
+  else if (r?.state === "done") stline = `<span class="mark ok">✓</span><span class="msg">${esc(r.msg || "Done.")}</span>`;
+  else stline = `<span class="mark off"></span><span class="msg muted">Waiting for you.</span>`;
+  const isPoint = s.kind === "point";
+  card.innerHTML = `<div class="sc-kicker">${esc(kicker)}</div><div class="sc-title">${esc(title)}</div>
+    ${chips.length ? `<div class="sc-chips">${chips.join("")}</div>` : ""}
+    <div class="sc-body ${fig ? "" : "one"}">
+      <div><ol class="do-list">${list}</ol>${note ? `<div class="note">${esc(note)}</div>` : ""}</div>
+      ${fig ? `<div><div class="fig">${fig}</div>${isPoint ? `<div class="fig-cap"><span>Seen from above. The item is see-through so you can find the hole under it.</span></div>` : ""}</div>` : ""}
+    </div>
+    <div class="statusline ${r?.state === "failed" ? "failed" : ""}">${stline}</div>
+    <div class="actions">
+      <button class="btn btn-primary btn-lg" id="btnPrimary">${busy ? `<span class="spin on-fill"></span>Working…` : esc(r?.state === "failed" ? "Retry" : primary)}</button>
+      ${isPoint ? `<button class="btn btn-lg" id="btnSkip">Skip point</button><button class="btn btn-ghost btn-lg" id="btnSkipSt" title="Skip every point left on ${esc(ST[s.h].title)}">Skip station</button>`
+                : s.kind === "prepare" || s.kind === "home" || s.kind === "lift" ? `<button class="btn btn-lg" id="btnSkip">Skip</button>` : ""}
+      ${cur > 0 ? `<div class="spacer"></div><button class="btn btn-ghost btn-lg" id="btnBackStep">Back</button>` : ""}
+    </div>
+    ${details ? `<details class="details"><summary>Engineer details</summary><pre>${esc(details)}</pre></details>` : ""}`;
+  /* checklist gating for "Clear the bench" */
+  const checks = $$("[data-check]", card);
+  const gate = () => { const left = checks.filter(c => !c.classList.contains("ticked")).length;
+    $("#btnPrimary").disabled = !!left; $("#btnPrimary").title = left ? `Tick the ${left} remaining line${left > 1 ? "s" : ""} first` : ""; };
+  checks.forEach(c => c.onclick = () => { c.classList.toggle("ticked"); gate(); });
+  if (checks.length) gate();
+  const pb = $("#btnPrimary");
+  if (busy || halted) { $$(".actions .btn", card).forEach(b => { b.disabled = true; b.title = halted ? "Stopped. Restart from this step first." : "Working…"; }); }
+  pb.onclick = onPrimary;
+  $("#btnSkip") && ($("#btnSkip").onclick = () => finish({ state: "skipped" }, true));
+  $("#btnSkipSt") && ($("#btnSkipSt").onclick = skipStation);
+  $("#btnBackStep") && ($("#btnBackStep").onclick = () => { if (busy) return; cur--; render(); });
+  $("#modePill").className = `pill ${dry || busy === "sim" ? "sim" : "off"}`;
+  $("#modePill").innerHTML = `<span class="dot ${dry || busy === "sim" ? "sim" : ""}"></span><span>${dry ? "Dry run · simulation" : busy === "sim" ? "Simulation" : "Real robot"}</span>`;
+  $("#toolNow").textContent = toolOn ? PROBE[toolOn] : "no tool";
+}
+function render() { renderSteps(); renderCard(); }
+
+let busyMsg = "";
+function log(m) { const t = new Date().toTimeString().slice(0, 8); $("#log").insertAdjacentHTML("afterbegin", `<div>${t}  ${esc(m)}</div>`); }
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+async function work(mode, phases) {
+  busy = mode;
+  for (const [msg, ms, touch] of phases) {
+    if (halted) return false;
+    busyMsg = msg; log(msg); renderCard();
+    if (touch) { await sleep(ms * 0.6); setIn7(true); await sleep(160); setIn7(false); await sleep(ms * 0.4 - 160); }
+    else await sleep(ms);
+  }
+  busy = false; return !halted;
+}
+function finish(r, advance) {
+  results[cur] = r;
+  if (advance) next(); else render();
+}
+function next() {
+  if (cur < steps.length - 1) { cur++; in7Touches = 0; setIn7(false); $("#in7Count").textContent = "0 touches this point"; render(); }
+  else showDone();
+}
+function skipStation() {
+  const h = steps[cur].h;
+  steps.forEach((t, j) => { if (t.kind === "point" && t.h === h && !results[j]) results[j] = { state: "skipped" }; });
+  let j = cur; while (j < steps.length - 1 && steps[j].kind === "point" && steps[j].h === h) j++;
+  cur = j; render();
+}
+async function onPrimary() {
+  const s = steps[cur], r = results[cur];
+  if (r?.state === "done" || (s.kind === "prepare")) { if (s.kind === "prepare") results[cur] = { state: "done" }; return next(); }
+  if (s.kind === "home") {
+    if (await work(dry ? "sim" : "run", [["Softening the rail PID", 500], ["Crawling into the end stop at 5 mm/s", 1400], ["Stall seen, clearing the alarm", 500], ["Backing off onto the index", 700]]))
+      { railHomed = true; $("#mockHomed").checked = true; finish({ state: "done", msg: "Rail homed." }); }
+  } else if (s.kind === "mount" || s.kind === "swap") {
+    const ok = await work("sim", [["Switching to simulation", 600], [`Mounting the ${PROBE[s.to]} virtually`, 1200], [dry ? "Staying in simulation (dry run)" : "Back to the real robot", 600]]);
+    if (ok) { toolOn = s.to; finish({ state: "done", msg: `${PROBE[s.to][0].toUpperCase() + PROBE[s.to].slice(1)} is on the robot, real and virtual.` }); }
+  } else if (s.kind === "unmount") {
+    if (r) return showDone();
+    const ok = await work("sim", [["Switching to simulation", 500], [`Taking the ${PROBE[s.from]} off virtually`, 900], ["Back to the real robot", 500]]);
+    if (ok) { toolOn = null; finish({ state: "done", msg: "No tool on the robot." }); }
+  } else if (s.kind === "lift") {
+    if (await work(dry ? "sim" : "run", [["Moving straight up 150 mm", 1200]])) finish({ state: "done", msg: "Clear. The next move can plan." });
+  } else {
+    const fail = $("#mockFail").checked; $("#mockFail").checked = false;
+    const st = ST[s.h];
+    const ph = st.mode === "precise"
+      ? [["Approaching the jig", 900], ["Pocket 1: floor", 500, 1], ["Pocket 1: walls", 700, 1], ["Pocket 2: floor", 500, 1], ["Pocket 2: walls", 700, 1], ["Centre pocket: 8 touches", 1400, 1], ["Fitting position and tilt", 400]]
+      : [["Approaching", 800], ["Finding the floor", 500, 1], ["Wall +x", 450, 1], ["Wall -x", 450, 1], ["Wall +y", 450, 1], ["Wall -y", 450, 1], ["Fitting the centre", 300]];
+    const ok = await work(dry ? "sim" : "run", fail ? ph.slice(0, 3) : ph);
+    if (!ok) return;
+    if (fail) { log("No touch within the search distance"); return finish({ state: "failed", why: "No touch within 20 mm of where the wall should be." }); }
+    const d = [0, 1, 2].map(() => +(Math.random() * 1.2 - 0.6).toFixed(2));
+    log(`Saved ${s.h}.${s.pt.clb}  dx ${d[0]}  dy ${d[1]}  dz ${d[2]}`);
+    finish({ state: "done", d, msg: `Measured. Correction dx ${d[0]} · dy ${d[1]} · dz ${d[2]} mm${dry ? " (dry run, not saved)" : ", saved"}.` });
+  }
+}
+
+/* Kill: hold 2 s (same grammar as Park/Kill everywhere) */
+(function () {
+  const b = $("#btnKill"); b.classList.add("hold", "hold-kill"); b.style.setProperty("--hold-ms", "2000ms"); b.title = "Hold 2 s to kill";
+  let t = null;
+  const arm = e => { if (t || halted) return; e.preventDefault(); b.classList.add("holding"); t = setTimeout(() => { t = null; b.classList.remove("holding"); doKill(); }, 2000); };
+  const disarm = () => { if (t) { clearTimeout(t); t = null; } b.classList.remove("holding"); };
+  b.addEventListener("pointerdown", arm); ["pointerup", "pointerleave", "pointercancel", "blur"].forEach(x => b.addEventListener(x, disarm));
+  b.addEventListener("keydown", e => (e.key === " " || e.key === "Enter") && !e.repeat && arm(e)); b.addEventListener("keyup", disarm);
+})();
+function doKill() { halted = true; busy = false; log("KILL: program stopped, robot halted"); $("#haltBanner").hidden = false; render(); }
+$("#btnResume").onclick = () => { halted = false; $("#haltBanner").hidden = true; delete results[cur]; log("Restarted at this step"); render(); };
+
+$("#btnStart").onclick = () => {
+  dry = $("#dryRun").checked; steps = buildSteps(); cur = 0; results = {}; toolOn = null; halted = false; busy = false;
+  $("#log").innerHTML = ""; log(`Calibration started${dry ? " (dry run in simulation)" : ""}: ${selected.size} stations`);
+  show("vRun"); render();
+};
+
+function showDone() {
+  const tb = $("#sumTable tbody"); tb.innerHTML = ""; let measured = 0, skipped = 0;
+  for (const h of selected) {
+    const idx = steps.map((t, j) => [t, j]).filter(([t]) => t.kind === "point" && t.h === h);
+    const m = idx.filter(([, j]) => results[j]?.state === "done"), sk = idx.length - m.length;
+    measured += m.length; skipped += sk;
+    const big = Math.max(0, ...m.flatMap(([, j]) => results[j].d.map(Math.abs)));
+    tb.insertAdjacentHTML("beforeend", `<tr><td><span class="mark ${sk ? "warn" : "ok"}">${sk ? "!" : "✓"}</span></td><td class="st-name">${esc(ST[h].title)}</td>
+      <td class="n">${m.length}/${idx.length}</td><td class="n">${sk || "—"}</td><td class="n">${m.length ? big.toFixed(2) + " mm" : "—"}</td></tr>`);
+  }
+  $("#doneSub").textContent = `${measured} points measured, ${skipped} skipped${dry ? " · dry run, nothing saved" : " · saved to core/calibrate.json"}`;
+  $("#btnRunSkipped").disabled = !skipped; $("#btnRunSkipped").title = skipped ? "" : "Nothing was skipped";
+  show("vDone");
+}
+$("#btnBack").onclick = () => show("vSetup");
+$("#btnRunSkipped").onclick = () => {
+  const keep = steps.map((t, j) => [t, j]).filter(([t, j]) => t.kind !== "point" || results[j]?.state !== "done").map(([t]) => t);
+  steps = keep; cur = 0; results = {}; show("vRun"); render();
+};
+
+show("vOpen");
+</script>
+</body>
+</html>
