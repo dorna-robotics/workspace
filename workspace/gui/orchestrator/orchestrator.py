@@ -211,6 +211,34 @@ class Orchestrator:
         self.save_registry()
         return {"status": "ok", "removed": True, "name": name}
 
+    def rename_workspace(self, old: str, new: str, path_to_file: Optional[str] = None) -> None:
+        """Re-key a stopped local workspace as ``new`` — the card keeps
+        its place in the registry, its port and label. ``path_to_file``
+        is its main.py after a folder rename (the caller moved it)."""
+        if old not in self.workspaces:
+            raise ValueError(f"Unknown workspace: {old}")
+        if new in self.workspaces:
+            raise ValueError(f"A project named {new} already exists.")
+        ws = self.workspaces[old]
+        if ws.is_remote():
+            raise RuntimeError("A remote project is renamed on its own node.")
+        if self.is_launched(old):
+            raise RuntimeError("Refuse to rename: the project is launched. Kill it first.")
+        fresh = WorkspaceInfo(name=new, path_to_file=path_to_file or ws.path_to_file,
+                              port=ws.port, node_url=None, label=ws.label)
+        fresh.kwargs_values = dict(ws.kwargs_values)
+        self.workspaces = {(new if k == old else k): (fresh if k == old else v)
+                           for k, v in self.workspaces.items()}
+        self.save_registry()
+
+    def free_port(self, start: int = 5010) -> int:
+        """The lowest port from ``start`` no registered workspace uses."""
+        used = {ws.port for ws in self.workspaces.values()}
+        port = start
+        while port in used or port == self._orch_port:
+            port += 1
+        return port
+
     def list_workspaces(self) -> List[Dict]:
         return [ws.to_dict() for ws in self.workspaces.values()]
 

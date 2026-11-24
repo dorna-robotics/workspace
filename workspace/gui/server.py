@@ -3,7 +3,7 @@ Unified GUI server — serves orchestrator and scene builder on one port.
 
     http://<ip>:5000/orchestrator/     → orchestrator dashboard
     http://<ip>:5000/scene-builder/    → scene builder
-    http://<ip>:5000/                  → redirects to orchestrator
+    http://<ip>:5000/                  → the projects page (gui/home)
 
 Usage:
     cd workspace
@@ -45,7 +45,7 @@ if WS_ROOT not in sys.path:
 
 from workspace.version import version as _ws_version
 
-# Once per process — the landing page stamps it into its footer.
+# Once per process — the main page stamps it into its footer.
 _WS_VERSION = _ws_version()
 
 # ---------------------------------------------------------------------------
@@ -105,196 +105,9 @@ from gui.scene_builder.server import (
 import socketio as _socketio
 
 # ---------------------------------------------------------------------------
-# Landing page
+# Main page — the projects page (gui/home)
 # ---------------------------------------------------------------------------
-LANDING_HTML = """<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Dorna Workspace</title>
-  <script>(function(){ document.documentElement.setAttribute("data-theme", localStorage.getItem("orch_theme")||"light"); if(localStorage.getItem("nav_expanded")==="1")document.documentElement.classList.add("nav-expanded"); })();</script>
-  <link rel="icon" type="image/png" href="/vendor/favicon.png"/>
-  <link rel="stylesheet" href="/vendor/base.css"/>
-  <link rel="stylesheet" href="/vendor/nav.css"/>
-  <style>
-    body { min-height: 100vh; display: flex; flex-direction: column; }
-
-    .main {
-      /* Anchored at a fixed height (not vertically centered) so
-         expanding the Developer section only grows DOWNWARD — the
-         cards above never move. */
-      flex: 1; display: flex; align-items: flex-start; justify-content: center;
-      padding: 16vh 24px 40px;
-    }
-    .container { text-align: center; max-width: 640px; }
-    h1 { font-size: 32px; font-weight: 800; margin-bottom: 6px; letter-spacing: -0.8px; }
-    .subtitle { color: var(--muted); font-size: 14px; margin-bottom: 40px; }
-    .cards {
-      display: grid;
-      grid-template-columns: 1fr;
-      gap: 12px;
-      text-align: left;
-      /* Fixed card-column width, shared with the vision server's
-         landing (.home-cards) — keep the two values in sync so the
-         two home pages are pixel-identical. */
-      width: 300px;
-      margin-left: auto;
-      margin-right: auto;
-    }
-    a.card {
-      display: flex; align-items: center; gap: 14px;
-      padding: 16px 18px;
-      background: var(--surface); border: 1px solid var(--border2); border-radius: 14px;
-      text-decoration: none; color: var(--text);
-      transition: background 0.15s, border-color 0.15s, transform 0.1s, box-shadow 0.15s;
-    }
-    a.card:hover {
-      background: var(--surface2); border-color: var(--accent);
-      transform: translateY(-2px); box-shadow: var(--shadow);
-    }
-    .card-icon {
-      width: 44px; height: 44px; border-radius: 12px;
-      display: flex; align-items: center; justify-content: center;
-      flex-shrink: 0;
-    }
-    .card-icon svg { opacity: 0.9; }
-    .card-text { min-width: 0; }
-    .card-label { font-size: 14px; font-weight: 600; letter-spacing: -0.2px; }
-    .card-hint { font-size: 11px; color: var(--muted); margin-top: 2px; }
-    /* a card whose address this unit does not declare: shown, with why */
-    .card.card-off { cursor: default; opacity: 0.6; }
-    .cards-label {
-      display: flex; align-items: center; gap: 5px;
-      text-align: left; font-size: 11px; font-weight: 600;
-      color: var(--muted); text-transform: uppercase; letter-spacing: 0.8px;
-      margin: 24px 0 10px 4px;
-      cursor: pointer; user-select: none;
-    }
-    .cards-label:hover { color: var(--text); }
-    .cards[hidden] { display: none; }
-    .cards-label svg { transition: transform 0.15s; }
-    .cards-label.open svg { transform: rotate(90deg); }
-    /* Quiet version line under the cards — same as the vision home. */
-    .landing-footer {
-      margin-top: 24px;
-      font-size: 11px;
-      color: var(--muted);
-      font-family: ui-monospace, "SF Mono", Menlo, monospace;
-      letter-spacing: 0.02em;
-    }
-
-    /* Per-card accent colors */
-    .card-orchestrator .card-icon { background: rgba(10,132,255,0.12); color: var(--accent); }
-    .card-scene .card-icon { background: rgba(52,199,89,0.12); color: var(--green); }
-    .card-jupyter .card-icon { background: rgba(255,69,58,0.12); color: var(--red); }
-    .card-lab .card-icon { background: rgba(191,90,242,0.12); color: #bf5af2; }
-    .card-vision .card-icon { background: rgba(255,159,10,0.12); color: #ff9f0a; }
-    [data-theme="light"] .card-orchestrator .card-icon { background: rgba(0,122,255,0.08); }
-    [data-theme="light"] .card-scene .card-icon { background: rgba(36,138,61,0.08); }
-    [data-theme="light"] .card-jupyter .card-icon { background: rgba(215,0,21,0.08); }
-    [data-theme="light"] .card-lab .card-icon { background: rgba(175,82,222,0.08); color: #af52de; }
-    [data-theme="light"] .card-vision .card-icon { background: rgba(255,149,0,0.08); color: #c93400; }
-
-  </style>
-</head>
-<body>
-  <nav class="app-nav">
-    <div class="app-nav-header">
-      <button class="app-nav-collapse" title="Toggle sidebar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg></button>
-    </div>
-    <div class="app-nav-links">
-      <a href="/" class="app-nav-link active" title="Home">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-        <span>Home</span>
-      </a>
-      <a href="/orchestrator/" class="app-nav-link" title="Orchestrator" data-orch-link>
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-        <span>Orchestrator</span>
-        <span class="app-nav-badge" id="navOrchCount" hidden></span>
-      </a>
-      <a href="/orchestrator/system.html" class="app-nav-link" title="System">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="7" rx="2"/><rect x="2" y="14" width="20" height="7" rx="2"/><line x1="6" y1="6.5" x2="6.01" y2="6.5"/><line x1="6" y1="17.5" x2="6.01" y2="17.5"/></svg>
-        <span>System</span>
-        <span class="app-nav-badge" id="navSystemBadge" hidden></span>
-      </a>
-    </div>
-  </nav>
-  <div class="app-nav-overlay"></div>
-  <header class="topbar">
-    <button class="burger-btn" id="btnBurger" title="Menu"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
-    <h1 class="topbar-title">Workspace</h1>
-    <div class="spacer"></div>
-    <div class="topbar-actions">
-      <button class="btn btn-ghost btn-sm btn-icon js-fullscreen-toggle" id="btnFullscreen" title="Fullscreen"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg></button>
-      <button class="btn btn-ghost btn-sm btn-icon js-theme-toggle" id="btnTheme" title="Toggle theme"></button>
-    </div>
-  </header>
-  <main class="main">
-    <div class="container">
-      <h1>Dorna Workspace</h1>
-      <p class="subtitle">Select an application</p>
-      <div class="cards">
-        <a class="card card-orchestrator" href="/orchestrator/">
-          <div class="card-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></div>
-          <div class="card-text"><div class="card-label">Orchestrator</div><div class="card-hint">Manage workspaces</div></div>
-        </a>
-        <a class="card card-lab" id="cardDornaLab" target="_blank" rel="noopener">
-          <div class="card-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="9" width="14" height="11" rx="2"/><line x1="12" y1="9" x2="12" y2="5"/><circle cx="12" cy="3.5" r="1.5"/><circle cx="9.5" cy="13.5" r="0.75" fill="currentColor"/><circle cx="14.5" cy="13.5" r="0.75" fill="currentColor"/><line x1="9" y1="17" x2="15" y2="17"/><line x1="2" y1="13" x2="5" y2="13"/><line x1="19" y1="13" x2="22" y2="13"/></svg></div>
-          <div class="card-text"><div class="card-label">Dorna Lab</div><div class="card-hint">Robot monitoring</div></div>
-        </a>
-      </div>
-      <div class="cards-label" id="devToggle" title="Show developer tools">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
-        Developer
-      </div>
-      <div class="cards" id="devCards" hidden>
-        <a class="card card-jupyter" id="cardJupyter">
-          <div class="card-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg></div>
-          <div class="card-text"><div class="card-label">Jupyter</div><div class="card-hint">Notebooks &amp; development</div></div>
-        </a>
-        <a class="card card-scene" href="/scene-builder/">
-          <div class="card-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg></div>
-          <div class="card-text"><div class="card-label">Scene Builder</div><div class="card-hint">Design workspace layout</div></div>
-        </a>
-        <a class="card card-vision" id="cardVision" target="_blank" rel="noopener">
-          <div class="card-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></div>
-          <div class="card-text"><div class="card-label">Vision</div><div class="card-hint">Vision server</div></div>
-        </a>
-      </div>
-      <script>
-        var h = window.location.hostname;
-        document.getElementById("cardJupyter").href = "http://" + h + ":8888/doc/workspaces/auto";
-        // Dorna Lab / Vision: their addresses are the unit's declaration,
-        // filled in by /vendor/nav.js (one owner for every page).
-
-        // Developer section — collapsible, collapsed by default,
-        // choice persisted per browser.
-        var devToggle = document.getElementById("devToggle");
-        var devCards = document.getElementById("devCards");
-        function devApply(open) {
-          devCards.hidden = !open;
-          devToggle.classList.toggle("open", open);
-          devToggle.title = open ? "Hide developer tools" : "Show developer tools";
-        }
-        devApply(false);  // always collapsed on load
-        devToggle.addEventListener("click", function () {
-          devApply(devCards.hidden);
-        });
-      </script>
-      <div class="landing-footer">v__WS_VERSION__</div>
-    </div>
-  </main>
-  <script src="/vendor/theme.js"></script>
-  <script src="/vendor/nav.js"></script>
-</body>
-</html>"""
-
-
-class LandingHandler(tornado.web.RequestHandler):
-    def get(self):
-        self.set_header("Content-Type", "text/html")
-        self.write(LANDING_HTML.replace("__WS_VERSION__", _WS_VERSION))
+from gui.home.handlers import home_routes
 
 
 # What this unit is — /etc/dorna/unit.json, written per unit type by the
@@ -353,8 +166,8 @@ def make_app(port=5000):
     orch.load_registry()
 
     routes = [
-        # ---- Landing ----
-        (r"/", LandingHandler),
+        # ---- Main page: projects (gui/home — builder B) ----
+        *home_routes(orch, _WS_VERSION),
         (r"/unit.json", UnitHandler),
 
         # ---- Orchestrator API (must be before catch-all) ----
