@@ -165,6 +165,8 @@ function onSelect({ name, type }) {
   $("#sbSel").textContent = name ? `${name} · ${type || "component"}` : "Click a component to set its parameters.";
   $("#sbParams").disabled = !name;
   $("#sbCamera").hidden = !(type || "").startsWith("inspection_");
+  $("#sbVision").hidden = !isVisionPart(type);
+  if (name && isVisionPart(type)) prefetchVision(name);
   if (name) openParams(name);
 }
 
@@ -174,6 +176,7 @@ $("#sbNew").onclick = () => {
 };
 $("#sbParams").onclick = () => sbSel && openParams(sbSel.name);
 $("#sbCamera").onclick = () => sbSel && openCamera(sbSel.name);
+$("#sbVision").onclick = () => sbSel && openVision(sbSel.name);
 $("#sbThumb").onclick = () => saveThumb(false);
 
 $("#sbSave").onclick = async () => {
@@ -256,9 +259,11 @@ async function openParams(name) {
   foot.hidden = false;
   foot.innerHTML = `<button class="btn btn-primary" data-save>Save</button>
     ${s.type.startsWith("inspection_") ? `<button class="btn" data-cam>Camera</button>` : ""}
+    ${isVisionPart(s.type) ? `<button class="btn" data-vision>Vision configurator</button>` : ""}
     <span class="dv-msg" data-msg></span>`;
   const msg = foot.querySelector("[data-msg]");
   foot.querySelector("[data-cam]")?.addEventListener("click", () => openCamera(name));
+  foot.querySelector("[data-vision]")?.addEventListener("click", () => openVision(name));
   foot.querySelector("[data-save]").onclick = async () => {
     const values = {};
     for (const f of s.fields) {
@@ -313,6 +318,40 @@ document.addEventListener("change", e => {
     el.nextElementSibling.textContent = el.dataset.key === "simulation" ? (el.checked ? "Simulated" : "Real device") : (el.checked ? "On" : "Off");
   }
 });
+
+// The vision configurator: the camera's vision server GUI (dorna_vision),
+// in a new window on its Playground page. The server is the one the
+// camera names (camera_cfg.server); the GUI takes no camera in its link,
+// so the banner names the serial to pick there. In simulation, or with no
+// server set, the banner says why instead.
+const isVisionPart = (type) => /^inspection_/.test(type || "") || type === "vision_server";
+const visionWhere = new Map();                    // name -> promise of /vision/<name> (asked on select)
+function visionInfo(name, fresh) {
+  if (fresh || !visionWhere.has(name)) visionWhere.set(name, api(`/vision/${encodeURIComponent(name)}`).catch((e) => ({ error: e.message })));
+  return visionWhere.get(name);
+}
+async function openVision(name) {
+  // the answer asked for on select is usually here: open the window in the
+  // click itself (no popup blocker); else a blank one now, pointed after
+  let j = visionWhere.get(name)?.settled;
+  const win = j ? (j.available ? window.open(j.url, "_blank", "noopener") : null) : window.open("", "_blank");
+  if (!j) {
+    j = await visionInfo(name, true);
+    if (win && j.available) { try { win.opener = null; } catch (_) {} win.location.href = j.url; }
+    else win?.close();
+  }
+  visionInfo(name, true).then((r) => { visionWhere.get(name).settled = r; });   // fresh for the next click
+  if (j.error) { banner(`Vision configurator: ${esc(j.error)}`, true); return; }
+  if (!j.available) { banner(`Vision configurator — ${esc(name)}: ${esc(j.reason)}`, true); return; }
+  const link = `<a href="${esc(j.url)}" target="_blank" rel="noopener">${esc(j.host)}:${esc(j.port)}</a>`;
+  const cam = j.serial ? ` Pick camera <b class="mono">${esc(j.serial)}</b> there.` : "";
+  const sim = j.camera_simulated ? ` ${esc(name)} itself is still simulated in the scene.` : "";
+  banner(`Opened the vision configurator of ${esc(j.server)} (${link}).${cam}${sim}`);
+}
+function prefetchVision(name) {
+  const p = visionInfo(name, true);
+  p.then((r) => { p.settled = r; });
+}
 
 // Camera preview window: a frame every ~0.5 s while it is open.
 function openCamera(name) {

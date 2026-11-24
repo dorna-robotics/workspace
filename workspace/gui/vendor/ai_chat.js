@@ -1,7 +1,10 @@
 // The Workspace assistant — a floating button that opens a side panel, on
 // every page once this robot is logged in (hidden in offline mode).
 // Talks to /ai/api (gui/ai/handlers.py): POST /chat streams NDJSON events
-// (text / think / tool / tool_done / ui / error / done).
+// (text / think / tool / tool_done / ui / error / done). The look and the
+// message rendering are the AI builder's chat (dorna_ai_builder
+// builder/web/builder/ai_chat.js); files go up through POST /upload
+// (attach button, drag and drop, paste) and ride the next message.
 //
 // A page tells the assistant what the user is looking at by setting
 //   window.__aiContext = {page, project, tab, ...}   (or a function returning it)
@@ -10,6 +13,9 @@
 //   window.addEventListener("ai-turn", ...)             // a turn finished
 (() => {
   if (window.__aiChatLoaded) return;
+  // a page embedded in another (the Scene builder inside Developer mode):
+  // the outer page has the assistant — never a second one inside the frame
+  try { if (window.self !== window.top) return; } catch (_) { return; }
   window.__aiChatLoaded = true;
   const API = "/ai/api";
   // the orchestrator token (when ORCH_TOKEN is on) — the assistant's routes need it too
@@ -36,7 +42,15 @@
                set(k, v) { try { localStorage.setItem(k, v); } catch (_) {} } };
   let sid = ls.get(SID_KEY);
   let busy = false, loaded = false, enabled = false;
+  let atts = [], attKey = 0;      // the files for the next message: {key, file, state: up|ok|bad, pct, rec, error, preview, xhr}
 
+  const MAX_UPLOAD = 50 * 1024 * 1024;           // gui/ai/uploads.py MAX_BYTES
+  const CLIP_ICON = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.4 11.1l-8.5 8.5a5.5 5.5 0 01-7.8-7.8l8.5-8.5a3.7 3.7 0 015.2 5.2l-8.5 8.5a1.8 1.8 0 01-2.6-2.6l7.8-7.8"/></svg>`;
+  const FILE_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>`;
+  const CUBE_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 16V8a2 2 0 00-1-1.7l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.7l7 4a2 2 0 002 0l7-4a2 2 0 001-1.7z"/><polyline points="3.3 7 12 12 20.7 7"/><line x1="12" y1="22" x2="12" y2="12"/></svg>`;
+  const EYE_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`;
+  const KIND_ICON = { cad: CUBE_ICON, vision_model: EYE_ICON };
+  const KIND_WORD = { image: "Image", pdf: "PDF", cad: "3D model", vision_model: "Vision model", archive: "Archive", text: "Text", other: "File" };
   const CHAT_ICON = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 01-11.6 7.1L4 20l1-4.4A8 8 0 1121 12z"/><path d="M8.5 11h.01M12 11h.01M15.5 11h.01"/></svg>`;
   const SUGGESTIONS = [
     "Why did the last run stop?",
@@ -64,15 +78,20 @@
     </div>
     <div class="ai-log" aria-live="polite"></div>
     <div class="ai-compose">
+      <div class="ai-atts" hidden></div>
       <div class="ai-compose-row">
+        <button class="ai-iconbtn ai-attach" type="button" title="Attach files — images, PDFs, 3D models, vision models (up to 50 MB each)" aria-label="Attach files">${CLIP_ICON}</button>
         <textarea rows="1" placeholder="Ask about this robot, a run, or a change to make…" aria-label="Message the assistant"></textarea>
         <button class="btn btn-primary ai-send" type="button" title="Send (Enter)">Send</button>
       </div>
-      <div class="ai-bar"><span class="ai-hint">Enter to send · Shift+Enter for a new line</span><span class="spacer"></span>
+      <div class="ai-bar"><span class="spacer"></span><span class="ai-hint">Enter to send · Shift+Enter for a new line · drop or paste files</span>
         <button class="btn btn-ghost btn-sm ai-stop" type="button" hidden>Stop</button></div>
-    </div>`;
+      <input class="ai-file" type="file" multiple hidden/>
+    </div>
+    <div class="ai-drop" hidden><div>Drop files to attach</div></div>`;
   const $ = (s) => root.querySelector(s);
   const log = $(".ai-log"), input = $("textarea"), sendBtn = $(".ai-send"), stopBtn = $(".ai-stop"), projEl = $(".ai-proj");
+  const attsEl = $(".ai-atts"), fileIn = $(".ai-file"), dropEl = $(".ai-drop");
   const w = parseInt(ls.get(W_KEY) || "", 10);
   if (isFinite(w)) root.style.setProperty("--aiw", Math.max(320, Math.min(900, w)) + "px");
 
@@ -108,6 +127,28 @@
     return out.join("");
   }
   const scrollDown = () => { log.scrollTop = log.scrollHeight; };
+  const fmtSize = (n) => n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(0)} KB` : `${(n / 1048576).toFixed(1)} MB`;
+  function kindOf(name) {
+    const e = (String(name).match(/\.[^.]+$/) || [""])[0].toLowerCase();
+    if ([".png", ".jpg", ".jpeg", ".webp", ".gif"].includes(e)) return "image";
+    if (e === ".pdf") return "pdf";
+    if ([".glb", ".gltf", ".step", ".stp", ".stl", ".obj", ".3mf", ".iges", ".igs"].includes(e)) return "cad";
+    if ([".pkl", ".onnx", ".pt", ".pth", ".engine", ".blob", ".tflite"].includes(e)) return "vision_model";
+    if ([".zip", ".tar", ".gz", ".tgz", ".7z"].includes(e)) return "archive";
+    if ([".csv", ".json", ".yaml", ".yml", ".py", ".txt", ".md", ".j2"].includes(e)) return "text";
+    return "other";
+  }
+
+  // a tool's label in plain words (the AI builder's toolText): the server
+  // names most; a bare id ("add_component_from_file x") reads as a verb
+  function toolText(label) {
+    const t = String(label || "").trim();
+    const m = t.match(/^([a-z][a-z0-9]*(?:_[a-z0-9]+)+)(?:\s+(.*))?$/);
+    if (!m) return t;
+    const words = (x) => x.replace(/_+/g, " ").trim();
+    const verb = words(m[1]).charAt(0).toUpperCase() + words(m[1]).slice(1);
+    return m[2] ? `${verb} ${words(m[2])}` : verb;
+  }
 
   function pageContext() {
     let c = window.__aiContext;
@@ -126,7 +167,7 @@
     projEl.title = p ? `Project: ${p}` : "";
   }
 
-  function setBusy(b) { busy = b; sendBtn.disabled = b; stopBtn.hidden = !b; }
+  function setBusy(b) { busy = b; sendBtn.disabled = b || atts.some((a) => a.state === "up"); stopBtn.hidden = !b; }
 
   // ── rendering (the AI builder's chat look) ───────────────────────
   function emptyState() {
@@ -140,11 +181,43 @@
     d.querySelectorAll(".ai-examples button").forEach((b) => { b.onclick = () => send(b.textContent); });
     log.appendChild(d);
   }
-  function userBubble(text) {
+  // one file, as a chip: a thumbnail for an image, else the kind's icon
+  function fileChip(f, opts = {}) {
+    const c = document.createElement("div");
+    c.className = "ai-file-chip" + (opts.cls ? " " + opts.cls : "");
+    const kind = f.kind || kindOf(f.name);
+    const thumb = kind === "image" && (opts.preview || (f.id && sid))
+      ? `<img alt="" src="${esc(opts.preview || `${API}/upload_file?session=${encodeURIComponent(sid)}&id=${encodeURIComponent(f.id)}`)}"/>`
+      : `<span class="ic">${KIND_ICON[kind] || FILE_ICON}</span>`;
+    c.innerHTML = `<span class="thumb">${thumb}</span><span class="meta"><span class="nm"></span><span class="sub"></span></span>`;
+    c.querySelector(".nm").textContent = f.name;
+    c.querySelector(".sub").textContent = [KIND_WORD[kind] || "File", f.size != null ? fmtSize(f.size) : ""].filter(Boolean).join(" · ");
+    c.title = f.project_path ? `${f.name} — also saved in the project as ${f.project_path}` : f.name;
+    return c;
+  }
+  function userBubble(text, files) {
     log.querySelector(".ai-empty")?.remove();
     const d = document.createElement("div");
-    d.className = "ai-msg user"; d.textContent = text;
+    d.className = "ai-msg user";
+    if (files && files.length) {
+      const row = document.createElement("div");
+      row.className = "ai-msg-files";
+      files.forEach((f) => row.appendChild(fileChip(f, { cls: "in-bubble", preview: f.preview })));
+      d.appendChild(row);
+    }
+    const t = document.createElement("div");
+    t.className = "ai-msg-text"; t.textContent = text;
+    d.appendChild(t);
     log.appendChild(d); scrollDown();
+  }
+  // a local line in the log (not sent, not saved)
+  function note(msg, bad) {
+    log.querySelector(".ai-empty")?.remove();
+    const d = document.createElement("div");
+    d.className = "ai-note" + (bad ? " bad" : "");
+    d.textContent = msg;
+    log.appendChild(d); scrollDown();
+    return d;
   }
   function sealTools(el) {
     if (!el || el.querySelector(".ai-tools-sum")) return;
@@ -156,6 +229,16 @@
     b.onclick = () => { const on = el.classList.toggle("open"); b.setAttribute("aria-expanded", String(on)); };
     el.classList.add("sealed");
     el.prepend(b);
+  }
+  // the last group of actions in the log when nothing said has come after it
+  function lastBareTools() {
+    const all = log.querySelectorAll(".ai-tools");
+    const last = all[all.length - 1];
+    if (!last) return null;
+    for (const el of log.querySelectorAll(".ai-text, .ai-msg.user, .ai-error")) {
+      if (last.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING && el.textContent.trim()) return null;
+    }
+    return last;
   }
   function assistantBubble() {
     const d = document.createElement("div");
@@ -195,14 +278,20 @@
         api.thinkDone();
         let row = api.tools[id];
         if (!row) {
-          if (!api.toolsEl) { api.textEl = null; api.toolsEl = document.createElement("div"); api.toolsEl.className = "ai-tools"; d.appendChild(api.toolsEl); }
+          if (!api.toolsEl) {
+            api.textEl = null;
+            // actions straight after actions (only thinking between): one group, one count
+            const prev = lastBareTools();
+            if (prev) { prev.querySelector(".ai-tools-sum")?.remove(); prev.classList.remove("sealed", "open"); api.toolsEl = prev; }
+            else { api.toolsEl = document.createElement("div"); api.toolsEl.className = "ai-tools"; d.appendChild(api.toolsEl); }
+          }
           row = document.createElement("div");
           row.innerHTML = `<span class="dot"></span><span class="lbl"></span>`;
           api.toolsEl.appendChild(row);
           api.tools[id] = row;
         }
         row.className = "ai-tool " + state;
-        if (label) row.querySelector(".lbl").textContent = label;
+        if (label) row.querySelector(".lbl").textContent = toolText(label);
         row.title = error || "";
         scrollDown();
       },
@@ -215,7 +304,7 @@
     log.innerHTML = "";
     let b = null;
     items.forEach((it, n) => {
-      if (it.role === "user") { userBubble(it.text); return; }
+      if (it.role === "user") { userBubble(it.text, it.files); return; }
       b = assistantBubble();
       const live = running && n === items.length - 1;
       for (const p of it.blocks || []) {
@@ -232,21 +321,28 @@
   // ── chat ─────────────────────────────────────────────────────────
   async function send(text) {
     text = (text || "").trim();
-    if (!text || busy) return;
+    if (busy) return;
+    if (atts.some((a) => a.state === "up")) { note("Wait for the files to finish uploading."); input.value = text; return; }
+    const ready = atts.filter((a) => a.state === "ok");
+    if (!text && !ready.length) return;
     setBusy(true);
-    userBubble(text);
+    atts = atts.filter((a) => a.state === "bad");   // a failed one stays in view, with why
+    renderAtts();
+    userBubble(text || "(attached files)", ready.map((a) => ({ ...a.rec, preview: a.preview })));
     const bubble = assistantBubble();
     bubble.pending();
     let following = false;
     try {
       const res = await fetch(API + "/chat", {
         method: "POST", headers: hdrs(true),
-        body: JSON.stringify({ session: sid, text, context: pageContext() }),
+        body: JSON.stringify({ session: sid, text, context: pageContext(), attachments: ready.map((a) => a.rec.id) }),
       });
       if (res.status === 401) { bubble.error("This robot isn't logged in any more — log in again (top right)."); window.dornaAccount?.refresh(true); return; }
       if (res.status === 409) {
         bubble.el.previousElementSibling?.remove(); bubble.el.remove();
         input.value = text;
+        ready.forEach((a) => { atts.push(a); });
+        renderAtts();
         following = true;
         await loadSession();
         return;
@@ -372,6 +468,7 @@
     if (!r.ok) return;
     const j = await r.json();
     sid = j.id; ls.set(SID_KEY, sid);
+    clearAtts(true);
     emptyState(); input.focus();
   };
   $(".ai-resize").addEventListener("pointerdown", (e) => {
@@ -380,6 +477,92 @@
     const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
     window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
   });
+
+  // ── attachments ──────────────────────────────────────────────────
+  // Each file goes up the moment it is picked, dropped or pasted (so a big
+  // model is on the robot by the time the message is written); the chips
+  // above the box show its progress, and the ready ones ride the next message.
+  function renderAtts() {
+    attsEl.hidden = !atts.length;
+    attsEl.innerHTML = "";
+    for (const a of atts) {
+      const c = fileChip(a.rec || { name: a.file.name, size: a.file.size, kind: kindOf(a.file.name) }, { cls: "pending " + a.state, preview: a.preview });
+      if (a.state === "up") c.querySelector(".sub").textContent = `Uploading… ${a.pct || 0}%`;
+      if (a.state === "bad") c.querySelector(".sub").textContent = a.error || "Upload failed";
+      if (a.state === "up") { const bar = document.createElement("span"); bar.className = "bar"; bar.style.setProperty("--pct", (a.pct || 0) + "%"); c.appendChild(bar); }
+      const x = document.createElement("button");
+      x.type = "button"; x.className = "rm"; x.setAttribute("aria-label", `Remove ${a.file.name}`); x.title = "Remove";
+      x.textContent = "✕";
+      x.onclick = () => { a.xhr?.abort(); atts = atts.filter((b) => b !== a); renderAtts(); };
+      c.appendChild(x);
+      attsEl.appendChild(c);
+    }
+    sendBtn.disabled = busy || atts.some((a) => a.state === "up");
+  }
+  function clearAtts(abort) {
+    if (abort) atts.forEach((a) => a.xhr?.abort());
+    atts = []; renderAtts();
+  }
+  function addFiles(list) {
+    if (!enabled) return;
+    for (const file of Array.from(list || [])) {
+      const a = { key: ++attKey, file, state: "up", pct: 0 };
+      if (file.size > MAX_UPLOAD) { a.state = "bad"; a.error = `Larger than ${MAX_UPLOAD / 1048576} MB`; }
+      else if (!file.size) { a.state = "bad"; a.error = "The file is empty"; }
+      if (kindOf(file.name) === "image" || /^image\//.test(file.type)) { try { a.preview = URL.createObjectURL(file); } catch (_) {} }
+      atts.push(a);
+      if (a.state === "up") upload(a);
+    }
+    renderAtts();
+  }
+  function upload(a) {
+    const name = a.file.name || (a.file.type === "image/png" ? "pasted.png" : "file");
+    const q = new URLSearchParams({ name });
+    if (sid) q.set("session", sid);
+    const proj = pageContext().project;
+    if (proj) q.set("project", proj);
+    const x = new XMLHttpRequest();
+    a.xhr = x;
+    x.open("POST", `${API}/upload?${q}`);
+    const h = hdrs(false);
+    for (const k in h) x.setRequestHeader(k, h[k]);
+    x.setRequestHeader("Content-Type", "application/octet-stream");
+    x.upload.onprogress = (e) => {
+      if (!e.lengthComputable) return;
+      a.pct = Math.round(100 * e.loaded / e.total);
+      const chip = attsEl.children[atts.indexOf(a)];
+      chip?.querySelector(".bar")?.style.setProperty("--pct", a.pct + "%");
+      const sub = chip?.querySelector(".sub");
+      if (sub) sub.textContent = `Uploading… ${a.pct}%`;
+    };
+    x.onload = () => {
+      let j = {}; try { j = JSON.parse(x.responseText || "{}"); } catch (_) {}
+      if (x.status === 200 && j.ok) {
+        a.state = "ok"; a.rec = j.upload;
+        if (j.session && j.session !== sid) { sid = j.session; ls.set(SID_KEY, sid); }
+      } else {
+        a.state = "bad"; a.error = j.error || `Upload failed (${x.status})`;
+        if (x.status === 401) window.dornaAccount?.refresh(true);
+      }
+      a.xhr = null; renderAtts();
+    };
+    x.onerror = () => { a.state = "bad"; a.error = "Upload failed — connection lost"; a.xhr = null; renderAtts(); };
+    x.send(a.file);
+  }
+  $(".ai-attach").onclick = () => fileIn.click();
+  fileIn.onchange = () => { addFiles(fileIn.files); fileIn.value = ""; input.focus(); };
+  input.addEventListener("paste", (e) => {
+    const files = Array.from(e.clipboardData?.files || []);
+    if (!files.length) return;
+    e.preventDefault();
+    addFiles(files.map((f, i) => f.name ? f : new File([f], `pasted_${Date.now()}_${i}.${(f.type.split("/")[1] || "bin")}`, { type: f.type })));
+  });
+  let dragDepth = 0;
+  const hasFiles = (e) => Array.from(e.dataTransfer?.types || []).includes("Files");
+  root.addEventListener("dragenter", (e) => { if (!hasFiles(e)) return; e.preventDefault(); dragDepth++; dropEl.hidden = false; });
+  root.addEventListener("dragover", (e) => { if (!hasFiles(e)) return; e.preventDefault(); e.dataTransfer.dropEffect = "copy"; });
+  root.addEventListener("dragleave", (e) => { if (!hasFiles(e)) return; if (--dragDepth <= 0) { dragDepth = 0; dropEl.hidden = true; } });
+  root.addEventListener("drop", (e) => { if (!hasFiles(e)) return; e.preventDefault(); dragDepth = 0; dropEl.hidden = true; addFiles(e.dataTransfer.files); });
 
   function mount() {
     document.body.appendChild(fab);
@@ -393,5 +576,5 @@
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", mount); else mount();
 
-  window.aiChat = { open: () => setOpen(true), close: () => setOpen(false), send, get sid() { return sid; }, get busy() { return busy; } };
+  window.aiChat = { open: () => setOpen(true), close: () => setOpen(false), send, attach: addFiles, get sid() { return sid; }, get busy() { return busy; } };
 })();
