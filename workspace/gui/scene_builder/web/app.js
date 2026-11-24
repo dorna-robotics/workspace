@@ -4111,6 +4111,22 @@ function updateObjectList() {
     });
 
     item.appendChild(label);
+    // Developer mode: a part with settings to fill in (pins, ports,
+    // simulation…) shows a settings button; plain parts (fixture
+    // plates, racks) have none. The host page sets __sbMenus.
+    if (SB_DEV && window.__sbMenus?.has(name)) {
+      const menuBtn = document.createElement("button");
+      menuBtn.className = "sb-menu-btn";
+      menuBtn.title = "Settings";
+      menuBtn.setAttribute("aria-label", `Settings of ${name}`);
+      menuBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>';
+      menuBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        try { setSelected(name); } catch(e) {}
+        try { window.dispatchEvent(new CustomEvent("sb-menu", { detail: { name } })); } catch(e) {}
+      });
+      item.appendChild(menuBtn);
+    }
     item.appendChild(eyeBtn);
     item.addEventListener("click", () => {
       try { setSelected(name); } catch(e) {}
@@ -7730,7 +7746,10 @@ ensureBuilderBar();
   async function __loadProjectBundle() {
     window.__importBusy = true;
     try { return await __loadProjectBundleInner(); }
-    finally { window.__importBusy = false; }
+    finally {
+      window.__importBusy = false;
+      try { updateObjectList(); } catch (_) {}     // every imported part listed
+    }
   }
   async function __loadProjectBundleInner() {
     // The note New Scene left for after its reload (set_project's answer).

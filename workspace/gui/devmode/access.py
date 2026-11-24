@@ -38,9 +38,9 @@ ALWAYS = {"collision_box"}
 
 
 def filter_types(types, keep=()):
-    """``types`` narrowed to what the account may add. Types in ``keep``
-    (already in the project's scene, or the project's own components)
-    are never hidden."""
+    """``types`` narrowed to what the account may add (the add-component
+    catalog only — a part already in a project loads whatever this says).
+    Types in ``keep`` (the project's own components) are never hidden."""
     allowed = allowed_types()
     if allowed is None:
         return list(types)

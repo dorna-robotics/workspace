@@ -30,15 +30,7 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--
 .dv-frame { flex: 1; width: 100%; min-height: 0; border: none; background: var(--bg); display: block; }
 .dv-small { font-size: var(--text-sm); }
 
-/* Workflow */
-.dv-wf { flex: 1; overflow: auto; display: flex; gap: var(--space-5); padding: var(--space-5); align-items: flex-start; flex-wrap: wrap; }
-.dv-col { flex: 1 1 340px; display: flex; flex-direction: column; gap: var(--space-5); min-width: 0; }
-.dv-col-wide { flex: 2 1 480px; }
-.dv-card { background: var(--surface); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); padding: var(--space-5); display: flex; flex-direction: column; gap: var(--space-4); }
-.dv-card-head { display: flex; align-items: center; gap: var(--space-3); }
-.dv-card-head h2 { font-size: var(--text-lg); margin: 0; }
-.dv-run { display: flex; gap: var(--space-3); flex-wrap: wrap; }
-.dv-run .btn { min-height: 44px; min-width: 96px; justify-content: center; }
+/* Simulation window */
 .dv-note { background: var(--accent-dim); border-radius: var(--radius-md); padding: var(--space-3) var(--space-4); display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
 .dv-grp { font-size: var(--text-xs); color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; margin: var(--space-3) 0 var(--space-1); }
 .dv-row { display: flex; align-items: center; gap: var(--space-3); min-height: 48px; border-bottom: 1px solid var(--border2); }
@@ -55,14 +47,6 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--
 .dv-switch input:checked::after { transform: translateX(18px); }
 .dv-switch input:disabled { opacity: 0.5; }
 
-.dv-dev { border: 1px solid var(--border2); border-radius: var(--radius-md); padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-3); margin-bottom: var(--space-3); }
-.dv-dev-head { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
-.dv-dev-head b { font-size: var(--text-lg); }
-.dv-acts { display: flex; flex-wrap: wrap; gap: var(--space-2); }
-.dv-acts .btn { min-height: 44px; }
-.dv-act-arg { width: 90px; min-height: 44px; }
-.dv-reply { background: var(--reply-bg); border: 1px solid var(--reply-border); color: var(--reply-text); border-radius: var(--radius-sm); padding: var(--space-3); font-family: var(--mono); font-size: var(--text-sm); white-space: pre-wrap; max-height: 160px; overflow: auto; }
-.dv-reply.bad { color: var(--red); }
 .dv-empty { color: var(--muted); padding: var(--space-5) 0; text-align: center; line-height: 1.5; }
 
 /* HMI */
@@ -89,6 +73,13 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--
 .dv-msg { font-size: var(--text-sm); }
 .dv-msg.ok { color: var(--green); }
 .dv-msg.bad { color: var(--red); }
+/* I/O wiring: rows of pin · value · wait */
+.dv-io { display: flex; flex-direction: column; gap: var(--space-2); }
+.dv-io-head, .dv-io-row { display: grid; grid-template-columns: 1fr 1fr 72px 16px 44px; gap: var(--space-2); align-items: center; }
+.dv-io-head span:last-child { grid-column: 3 / 5; }
+.dv-io-row .input { min-height: 44px; box-sizing: border-box; width: 100%; }
+.dv-io-row .btn-icon { min-width: 44px; min-height: 44px; justify-content: center; }
+.dv-io [data-io-add] { align-self: flex-start; min-height: 44px; }
 .dv-cam { width: min(560px, calc(100vw - 32px)); }
 .dv-cam-view { aspect-ratio: 4 / 3; background: var(--surface2); border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center; overflow: hidden; color: var(--muted); text-align: center; padding: var(--space-4); box-sizing: border-box; }
 .dv-cam-view img { width: 100%; height: 100%; object-fit: contain; }

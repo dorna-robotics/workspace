@@ -100,6 +100,22 @@ select.input { cursor: pointer; }
   transition: opacity 0.15s;
 }
 .sb-object-item:hover .sb-eye-btn { opacity: 0.5; }
+/* Developer mode: the settings button of a part that has settings —
+   always shown (it says "this one has a menu"), accent on hover. */
+.sb-menu-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  color: var(--accent);
+  padding: 2px 4px;
+  margin-right: 2px;
+}
+.sb-menu-btn:hover { background: var(--accent-dim); }
 .sb-eye-btn:hover { opacity: 1 !important; color: var(--text); }
 .sb-eye-btn.is-hidden { opacity: 0.6; color: var(--red); }
 .sb-show-all-btn {
