@@ -104,6 +104,10 @@ from gui.scene_builder.server import (
 )
 import socketio as _socketio
 
+# Account (device-code login) + the on-device AI assistant (builder C)
+from gui.account import routes as account_routes
+from gui.ai.handlers import routes as ai_routes
+
 # ---------------------------------------------------------------------------
 # Main page — the projects page (gui/home)
 # ---------------------------------------------------------------------------
@@ -169,6 +173,10 @@ def make_app(port=5000):
         # ---- Main page: projects (gui/home — builder B) ----
         *home_routes(orch, _WS_VERSION),
         (r"/unit.json", UnitHandler),
+
+        # ---- Account + on-device AI (gui/account, gui/ai) ----
+        *account_routes(),
+        *ai_routes(orch),
 
         # ---- Orchestrator API (must be before catch-all) ----
         (r"/orchestrator/api/workspaces/status", WorkspacesStatusHandler, dict(orch=orch)),

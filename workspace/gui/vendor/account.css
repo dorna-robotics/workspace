@@ -1,0 +1,79 @@
+/* The top-right account area (account.js) — the design tokens of base.css,
+   so it follows the light/dark theme on every page. */
+
+.acct { display: flex; align-items: center; margin-left: var(--space-1); }
+.acct-fixed { position: fixed; top: var(--space-3); right: var(--space-4); z-index: 60000; }
+.acct-login { white-space: nowrap; min-height: 44px; }
+.acct-icon { position: relative; min-width: 44px; min-height: 44px; }
+.acct-offdot {
+  position: absolute; right: 3px; top: 3px; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--amber); border: 2px solid var(--surface);
+}
+
+.acct-menu {
+  position: fixed; z-index: 60010; width: 280px; max-width: calc(100vw - 16px);
+  background: var(--surface); color: var(--text); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); padding: var(--space-3);
+  display: grid; gap: var(--space-3); font-family: var(--font);
+}
+.acct-who { padding: var(--space-2) var(--space-3) 0; min-width: 0; }
+.acct-email { font-size: var(--text-lg); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.acct-acc { font-size: var(--text-sm); color: var(--muted); margin-top: 2px; }
+.acct-offline {
+  font-size: var(--text-sm); padding: var(--space-3); border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--amber) 14%, transparent);
+}
+.acct-usage { padding: 0 var(--space-3); display: grid; gap: var(--space-2); }
+.acct-usage-label { font-size: var(--text-md); }
+.acct-usage-admin { font-size: var(--text-xs); color: var(--muted); }
+.acct-bar { height: 8px; border-radius: 999px; background: var(--surface3); overflow: hidden; }
+.acct-bar span { display: block; height: 100%; border-radius: inherit; background: var(--accent); transition: width var(--motion-med) var(--ease); }
+.acct-bar.warn span { background: var(--amber); }
+.acct-bar.bad span { background: var(--red); }
+.acct-item {
+  min-height: 44px; width: 100%; text-align: left; padding: 0 var(--space-4);
+  background: transparent; border: 0; border-top: 1px solid var(--border2); color: var(--text);
+  font: inherit; font-size: var(--text-md); cursor: pointer; border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+}
+.acct-item:hover { background: var(--surface2); }
+.acct-logout { color: var(--red); }
+
+.acct-overlay {
+  position: fixed; inset: 0; z-index: 60020; display: flex; align-items: center; justify-content: center;
+  background: color-mix(in srgb, var(--bg) 60%, transparent); padding: var(--space-5);
+}
+.acct-modal {
+  width: 560px; max-width: 100%; max-height: calc(100vh - 32px); overflow: auto;
+  background: var(--surface); color: var(--text); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); font-family: var(--font);
+}
+.acct-modal-head { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-5) var(--space-5) 0; }
+.acct-modal-head h2 { flex: 1; margin: 0; font-size: var(--text-xl); font-weight: 700; }
+.acct-x { min-width: 44px; min-height: 44px; }
+.acct-modal-body { padding: var(--space-4) var(--space-5) var(--space-5); display: grid; gap: var(--space-4); }
+.acct-lead { margin: 0; font-size: var(--text-md); color: var(--muted); }
+.acct-grid { display: grid; grid-template-columns: 180px 1fr; gap: var(--space-5); align-items: center; }
+/* A QR code must be dark on light to scan, whatever the theme. */
+.acct-qr { width: 180px; height: 180px; border-radius: var(--radius-md); overflow: hidden; }
+.acct-qr svg { width: 100%; height: 100%; display: block; }
+.acct-qr .qr-bg { fill: white; }
+.acct-qr .qr-fg { fill: black; }
+.acct-steps { display: grid; gap: var(--space-2); min-width: 0; }
+.acct-code-label { font-size: var(--text-xs); color: var(--muted); text-transform: uppercase; letter-spacing: 0.8px; font-weight: 600; }
+.acct-code { font-family: var(--mono); font-size: 32px; font-weight: 700; letter-spacing: 3px; }
+.acct-link { font-size: var(--text-sm); color: var(--accent); overflow-wrap: anywhere; }
+.acct-state { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; font-size: var(--text-md); color: var(--muted); margin-top: var(--space-2); }
+.acct-state .btn, .acct-modal-body > .btn { min-height: 44px; }
+.acct-spin {
+  width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--surface3); border-top-color: var(--accent);
+  animation: acct-spin 0.9s linear infinite;
+}
+@keyframes acct-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .acct-spin { animation: none; } }
+.acct-err { color: var(--red); font-size: var(--text-md); }
+.acct-wait { color: var(--muted); font-size: var(--text-md); }
+.acct-foot { margin: 0; font-size: var(--text-sm); color: var(--muted); }
+
+@media (max-width: 560px) {
+  .acct-grid { grid-template-columns: 1fr; justify-items: center; text-align: center; }
+}
