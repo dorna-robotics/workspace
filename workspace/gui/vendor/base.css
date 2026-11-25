@@ -792,6 +792,7 @@ html.theme-switching *::after {
 
 /* "Ask Dorna AI" on an error / warning card (messages.js): only while the
    assistant is on the page and can take it (ai_chat.js sets .ai-ready) */
-.msg-ask-ai { margin-right: auto; }
+.msg-ask-ai { margin-right: auto; color: var(--accent); font-weight: 600; }
+.msg-ask-ai::before { content: "✦"; margin-right: var(--space-2); }
 html:not(.ai-ready) .msg-ask-ai { display: none; }
 html:not(.ai-ready) .msg-acts:not(:has(.btn:not(.msg-ask-ai))) { display: none; }
