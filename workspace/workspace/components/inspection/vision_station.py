@@ -55,6 +55,7 @@ class VisionClientImportError(RuntimeError):
 # The client's own camera_recover waits the same 60 s. A scene's
 # camera_cfg ``timeout`` (or a detection preset's) overrides it.
 COLD_OPEN_TIMEOUT = 60
+NETWORK_TYPES = {"hikrobot"}     # GigE / PoE: camera_add takes an ip in place of the serial
 
 
 class VisionCameraOpenTimeoutError(RuntimeError):
@@ -79,7 +80,8 @@ class VisionStation:
         camera_cfg: Dict forwarded to ``camera_add`` (type, stream, K,
             D, mode, ...).
         simulation: Authored simulation intent. True (or no server, or
-            no serial: nothing real to talk to) → no client is opened and
+            no serial — nor, for a network camera, an ip: nothing real
+            to talk to) → no client is opened and
             ``detect()`` returns ``sim_return``. Never flipped by a
             failure.
         label: The camera component's name, for log lines and faults.
@@ -127,8 +129,11 @@ class VisionStation:
         self._detections: dict = {}
 
         # Simulation gate. True when authored OR when there is nothing to
-        # connect to (no server / no serial). A failure never flips it.
-        self.simulation = bool(simulation) or server is None or not self.serial_number
+        # connect to (no server; no serial, nor a network camera's ip —
+        # the server resolves an ip to the serial at camera_add). A
+        # failure never flips it.
+        by_ip = self.camera_cfg.get("type") in NETWORK_TYPES and bool(self.camera_cfg.get("ip"))
+        self.simulation = bool(simulation) or server is None or not (self.serial_number or by_ip)
         self._client = None
 
         if self.simulation:
@@ -174,11 +179,13 @@ class VisionStation:
                 f"{self.ip}:{self.port}: {type(ex).__name__}: {ex}"
             ) from ex
         try:
-            self._client.camera_add(
+            r = self._client.camera_add(
                 serial_number=self.serial_number,
                 timeout=self.open_timeout,
                 **self.camera_cfg,
             )
+            if not self.serial_number and isinstance(r, dict) and r.get("serial_number"):
+                self.serial_number = str(r["serial_number"])      # addressed by ip: the pool's key
             print(
                 f"✅ {self.label} connected @ {self.ip}:{self.port} "
                 f"(camera {self.serial_number})"
