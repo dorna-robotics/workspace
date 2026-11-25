@@ -70,6 +70,11 @@ class _Base(tornado.web.RequestHandler):
     def initialize(self, orch=None):
         self.orch = orch
 
+    def on_finish(self):
+        if self.request.method == "POST" and self.get_status() < 400:
+            from gui.account.sync import kick      # a save: the Dorna team's copy follows soon
+            kick()
+
     def set_default_headers(self):
         self.set_header("Cache-Control", "no-store")
 

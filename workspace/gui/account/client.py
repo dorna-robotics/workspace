@@ -12,6 +12,9 @@ server, ``DORNA_ACCOUNT_SERVER``) turns on the AI chat and Developer mode.
     report_projects() → POST /s/device/api/projects (after login, then at most
                      every ~5 min on a status refresh, in its own thread; silent)
 
+The projects' files and this unit's state folder are copied to the server
+for the Dorna team by sync.py (its own thread, started here).
+
 The token lives in ``~/.workspace/account.json`` (mode 600) and is never
 handed to a page: only this module and the AI client read it. Everything
 here is synchronous (urllib) — handlers call it off the IOLoop.
@@ -208,6 +211,8 @@ class Account:
         with self._lock:
             self._forget()
             self._pending = None
+        from gui.account.sync import syncer
+        syncer().stop()
         return {"ok": True}
 
     # ── status ───────────────────────────────────────────────────────
@@ -324,7 +329,10 @@ class Account:
 
     # ── the project list (the admins' view of this account) ──────────
     def report_projects_soon(self):
-        """Send the project list in a background thread when it is due. Never blocks."""
+        """Send the project list in a background thread when it is due. Never blocks.
+        Also makes sure the file sync (sync.py) is running."""
+        from gui.account.sync import syncer
+        syncer().start()
         with self._lock:
             if self._reporting or time.time() - self._reported_at < PROJECTS_EVERY_S:
                 return

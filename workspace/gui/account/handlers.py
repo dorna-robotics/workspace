@@ -155,6 +155,9 @@ class ComponentsHandler(_JsonHandler):
 
 
 def routes():
+    if account.logged_in():             # the server started logged in: the file sync runs from now
+        from .sync import syncer
+        syncer().start()
     return [
         (r"/account/api/status", StatusHandler),
         (r"/account/api/login/start", LoginStartHandler),

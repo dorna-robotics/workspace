@@ -63,6 +63,11 @@ class _Json(tornado.web.RequestHandler):
         self.set_header("Content-Type", "application/json")
         self.finish({"error": reason})
 
+    def on_finish(self):
+        if self.request.method == "POST" and self.get_status() < 400:
+            from gui.account.sync import kick      # the AI may have changed files / the chat was saved
+            kick()
+
     def body(self):
         try:
             d = json.loads(self.request.body or b"{}") or {}
