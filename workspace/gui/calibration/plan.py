@@ -260,6 +260,10 @@ def build(main_py, port=5997):
         if not fp:                                  # an adapter without a collision box: around its points
             xs, ys = [p["xyz"][0] for p in points], [p["xyz"][1] for p in points]
             fp = [[min(xs) - 25, min(ys) - 25, max(xs) - min(xs) + 50, max(ys) - min(ys) + 50, 0]]
+        if len(fp) > 1:                             # one box per station: a tool rack's or a feeder's parts together
+            x0, y0 = min(f[0] for f in fp), min(f[1] for f in fp)
+            x1, y1 = max(f[0] + f[2] for f in fp), max(f[1] + f[3] for f in fp)
+            fp = [[round(x0, 1), round(y0, 1), round(x1 - x0, 1), round(y1 - y0, 1), max(f[4] for f in fp)]]
         stations[alias] = dict(
             handle=alias, title=alias.replace("_", " "), recipe=cls, component=comp.name,
             component_type=getattr(comp, "type", None), mode=mode,
@@ -283,6 +287,8 @@ def build(main_py, port=5997):
                recipes=os.path.relpath(recipes_path, project_dir),
                calibration_file=str(cal_file) if cal_file else None,
                rail_axis=rail.get("axis"), plates=plates, stations=stations, order=order,
+               rail=bool(rail) and getattr(core, "has_rail", True) is not False, rail_offset=((cfgs.get(getattr(core, "name", "core")) or {}).get("rail_cfg") or {}).get("offset"),
+               robot=getattr(core, "name", "core"),
                recipe_errors=errors, source="derived")
 
     hook_file, hook = _hook(dict.fromkeys([project_dir, os.path.dirname(recipes_path)]))

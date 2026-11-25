@@ -1150,6 +1150,8 @@ html[data-sbtab="replay"]  .sb-rail button[data-tab="replay"] {
 html.sb-dev .sb-header, html.sb-dev #btnInsert, html.sb-dev .sb-rail, html.sb-dev #sbConfigSection, html.sb-dev #msgStack { display: none !important; }
 /* Developer mode's Scene ▸ Scene files: the files list, which file new parts go to */
 html.sb-dev.sb-cfg #sbConfigSection { display: block !important; }
+/* Developer mode: the cube and Home sit right above the host's Dorna AI button (52 px, 20 px up) */
+html.sb-dev #viewCubeWrap { bottom: 84px; }
 html.sb-dev.sb-viewonly .sidebar { display: none; }
 .sb-dev-close { display: none; }
 html.sb-dev:not([data-sbtab="scene"]) .sb-dev-close { display: inline-flex; align-self: flex-start; min-height: 44px; }

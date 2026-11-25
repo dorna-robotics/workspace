@@ -99,8 +99,6 @@ function makeWin(id, title, cls = "") {
 // panel (side), or the 3D view alone (.sb-viewonly) behind the chart.
 let sbReady = false, sbSel = null, thumbDone = false;
 let baseSig = "";         // the scene files as the builder loaded them (Save refuses on a mismatch)
-let settled;              // resolves with the builder's window once its models are in
-const sceneSettled = new Promise(r => { settled = r; });
 let side = null;          // "recipes" | "replay" — opened from the Workflow panel
 
 async function openScene() {
@@ -162,7 +160,7 @@ async function loadScene() {
       syncFrame();                                // the import put the builder back on Scene
       setSaveReady(ok);
       if (!ok) return banner("The scene did not finish loading in the builder — Reload the page to try again.", true);
-      meshesSettled(w).then((ok) => { settled(w); if (ok && !thumbDone) saveThumb(true); });
+      meshesSettled(w).then((ok) => { if (ok && !thumbDone) saveThumb(true); });
     });
   }, { once: true });
 }
@@ -292,14 +290,14 @@ function snapshot() {
 }
 
 // models stream in after the import: wait until the mesh count is still
-async function meshesSettled(w, ms = 180000) {
+async function meshesSettled(w, ms = 180000, still = 3) {
   const t0 = Date.now();
   let last = -1, quiet = 0;
   while (Date.now() - t0 < ms) {
     const n = w.__sbMeshCount ? w.__sbMeshCount() : 0;
     quiet = n === last && n > 0 ? quiet + 1 : 0;
     last = n;
-    if (quiet >= 3) return true;
+    if (quiet >= still) return true;
     await new Promise((r) => setTimeout(r, 700));
   }
   return false;
@@ -601,11 +599,26 @@ function openCalibration() {
 
 // The calibration page's bench map: the builder's straight-down renders
 // over the box it asks for — the bench (robot hidden) and the bare plates.
+// Taken once the builder has imported the scene and its models stopped
+// arriving — however long a big project takes on this unit (no time limit:
+// a slow import is no reason for a map without its items). The page asks
+// again when the count moves on (__dvMeshCount): models that came late.
+const builderWin = () => $("#sbFrame").contentWindow;
+window.__dvMeshCount = () => builderWin()?.__sbMeshCount?.() || 0;
 window.__dvTopShot = async (b) => {
   openScene();
-  const w = await sceneSettled;
-  return { prod: w.__sbTopShot(b.x0, b.y0, b.x1, b.y1, "prod"), cal: w.__sbTopShot(b.x0, b.y0, b.x1, b.y1, "cal") };
+  for (;;) {
+    const w = builderWin();
+    if (w?.__sbTopShot && w.__projectBundle && w.__importBusy === false && await meshesSettled(w, 60000, 7)) {
+      return { prod: w.__sbTopShot(b.x0, b.y0, b.x1, b.y1, "prod"), cal: w.__sbTopShot(b.x0, b.y0, b.x1, b.y1, "cal"),
+               meshes: w.__sbMeshCount() };
+    }
+    await new Promise(r => setTimeout(r, 1500));
+  }
 };
+
+// A part's Settings window on the Scene tab (the calibration page's rail offset).
+window.__dvOpenSettings = (name) => { showTab("scene"); openParams(name, true); };
 
 // ── the embedded pages' messages and run controls ───────────────────
 // The project page (Workflow) and the builder (Scene) post their messages

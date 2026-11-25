@@ -76,6 +76,9 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--
 .toggle input { accent-color: var(--accent); width: 16px; height: 16px; }
 .toggle.locked { color: var(--muted); cursor: default; }
 .cal-warn { color: var(--amber); font-size: var(--text-sm); margin-top: var(--space-3); }
+.rail-warn { display: flex; align-items: center; gap: var(--space-4); border-left: 4px solid var(--amber); font-size: var(--text-sm); }
+.rail-warn[hidden] { display: none; }
+.rail-warn .btn { flex: none; }
 .seg button { min-height: 36px; }
 
 /* ── input 7 ── */
@@ -216,6 +219,12 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--
         </div>
       </div>
       <div>
+        <div class="panel rail-warn" id="railWarn" hidden>
+          <div><b>The rail offset isn't set.</b> Every station is measured along the rail from its home, so set the
+            offset first: measure it with the rail calibration (the <span class="mono">rail_calibration</span> example, docs/rail-calibration.md),
+            then enter it as <span class="mono">rail_cfg.offset</span> in the robot's Settings.</div>
+          <button class="btn btn-primary" id="railSet" hidden></button>
+        </div>
         <div class="panel">
           <div class="row"><h2>Stations</h2><div class="spacer"></div>
             <div class="seg" id="filterSeg"><button data-f="need" class="on">Needs calibration</button><button data-f="all">All</button><button data-f="none">None</button></div></div>
@@ -334,6 +343,11 @@ let selected = new Set();
 function openProject(p) {
   P = p; ST = p.stations;
   renderShots();
+  // a rail with no offset in the scene: every station on it would be off
+  $("#railWarn").hidden = !p.rail || (p.rail_offset !== null && p.rail_offset !== undefined && p.rail_offset !== "");
+  $("#railSet").textContent = `Open ${p.robot}'s Settings`;
+  $("#railSet").hidden = !window.parent.__dvOpenSettings;
+  $("#railSet").onclick = () => window.parent.__dvOpenSettings(p.robot);
   railHomed = !p.rail_axis;            // read from the robot once the runner exists; until then the dry run homes
   $("#projTitle").textContent = p.project;
   $("#runTitle").textContent = `Calibrating ${p.project}`;
@@ -378,9 +392,15 @@ async function renderShots() {
   const b = { x0: Math.min(...xs) - 60, x1: Math.max(...xs) + 60, y0: Math.min(...ys) - 60, y1: Math.max(...ys) + 60 };
   let imgs = null;
   try { imgs = await top(b); } catch (_) {}
-  if (gen !== shotGen || !imgs || !imgs.prod) return;
+  if (gen !== shotGen) return;
+  if (!imgs || !imgs.prod) { setTimeout(() => gen === shotGen && renderShots(), 5000); return; }   // the builder reloaded: again
   P.shot = b; P.images = imgs;
   if (!$("#vSetup").hidden) $("#benchMap").innerHTML = benchSVG();
+  // models that load after the shot (a big scene on a busy unit): shot again
+  const watch = setInterval(() => {
+    if (gen !== shotGen) return clearInterval(watch);
+    if ((window.parent.__dvMeshCount?.() || 0) > imgs.meshes) { clearInterval(watch); P.images = null; renderShots(); }
+  }, 5000);
 }
 function shot(which) {
   if (!P.images || !P.shot) return which === "prod" ? plates() : "";
