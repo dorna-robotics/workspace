@@ -208,8 +208,8 @@ def t_setup_status(session, a):
             continue
         if isinstance(c.get("camera_cfg"), dict) and c.get("has_camera") is not False:
             try:
-                host, port, serial, _ = camera.resolve(scene, n)
-                cams.append(f"  {n}: wired — camera {serial} on {host}:{port} (camera_view can look)")
+                host, port, serial, cam = camera.resolve(scene, n)
+                cams.append(f"  {n}: wired — camera {serial or cam.get('ip')} on {host}:{port} (camera_view can look)")
             except camera.NoImage as e:
                 cams.append(f"  {n}: no picture — {e}")
         if "simulation" in c:

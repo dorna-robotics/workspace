@@ -16,9 +16,8 @@ import json
 import os
 import time
 import uuid
-from pathlib import Path
 
-import yaml
+from gui.devmode import vision_cfg
 
 from . import images
 from .images import Shot
@@ -86,7 +85,7 @@ LABELS = {
     "roi_preview": lambda a: "Previewing the ROI",
     "camera_settings": lambda a: ("Changing the camera settings" if _changes(a) else "Reading the camera settings"),
     "detection_test": lambda a: f"Testing the detection {a.get('detection', '')}",
-    "update_detection_config": lambda a: f"Saving {_cfg_rel(a.get('detection', ''))}",
+    "update_detection_config": lambda a: f"Saving {vision_cfg.cfg_rel(a.get('detection', ''))}",
 }
 
 
@@ -161,42 +160,11 @@ def _box(v, im):
     return [x0, y0, x1, y1]
 
 
-def _cfg_rel(det):
-    det = str(det or "").strip()
-    if "/" not in det:
-        det = "vision/" + det
-    if not det.endswith((".yaml", ".yml")):
-        det += ".yaml"
-    return det
-
-
 def _load_cfg(base, det):
-    rel = _cfg_rel(det)
-    p = _inside(base, rel)
-    if not p.is_file():
-        have = sorted(x.name for x in (base / "vision").glob("*.y*ml")) if (base / "vision").is_dir() else []
-        raise ToolError(f"no {rel} — the configs in vision/: {', '.join(have) or 'none'}")
     try:
-        data = yaml.safe_load(p.read_text()) or {}
-    except yaml.YAMLError as e:
-        raise ToolError(f"{rel} doesn't parse: {e}")
-    if not isinstance(data, dict):
-        raise ToolError(f"{rel} is not a mapping")
-    return rel, p, data
-
-
-def merge(base, over):
-    """Inline wins key by key at every depth; lists are replaced whole;
-    None removes a key (vision-guide §5 'Config files')."""
-    out = copy.deepcopy(base)
-    for k, v in over.items():
-        if v is None:
-            out.pop(k, None)
-        elif isinstance(v, dict) and isinstance(out.get(k), dict):
-            out[k] = merge(out[k], v)
-        else:
-            out[k] = copy.deepcopy(v)
-    return out
+        return vision_cfg.load(base, det)
+    except vision_cfg.ConfigError as e:
+        raise ToolError(str(e))
 
 
 def _absolutize(cfg, folder):
@@ -285,9 +253,8 @@ def t_roi_preview(session, a):
         if len(box) != 9:
             raise ToolError("box: [x, y, z, a, b, c, w, d, h]")
         tmp = "_ai_roi_" + uuid.uuid4().hex[:8]
-        serial = where[2]
 
-        def project_box(c):
+        def project_box(c, serial):
             c.detection_add(tmp, camera_serial_number=serial, timeout=30)
             try:
                 snap = c.detection_capture(tmp, timeout=15)
@@ -333,53 +300,19 @@ def t_roi_preview(session, a):
 
 
 def t_camera_settings(session, a):
+    from gui.devmode import camera
     name, comp, where = _resolve(session, a)
-    serial = where[2]
-
-    def read(c):
-        out = {}
-        for k, fn in (("info", lambda: c.camera_info(serial, timeout=8)),
-                      ("exposure", lambda: c.camera_exposure(serial, timeout=8)),
-                      ("white_balance", lambda: c.camera_wb(serial, timeout=8))):
-            try:
-                r = fn()
-                out[k] = {x: y for x, y in r.items() if x not in ("id", "stat")} if isinstance(r, dict) else r
-            except Exception as e:
-                out[k] = f"not available: {type(e).__name__}: {e}"
-        return out
     if not _changes(a):
-        cur = _call(where, read)
+        cur = _call(where, camera.read_settings)
         return f"{comp} settings now:\n" + json.dumps(cur, indent=1, default=str)[:6000], []
 
-    from gui.devmode import camera
     before = images.stats(_grab(where))
-    done, errors = [], []
-
-    def apply(c):
-        steps = []
-        if a.get("exposure_ms") is not None:
-            steps.append(("exposure", lambda: c.camera_exposure(serial, ms=float(a["exposure_ms"]), timeout=10)))
-        elif a.get("auto_exposure"):
-            steps.append(("auto exposure", lambda: c.camera_exposure(serial, auto=True, timeout=10)))
-        if a.get("white_balance") == "auto":
-            steps.append(("white balance auto", lambda: c.camera_wb(serial, auto=True, timeout=10)))
-        elif a.get("white_balance") == "hold":
-            steps.append(("white balance hold", lambda: c.camera_wb(serial, hold=True, timeout=10)))
-        f = a.get("focus")
-        if isinstance(f, dict):
-            if f.get("region") is not None:
-                steps.append(("focus region", lambda: c.camera_focus(serial, region=f["region"], method=f.get("method"))))
-            else:
-                steps.append(("focus", lambda: c.camera_focus(serial, mode=f.get("mode"), position=f.get("position"),
-                                                              timeout=20)))
-        for what, fn in steps:
-            try:
-                r = fn()
-                done.append(f"{what}: {_short({x: y for x, y in r.items() if x not in ('id', 'stat')} if isinstance(r, dict) else r, 600)}")
-            except Exception as e:
-                errors.append(f"{what} REFUSED: {type(e).__name__}: {e}")
-    _call(where, apply)
-    camera.forget(*where[:3])
+    ok, bad = _call(where, lambda c, serial: camera.adjust(
+        c, serial, exposure_ms=a.get("exposure_ms"), auto_exposure=a.get("auto_exposure"),
+        white_balance=a.get("white_balance"), focus=a.get("focus")))
+    done = [f"{what}: {_short(r, 600)}" for what, r in ok]
+    errors = [f"{what} REFUSED: {why}" for what, why in bad]
+    camera.forget(*where)
     time.sleep(SETTLE_S)
     im = _grab(where)
     after = images.stats(im)
@@ -398,7 +331,7 @@ def t_detection_test(session, a):
     if a.get("set") is not None:
         if not isinstance(a["set"], dict):
             raise ToolError("set: an object of config keys")
-        cfg = merge(cfg, a["set"])
+        cfg = vision_cfg.merge(cfg, a["set"])
     det = cfg.get("detection") if isinstance(cfg.get("detection"), dict) else {}
     if not det.get("cmd"):
         raise ToolError(f"{rel} names no detection.cmd")
@@ -413,10 +346,9 @@ def t_detection_test(session, a):
     focus = kw.pop("focus", None)
     kw.pop("config", None)
     tmp = "_ai_test_" + uuid.uuid4().hex[:8]
-    serial = where[2]
     out = {}
 
-    def run(c):
+    def run(c, serial):
         c.detection_add(tmp, camera_serial_number=serial, timeout=60, **kw)
         try:
             snap = c.detection_capture(tmp, focus=focus if a.get("apply_focus") else None, timeout=30)
@@ -458,85 +390,22 @@ def t_detection_test(session, a):
     return ["\n".join(lines), *shots], []
 
 
-def _top_segments(text):
-    """The file as [(top-level key or None, its lines)] — comments and
-    blank lines before a key belong to it."""
-    segs, cur_key, cur, pending = [], None, [], []
-    for line in text.splitlines(keepends=True):
-        s = line.rstrip("\n")
-        if s and not s[0].isspace() and not s.startswith("#") and ":" in s:
-            if cur or cur_key is not None:
-                segs.append((cur_key, cur))
-            cur_key, cur = s.split(":", 1)[0].strip().strip("'\""), pending + [line]
-            pending = []
-        elif not s.strip() or s.startswith("#"):
-            pending.append(line)
-        else:
-            cur.extend(pending + [line])
-            pending = []
-    segs.append((cur_key, cur + pending))
-    return segs
-
-
-def _dump_key(k, v):
-    flow = k in ("roi", "intensity", "color", "focus") or not isinstance(v, (dict, list))
-    if isinstance(v, dict) and flow:
-        return f"{k}: " + yaml.safe_dump(v, default_flow_style=True, sort_keys=False, width=10_000).strip() + "\n"
-    return yaml.safe_dump({k: v}, sort_keys=False, default_flow_style=False, width=120)
-
-
 def t_update_detection_config(session, a):
     name = _name(session, a)
     base = project_dir(name)
-    rel = _cfg_rel(a["detection"])
+    rel = vision_cfg.cfg_rel(a["detection"])
     p = _inside(base, rel)
     if not isinstance(a["set"], dict) or not a["set"]:
         raise ToolError("set: the keys to write, e.g. {roi: {corners: [[x, y], …], inv: 0, crop: 1}}")
-    text = p.read_text() if p.is_file() else ""
     try:
-        old = yaml.safe_load(text) or {} if text else {}
-    except yaml.YAMLError as e:
-        raise ToolError(f"{rel} doesn't parse: {e}")
-    if not isinstance(old, dict):
-        raise ToolError(f"{rel} is not a mapping")
-    new = merge(old, a["set"])
-    segs = _top_segments(text) if text else [(None, [])]
-    out, seen = [], set()
-    for k, lines in segs:
-        if k is None:
-            out.extend(lines)
-            continue
-        seen.add(k)
-        if k not in new:
-            continue
-        if new[k] == old.get(k):
-            out.extend(lines)
-        else:   # keep the comments above the key, rewrite the key
-            lead = []
-            for ln in lines:
-                if ln.strip() and not ln.lstrip().startswith("#"):
-                    break
-                lead.append(ln)
-            out.extend(lead)
-            out.append(_dump_key(k, new[k]))
-    for k, v in new.items():
-        if k not in seen:
-            out.append(_dump_key(k, v))
-    body = "".join(out)
-    if body and not body.endswith("\n"):
-        body += "\n"
-    try:
-        assert yaml.safe_load(body) == new
-    except Exception:
-        body = yaml.safe_dump(new, sort_keys=False)      # never write something that reads back different
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(body)
-    changed = [k for k in set(new) | set(old) if new.get(k) != old.get(k)]
+        r = vision_cfg.write(p, a["set"])
+    except vision_cfg.ConfigError as e:
+        raise ToolError(str(e))
     from .tools import _ui_for
-    head = f"{'updated' if text else 'created'} {rel}: {', '.join(sorted(changed)) or 'no change'}\n"
+    head = f"{'created' if r['created'] else 'updated'} {rel}: {', '.join(r['changed']) or 'no change'}\n"
     tail = ("(the project is launched: relaunch it to use the new settings)" if _running(name)
             else "(used from the project's next launch)")
-    body_txt = "".join(_dump_key(k, new[k]) for k in sorted(changed) if k in new)
+    body_txt = "".join(vision_cfg.dump_key(k, r["config"][k]) for k in r["changed"] if k in r["config"])
     return head + body_txt + tail, [_ui_for(rel, name)]
 
 

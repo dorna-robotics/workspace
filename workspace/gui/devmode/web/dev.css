@@ -154,9 +154,65 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--
 .dv-io-row .input { min-height: 44px; box-sizing: border-box; width: 100%; }
 .dv-io-row .btn-icon { min-width: 44px; min-height: 44px; justify-content: center; }
 .dv-io [data-io-add] { align-self: flex-start; min-height: 44px; }
-.dv-cam { width: min(560px, calc(100vw - 32px)); }
-.dv-cam-view { aspect-ratio: 4 / 3; background: var(--surface2); border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center; overflow: hidden; color: var(--muted); text-align: center; padding: var(--space-4); box-sizing: border-box; }
-.dv-cam-view img { width: 100%; height: 100%; object-fit: contain; }
+/* the camera window (camwin.js): picture + ROI, connection, adjustments */
+.dv-win.dv-camwin { width: min(620px, calc(100vw - 32px)); max-height: calc(100vh - 136px); }
+.dv-camwin .dv-win-body { gap: var(--space-3); }
+.dv-row { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+.dv-row.dv-end { align-items: flex-end; }
+.dv-row .btn { min-height: 44px; }
+.dv-row .spacer, .dv-cam-bar .spacer { flex: 1; }
+.dv-grow { flex: 1; min-width: 160px; }
+.dv-port { width: 110px; }
+.dv-lbl { font-size: var(--text-sm); font-weight: 600; color: var(--muted); min-height: 44px; display: inline-flex; align-items: center; }
+.dv-sec { display: flex; flex-direction: column; gap: var(--space-3); border-top: 1px solid var(--border2); padding-top: var(--space-2); }
+.dv-sec > .dv-grp { margin-bottom: 0; }
+.dv-note { font-size: var(--text-sm); color: var(--muted); line-height: 1.45; padding: var(--space-3) var(--space-4); background: var(--surface2); border-radius: var(--radius-sm); }
+.dv-warn { color: var(--amber); }
+.dv-srv { padding: var(--space-3) var(--space-4); background: var(--surface2); border-radius: var(--radius-sm); }
+.dv-srv .input { background: var(--surface); }
+.dv-cam-wrap { display: flex; flex-direction: column; gap: var(--space-2); }
+.dv-cam-view { position: relative; width: 100%; align-self: center; aspect-ratio: 4 / 3; background: var(--surface2); border-radius: var(--radius-md); overflow: hidden; }
+.dv-cam-view.empty { aspect-ratio: auto; min-height: 150px; }
+.dv-cam-view img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.dv-cam-view.still img { filter: grayscale(0.6) brightness(0.55); }
+.dv-cam-why { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-2);
+  padding: var(--space-6); text-align: center; color: var(--muted); font-size: var(--text-md); line-height: 1.45; pointer-events: none; }
+.dv-cam-why b { color: var(--text); font-size: var(--text-lg); }
+/* over a still: the reason is a band at the bottom — the ROI stays visible and drawable */
+.dv-cam-view.still .dv-cam-why { inset: auto 0 0 0; padding: var(--space-6) var(--space-5) var(--space-4); gap: var(--space-1);
+  background: linear-gradient(transparent, rgb(0 0 0 / 78%) 38%); font-size: var(--text-sm); }
+.dv-cam-view.still .dv-cam-why, .dv-cam-view.still .dv-cam-why b { color: #fff; }
+.dv-cam-view.still .dv-cam-why b { font-size: var(--text-md); }
+.dv-cam-why[hidden] { display: none; }
+.dv-cam-bar { min-height: 44px; flex-wrap: nowrap; }
+.dv-cam-bar .btn { min-height: 44px; }
+.dv-cam-st { font-size: var(--text-sm); color: var(--muted); display: inline-flex; align-items: center; gap: var(--space-2); white-space: nowrap; }
+.dv-roi { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: crosshair; }
+.dv-roi-dim { fill: rgb(0 0 0 / 42%); pointer-events: none; }
+.dv-roi-halo { fill: none; stroke: rgb(0 0 0 / 55%); stroke-width: 4; pointer-events: none; }
+.dv-roi-line { fill: transparent; stroke: #ffd60a; stroke-width: 2; cursor: move; }
+.dv-roi-pt { fill: #ffd60a; stroke: rgb(0 0 0 / 60%); stroke-width: 1.5; vector-effect: non-scaling-stroke; pointer-events: none; }
+.dv-roi-hit { fill: transparent; cursor: grab; }
+.dv-roi-label { fill: #ffd60a; font-family: var(--mono); font-weight: 600; paint-order: stroke; stroke: rgb(0 0 0 / 70%); stroke-width: 3px; pointer-events: none; }
+.dv-corners { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2) var(--space-4); }
+.dv-corner { display: grid; grid-template-columns: 16px 1fr 1fr; gap: var(--space-2); align-items: center; }
+.dv-corner-head { grid-column: 1 / -1; display: block; font-weight: 600; }
+.dv-corner .input { min-height: 44px; width: 100%; box-sizing: border-box; text-align: right; font-variant-numeric: tabular-nums; }
+.dv-devs { display: flex; flex-direction: column; gap: var(--space-1); }
+.dv-devs:empty { display: none; }
+.dv-dev { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-height: 44px; padding: var(--space-2) var(--space-4); text-align: left;
+  border: 1px solid var(--border2); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); font: inherit; }
+button.dv-dev { cursor: pointer; transition: background var(--motion-fast) var(--ease), border-color var(--motion-fast) var(--ease); }
+button.dv-dev:hover { background: var(--surface2); }
+button.dv-dev:focus-visible { outline: none; box-shadow: var(--glow); }
+.dv-dev.on { border-color: var(--accent); background: var(--accent-dim); }
+.dv-dev-name { font-weight: 600; font-size: var(--text-md); display: flex; align-items: center; gap: var(--space-2); }
+.dv-dev-meta { display: flex; flex-wrap: wrap; gap: 2px var(--space-4); font-size: var(--text-sm); color: var(--muted); }
+.dv-dev-meta b { font-weight: 500; color: var(--muted2); }
+.dv-tag { font-size: var(--text-xs); font-weight: 600; padding: 1px var(--space-2); border-radius: 99px; background: var(--surface3); color: var(--muted); }
+.dv-result { margin: 0; padding: var(--space-3) var(--space-4); background: var(--surface2); border-radius: var(--radius-sm); font-size: var(--text-sm);
+  white-space: pre-wrap; word-break: break-word; color: var(--text); }
+.dv-result.bad { color: var(--red); }
 
 /* the component builder (compbuilder.js): a dialog over the Scene tab —
    the 3D preview and one side panel */
@@ -274,3 +330,4 @@ button.cb-del:focus-visible, .cb-disc:focus-visible { outline: none; box-shadow:
 .dv-menu-list a span { font-size: var(--text-xs); color: var(--muted); font-weight: 400; }
 .dv-menu-list a:hover { background: var(--surface2); }
 .dv-menu-list a[aria-disabled="true"] { opacity: 0.5; cursor: not-allowed; }
+.dv-camwin .hint { font-size: var(--text-sm); color: var(--muted); line-height: 1.4; }

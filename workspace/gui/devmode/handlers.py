@@ -10,8 +10,11 @@ offline mode runs existing projects and nothing else).
     POST /dev/api/projects/<n>/params                  {component, values: {key: value}}
     POST /dev/api/projects/<n>/simulation              {components: [..] | component, on}
     POST /dev/api/projects/<n>/scene/save              {files: {file: {component: cfg}}, base_sig}  (scene builder → files)
-    GET  /dev/api/projects/<n>/camera/<c>.jpg          one live frame (JPEG), or JSON {image: false, reason} in sim
-    GET  /dev/api/projects/<n>/vision/<c>              {available, url, server, serial} of the camera's vision configurator, or {available: false, reason}
+    GET  /dev/api/projects/<n>/camera/<c>.jpg          one live frame (JPEG), or JSON {image: false, code, reason}
+    GET  /dev/api/projects/<n>/camera/<c>/setup        the camera window: fields, vision servers, feed reason, vision Pi link, detections
+    POST /dev/api/projects/<n>/camera/<c>/find         {server? | ip, port} → the cameras that vision server sees (camera_list)
+    POST /dev/api/projects/<n>/camera/<c>/adjust       {exposure_ms | auto_exposure, white_balance: auto|hold} → done, settings
+    POST /dev/api/projects/<n>/camera/<c>/roi          {detection, corners, inv, crop, size} → roi written into vision/<detection>.yaml
     GET  /dev/api/projects/<n>/hmi                     the HMI screens' specs + a change signature
     GET  /dev/api/projects/<n>/hmi/pendant/<file>      the Main screen's files, before launch
     GET  /dev/api/projects/<n>/calibration/plan        the calibration plan (gui/calibration/plan.py)
@@ -29,6 +32,7 @@ offline mode runs existing projects and nothing else).
 import asyncio
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -38,7 +42,7 @@ import tornado.web
 
 from gui.orchestrator.handlers import ProjectScreenFileHandler
 
-from . import access, camera, component_ai, component_kinds, mesh_measure, params, parts, scene_edit, workflow
+from . import access, camera, component_ai, component_kinds, mesh_measure, params, parts, scene_edit, vision_cfg, workflow
 
 DEV_DIR = os.path.dirname(os.path.abspath(__file__))
 WEB_DIR = os.path.join(DEV_DIR, "web")
@@ -304,28 +308,181 @@ class CameraFrameHandler(_Base):
             host, port, serial, cam = camera.resolve(scene, comp)
             jpg = await _off_loop(camera.grab, host, port, serial, cam)
         except camera.NoImage as e:
-            return self.finish({"ok": True, "image": False, "sim": True, "reason": str(e)})
+            return self.finish({"ok": True, "image": False, "code": e.code, "reason": str(e)})
         except Exception as e:
             self.set_status(502)
-            return self.finish({"ok": False, "image": False, "reason": f"The camera did not answer: {type(e).__name__}: {e}"})
+            return self.finish({"ok": False, "image": False, "code": "unreachable",
+                                "reason": f"No picture from camera {serial or cam.get('ip')} on the vision server at "
+                                          f"{host}:{port} — {type(e).__name__}: {e}"})
         self.set_header("Content-Type", "image/jpeg")
         self.finish(jpg)
 
 
-class VisionConfiguratorHandler(_Base):
-    """Where to open the vision configurator for one camera part."""
+def _camera_setup(d, comp):
+    """The camera window's state: the part's fields, the scene's vision
+    servers, why there is no live picture (or none), the vision Pi's
+    link, the detections this camera runs."""
+    scene = scene_edit.merged(d)
+    cfg = scene.get(comp)
+    if not isinstance(cfg, dict):
+        raise KeyError(comp)
+    out = params.schema(comp, cfg, scene)
+    out["servers"] = [{"name": n, "ip": c.get("ip") or "", "port": c.get("port") or "",
+                       "simulation": c.get("simulation", True) is not False}
+                      for n, c in scene.items() if isinstance(c, dict) and c.get("type") == "vision_server"]
+    if out["type"] == "vision_server":
+        out["cameras"] = [{"name": n, "serial_number": str((c.get("camera_cfg") or {}).get("serial_number") or ""),
+                           "ip": str((c.get("camera_cfg") or {}).get("ip") or "")}
+                          for n, c in scene.items() if isinstance(c, dict) and isinstance(c.get("camera_cfg"), dict)
+                          and (c["camera_cfg"].get("server") == comp)]
+    else:
+        try:
+            camera.resolve(scene, comp)
+            out["feed"] = {"live": True}
+        except camera.NoImage as e:
+            out["feed"] = {"live": False, "code": e.code, "reason": str(e)}
+        out["detections"] = vision_cfg.detections(d, comp)
+    try:
+        out["vision"] = {"available": True, **camera.configurator(scene, comp)}
+    except camera.NoImage as e:
+        out["vision"] = {"available": False, "reason": str(e)}
+    return out
+
+
+class CameraSetupHandler(_Base):
+    """GET the camera window; POST …/find lists the cameras a vision
+    server sees, …/adjust sets exposure / white balance, …/roi writes a
+    detection's ROI."""
     async def get(self, name, comp):
         p = self.project(name)
         if not p:
             return
         try:
-            scene = await _off_loop(scene_edit.merged, p[1])
-            where = camera.configurator(scene, comp)
-        except camera.NoImage as e:
-            return self.finish({"ok": True, "available": False, "reason": str(e)})
+            out = await _off_loop(_camera_setup, p[1], comp)
+        except KeyError:
+            return self.fail(404, f"no component {comp}")
         except Exception as e:
-            return self.fail(400, f"{type(e).__name__}: {e}")
-        self.finish({"ok": True, "available": True, **where})
+            return self.fail(400, f"the scene does not load: {e}")
+        self.finish({"ok": True, "launched": self.orch.is_launched(name), **out})
+
+
+def _server_addr(scene, comp, b):
+    """(host, port) to ask: the ip/port typed in the window (not saved
+    yet), else the vision server the part names (or is)."""
+    ip = str(b.get("ip") or "").strip()
+    if ip:
+        if not re.fullmatch(r"[A-Za-z0-9.\-:]+", ip):
+            raise ValueError("Vision server IP: an address like 192.168.1.40 or a host name")
+        try:
+            port = int(str(b.get("port") or 80).strip())
+        except ValueError:
+            raise ValueError("Vision server port: a whole number")
+        if not 0 < port < 65536:
+            raise ValueError("Vision server port: 1 to 65535")
+        return ip, port
+    cfg = scene.get(comp) or {}
+    srv_name = comp if cfg.get("type") == "vision_server" else str(b.get("server") or
+                                                                    (cfg.get("camera_cfg") or {}).get("server") or "")
+    srv = scene.get(srv_name) if srv_name else None
+    if not isinstance(srv, dict) or srv.get("type") != "vision_server":
+        raise ValueError("Pick the vision server first")
+    if not srv.get("ip"):
+        raise ValueError(f"The vision server {srv_name} has no IP address — type it in")
+    return str(srv["ip"]), int(srv.get("port") or 80)
+
+
+class CameraFindHandler(_Base):
+    async def post(self, name, comp):
+        p = self.project(name)
+        if not p:
+            return
+        b = self.body()
+        scene = await _off_loop(scene_edit.merged, p[1])
+        if comp not in scene:
+            return self.fail(404, f"no component {comp}")
+        try:
+            host, port = _server_addr(scene, comp, b)
+        except ValueError as e:
+            return self.fail(400, str(e))
+        try:
+            devs = await _off_loop(camera.devices, host, port)
+        except Exception as e:
+            return self.fail(502, f"The vision server at {host}:{port} did not answer: {type(e).__name__}: {e}")
+        used = {}
+        for n, c in scene.items():
+            cc = c.get("camera_cfg") if isinstance(c, dict) else None
+            if isinstance(cc, dict):
+                for k in ("serial_number", "ip"):
+                    if cc.get(k):
+                        used.setdefault(str(cc[k]), n)
+        for dv in devs:
+            dv["used_by"] = used.get(str(dv.get("serial_number") or "")) or used.get(str(dv.get("ip") or ""))
+        self.finish({"ok": True, "host": host, "port": port, "devices": devs})
+
+
+class CameraAdjustHandler(_Base):
+    """A live change on the camera — one button press, one call."""
+    async def post(self, name, comp):
+        p = self.project(name)
+        if not p:
+            return
+        b = self.body()
+        kw = {}
+        if b.get("exposure_ms") not in (None, ""):
+            try:
+                kw["exposure_ms"] = float(b["exposure_ms"])
+            except (TypeError, ValueError):
+                return self.fail(400, "Exposure: a number of milliseconds")
+            if not 0 < kw["exposure_ms"] <= 10000:
+                return self.fail(400, "Exposure: more than 0 and at most 10000 ms")
+        elif b.get("auto_exposure") is True:
+            kw["auto_exposure"] = True
+        if b.get("white_balance") in ("auto", "hold"):
+            kw["white_balance"] = b["white_balance"]
+        scene = await _off_loop(scene_edit.merged, p[1])
+        try:
+            where = camera.resolve(scene, comp)
+        except camera.NoImage as e:
+            return self.fail(400, str(e))
+
+        def run(c, serial):
+            done, errors = camera.adjust(c, serial, **kw) if kw else ([], [])
+            return done, errors, camera.read_settings(c, serial)
+        try:
+            done, errors, now = await _off_loop(camera.call, *where, run)
+        except Exception as e:
+            return self.fail(502, f"The camera did not answer: {type(e).__name__}: {e}")
+        if kw:
+            camera.forget(*where)
+        self.finish({"ok": True, "done": [{"what": w, "result": r} for w, r in done],
+                     "errors": [{"what": w, "error": r} for w, r in errors], "settings": now})
+
+
+class CameraRoiHandler(_Base):
+    async def post(self, name, comp):
+        p = self.project(name)
+        if not p:
+            return
+        b = self.body()
+        det = str(b.get("detection") or "")
+        if not vision_cfg.NAME_RE.match(det):
+            return self.fail(400, "Pick a detection")
+        size = b.get("size") if isinstance(b.get("size"), list) and len(b["size"]) == 2 else None
+        try:
+            roi = vision_cfg.roi_value(b.get("corners"), b.get("inv"), b.get("crop"), size)
+            rel = vision_cfg.cfg_rel(det)
+            path = vision_cfg.inside(p[1], rel)
+            if path.is_file():
+                # corners always win over a 3D box (dorna_vision detect.py):
+                # a drawn ROI replaces it, so the file says what runs
+                old = (vision_cfg.load(p[1], det)[2].get("roi") or {})
+                if isinstance(old, dict) and "box" in old:
+                    roi["box"] = None
+            r = await _off_loop(vision_cfg.write, path, {"roi": roi})
+        except vision_cfg.ConfigError as e:
+            return self.fail(400, str(e))
+        self.finish({"ok": True, "file": rel, "created": r["created"], "changed": r["changed"],
+                     "roi": r["config"].get("roi"), "relaunch": bool(r["changed"]) and self.orch.is_launched(name)})
 
 
 class HmiHandler(_Base):
@@ -569,7 +726,10 @@ def routes(orch):
         (P + r"/simulation", SimulationHandler, o),
         (P + r"/scene/save", SceneSaveHandler, o),
         (P + r"/camera/([^/]+)\.jpg", CameraFrameHandler, o),
-        (P + r"/vision/([^/]+)", VisionConfiguratorHandler, o),
+        (P + r"/camera/([^/]+)/setup", CameraSetupHandler, o),
+        (P + r"/camera/([^/]+)/find", CameraFindHandler, o),
+        (P + r"/camera/([^/]+)/adjust", CameraAdjustHandler, o),
+        (P + r"/camera/([^/]+)/roi", CameraRoiHandler, o),
         (P + r"/hmi", HmiHandler, o),
         (P + r"/hmi/pendant/(.*)", PendantFileHandler, dict(orch=orch, key="pendant")),
         (P + r"/calibration/plan", CalibrationPlanHandler, o),

@@ -1,11 +1,13 @@
 // Developer mode — /dev/?project=<name>
 // One project, a rail on the left (Scene · Workflow · HMI · Calibration).
-// Scene is the embedded builder with its Settings + Camera windows.
+// Scene is the embedded builder with its Settings windows (a camera's is
+// camwin.js: connection, live picture, ROI, exposure).
 // Workflow is the project page (with simulation switches on its devices)
 // plus the AI builder's Flowchart and the builder's Recipes and Replay.
 // HMI previews Main + Parameters; Calibration is its own page.
 import { apiFetch, esc, stateVariant, stateLabel, isLaunched, wireCommand, toast, notify, unnotify } from "/orchestrator/api.js";
 import { openFlowchart, closeFlowchart, preloadFlowchart } from "/dev/flow.js";
+import { openCameraWindow } from "/dev/camwin.js";
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -205,10 +207,7 @@ function onSelect({ name, type }) {
   $("#sbSel").textContent = !name ? "Parts with settings show a settings button in the list."
     : `${name} · ${type || "component"}` + (menu ? "" : " — no settings");
   $("#sbParams").hidden = !menu;
-  $("#sbCamera").hidden = !(type || "").startsWith("inspection_");
-  $("#sbVision").hidden = !isVisionPart(type);
   $("#sbEditPart").hidden = !info?.own_types.includes(type);
-  if (name && isVisionPart(type)) prefetchVision(name);
   if (menu) openParams(name);
   else document.getElementById("dvParams")?.querySelector("[data-close]")?.click();
 }
@@ -220,8 +219,6 @@ $("#sbNew").onclick = () => {
 $("#sbParams").onclick = () => sbSel && openParams(sbSel.name, true);
 $("#sbBuild").onclick = () => buildComponent(null);
 $("#sbEditPart").onclick = () => sbSel && buildComponent(sbSel.type);
-$("#sbCamera").onclick = () => sbSel && openCamera(sbSel.name);
-$("#sbVision").onclick = () => sbSel && openVision(sbSel.name);
 $("#sbThumb").onclick = () => saveThumb(false);
 
 $("#sbSave").onclick = async () => {
@@ -316,6 +313,7 @@ async function saveThumb(quiet) {
 // window, and any typing in it, alone. Serial ports are asked for once.
 let ports = [];
 const schemas = new Map();                     // name → /params schema (from /info)
+const camKinds = new Map();                    // name → true: a camera part not in /info, its window is camwin.js
 function loadPorts() {
   fetch("/dev/api/ports").then(r => r.json()).then(j => { ports = j.ports || []; }).catch(() => {});
 }
@@ -325,14 +323,22 @@ async function openParams(name, force = false) {
   if (open && open.dataset.comp === name && !force) return;
   const w = makeWin("dvParams", name);
   w.dataset.comp = name;
+  w._stop?.();                                    // a camera window's picture stops
+  w._stop = null;
+  w.classList.remove("dv-camwin");
   const body = w.querySelector(".dv-win-body"), foot = w.querySelector(".dv-win-foot");
   let s = schemas.get(name);
+  if (s?.kind === "camera" || camKinds.get(name)) {                     // cameras + vision servers: their own window
+    body.innerHTML = `<div class="muted">Loading…</div>`;
+    return openCameraWindow(w, name, { api, post, API, fieldHtml: (f) => fieldHtml(f, ports), saved: paramsSaved });
+  }
   if (!s) {                                       // not in /info (yet): ask
     body.innerHTML = `<div class="muted">Loading…</div>`;
     foot.hidden = true;
     try { s = await api(`/params?component=${encodeURIComponent(name)}`); }
     catch (e) { body.innerHTML = `<div class="dv-msg bad">${esc(e.message)}</div>`; return; }
     if (w.dataset.comp !== name) return;          // another click won
+    if (s.kind === "camera") { camKinds.set(name, true); return openParams(name, true); }
   }
   if (!s.fields.length) {
     body.innerHTML = `<div class="muted">${esc(s.type)} has no settings — it is placed, not connected.</div>`;
@@ -343,13 +349,8 @@ async function openParams(name, force = false) {
   body.innerHTML = `<div class="muted dv-small">${esc(s.type)}</div>` + rest.map(f => fieldHtml(f, ports)).join("")
     + (io.length ? `<div class="dv-grp">I/O wiring</div>` + io.map(f => fieldHtml(f, ports)).join("") : "");
   foot.hidden = false;
-  foot.innerHTML = `<button class="btn btn-primary" data-save>Save</button>
-    ${s.type.startsWith("inspection_") ? `<button class="btn" data-cam>Camera</button>` : ""}
-    ${isVisionPart(s.type) ? `<button class="btn" data-vision>Vision configurator</button>` : ""}
-    <span class="dv-msg" data-msg></span>`;
+  foot.innerHTML = `<button class="btn btn-primary" data-save>Save</button><span class="dv-msg" data-msg></span>`;
   const msg = foot.querySelector("[data-msg]");
-  foot.querySelector("[data-cam]")?.addEventListener("click", () => openCamera(name));
-  foot.querySelector("[data-vision]")?.addEventListener("click", () => openVision(name));
   foot.querySelector("[data-save]").onclick = async () => {
     const values = {};
     for (const f of s.fields) {
@@ -359,23 +360,27 @@ async function openParams(name, force = false) {
     msg.className = "dv-msg"; msg.textContent = "Saving…";
     try {
       const r = await post("/params", { component: name, values });
-      // Connection + I/O keys: the builder never writes them, so its copy
-      // is still current. Rail / critical: the builder writes those too
-      // and would save its old values back — it must reload first
-      // (baseSig stays old, so a Save before that is refused with a 409).
-      if (!(r.builder_keys || []).length) baseSig = r.scene_sig;
-      else {
-        banner(`Saved ${esc(r.builder_keys.join(", "))}. The Scene builder still shows the old value — reload it before you move anything (its unsaved changes are dropped). <button class="btn btn-sm" id="sbReload">Reload the Scene builder</button>`);
-        $("#sbReload")?.addEventListener("click", () => { banner(""); loadScene(); });
-      }
+      paramsSaved(r);
       msg.className = "dv-msg ok";
       msg.textContent = !r.changed.length ? "No changes." :
         `Saved to ${Object.keys(r.files).map(f => f.split("/").pop()).join(", ")}.` + (r.relaunch ? " Relaunch to apply." : "");
-      if (r.changed.length) loadInfo();
     } catch (e) {
       msg.className = "dv-msg bad"; msg.textContent = e.message;
     }
   };
+}
+
+// After a Settings save. Connection + I/O keys: the builder never writes
+// them, so its copy is still current. Rail / critical: the builder writes
+// those too and would save its old values back — it must reload first
+// (baseSig stays old, so a Save before that is refused with a 409).
+function paramsSaved(r) {
+  if (!(r.builder_keys || []).length) baseSig = r.scene_sig;
+  else {
+    banner(`Saved ${esc(r.builder_keys.join(", "))}. The Scene builder still shows the old value — reload it before you move anything (its unsaved changes are dropped). <button class="btn btn-sm" id="sbReload">Reload the Scene builder</button>`);
+    $("#sbReload")?.addEventListener("click", () => { banner(""); loadScene(); });
+  }
+  if (r.changed.length) loadInfo();
 }
 
 // I/O wiring: [[pin, value, wait], …] as rows of pin · 0/1 · wait (s).
@@ -430,81 +435,9 @@ function fieldHtml(f, portList = []) {
 document.addEventListener("change", e => {
   const el = e.target;
   if (el.matches?.(".dv-switch input[data-key]")) {
-    el.nextElementSibling.textContent = el.dataset.key === "simulation" ? (el.checked ? "Simulated" : "Real device") : (el.checked ? "On" : "Off");
+    el.nextElementSibling.textContent = /(^|\.)simulation$/.test(el.dataset.key) ? (el.checked ? "Simulated" : "Real device") : (el.checked ? "On" : "Off");
   }
 });
-
-// The vision configurator: the camera's vision server GUI (dorna_vision),
-// in a new window on its Playground page. The server is the one the
-// camera names (camera_cfg.server); the GUI takes no camera in its link,
-// so the banner names the serial to pick there. In simulation, or with no
-// server set, the banner says why instead.
-const isVisionPart = (type) => /^inspection_/.test(type || "") || type === "vision_server";
-const visionWhere = new Map();                    // name -> promise of /vision/<name> (asked on select)
-function visionInfo(name, fresh) {
-  if (fresh || !visionWhere.has(name)) visionWhere.set(name, api(`/vision/${encodeURIComponent(name)}`).catch((e) => ({ error: e.message })));
-  return visionWhere.get(name);
-}
-async function openVision(name) {
-  // the answer asked for on select is usually here: open the window in the
-  // click itself (no popup blocker); else a blank one now, pointed after
-  let j = visionWhere.get(name)?.settled;
-  const win = j ? (j.available ? window.open(j.url, "_blank", "noopener") : null) : window.open("", "_blank");
-  if (!j) {
-    j = await visionInfo(name, true);
-    if (win && j.available) { try { win.opener = null; } catch (_) {} win.location.href = j.url; }
-    else win?.close();
-  }
-  visionInfo(name, true).then((r) => { visionWhere.get(name).settled = r; });   // fresh for the next click
-  if (j.error) { banner(`Vision configurator: ${esc(j.error)}`, true); return; }
-  if (!j.available) { banner(`Vision configurator — ${esc(name)}: ${esc(j.reason)}`, true); return; }
-  const link = `<a href="${esc(j.url)}" target="_blank" rel="noopener">${esc(j.host)}:${esc(j.port)}</a>`;
-  const cam = j.serial ? ` Pick camera <b class="mono">${esc(j.serial)}</b> there.` : "";
-  const sim = j.camera_simulated ? ` ${esc(name)} itself is still simulated in the scene.` : "";
-  banner(`Opened the vision configurator of ${esc(j.server)} (${link}).${cam}${sim}`);
-}
-function prefetchVision(name) {
-  const p = visionInfo(name, true);
-  p.then((r) => { p.settled = r; });
-}
-
-// Camera preview window: a frame every ~0.5 s while it is open.
-function openCamera(name) {
-  const w = makeWin(`dvCam_${name}`, `Camera · ${name}`, "dv-cam");
-  const body = w.querySelector(".dv-win-body");
-  if (w._poll) return;
-  body.innerHTML = `<div class="dv-cam-view"><span>Connecting…</span></div><div class="muted dv-small" data-st></div>`;
-  const view = body.querySelector(".dv-cam-view"), st = body.querySelector("[data-st]");
-  let url = null, alive = true, n = 0;
-  w.addEventListener("closed", () => { alive = false; if (url) URL.revokeObjectURL(url); });
-  w._poll = true;
-  const tick = async () => {
-    if (!alive) return;
-    let wait = 500;
-    try {
-      const r = await fetch(`${API}/camera/${encodeURIComponent(name)}.jpg`, { cache: "no-store" });
-      if (r.ok && (r.headers.get("Content-Type") || "").startsWith("image/")) {
-        const b = await r.blob();
-        if (url) URL.revokeObjectURL(url);
-        url = URL.createObjectURL(b);
-        let img = view.querySelector("img");
-        if (!img) { view.innerHTML = ""; img = document.createElement("img"); img.alt = name; view.appendChild(img); }
-        img.src = url;
-        st.textContent = `Live · frame ${++n}`;
-      } else {
-        const j = await r.json().catch(() => ({}));
-        view.innerHTML = `<span>${esc(j.reason || j.error || `No image (${r.status})`)}</span>`;
-        st.textContent = j.sim ? "" : "Retrying…";
-        wait = j.sim ? 5000 : 3000;
-      }
-    } catch (e) {
-      view.innerHTML = `<span>${esc(e.message)}</span>`;
-      wait = 3000;
-    }
-    setTimeout(tick, wait);
-  };
-  tick();
-}
 
 // ── 2 · Workflow ────────────────────────────────────────────────────
 // The project page itself (orchestrator workspace.html, ?embed=1): run
@@ -735,7 +668,10 @@ function setTools() {
   const h = location.hostname, net = /^(\d{1,3}\.\d{1,3}\.\d{1,3})\.\d{1,3}$/.exec(h)?.[1];
   const field = (c, k) => c?.settings?.fields.find(f => f.key === k)?.value;
   const robot = info?.components.find(c => c.kind === "robot");
-  const cam = info?.components.find(c => c.camera && field(c, "camera_cfg.server"));
+  // the vision Pi a camera names (its server's address), else the bench's .40
+  const servers = (info?.components || []).filter(c => c.type === "vision_server" && field(c, "ip"));
+  const used = info?.components.find(c => c.camera && servers.some(v => v.name === field(c, "camera_cfg.server")));
+  const srv = used ? servers.find(v => v.name === field(used, "camera_cfg.server")) : servers[0];
   const link = (id, url, why) => {
     const a = $(id);
     if (url) { a.href = url; a.removeAttribute("aria-disabled"); a.title = url; }
@@ -744,8 +680,8 @@ function setTools() {
   link("#toolJupyter", `http://${h}:8888/doc/workspaces/auto`);
   const lab = field(robot, "ip") || (net && `${net}.10`);
   link("#toolLab", lab && `http://${lab}/`, "Set the robot's ip in its Settings (Scene)");
-  link("#toolVision", net ? `http://${net}.40/` : (cam ? "#" : ""), "No vision server: set a camera's server in its Settings (Scene)");
-  $("#toolVision").onclick = cam ? (e) => { e.preventDefault(); $("#wfTools").open = false; openVision(cam.name); } : null;
+  link("#toolVision", srv ? `http://${field(srv, "ip")}:${field(srv, "port") || 80}/playground` : net && `http://${net}.40/`,
+       "No vision server: add a vision_server part and set its IP address (Scene)");
 }
 document.addEventListener("click", (e) => { if (!e.target.closest("#wfTools")) $("#wfTools").open = false; });
 

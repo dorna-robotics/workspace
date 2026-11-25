@@ -21,6 +21,8 @@ import re
 import gui.scene_builder.server as sb
 from workspace.components import factory as comp_factory
 
+from .camera import NETWORK_TYPES
+
 CAMERA_TYPES = ["d405", "ueye_xs", "hikrobot", "oak"]
 
 # key → (label, kind, hint). kind: text | int | float | bool | serial | enum
@@ -35,6 +37,8 @@ FIELDS = {
     "rail_cfg.offset":        ("Rail offset (mm)", "float", "Measured by rail calibration (docs/rail-calibration.md)."),
     "camera_cfg.server":      ("Vision server", "enum", "The vision_server component this camera is plugged into."),
     "camera_cfg.serial_number": ("Camera serial number", "text", ""),
+    "camera_cfg.ip":          ("Camera IP address", "text", "A PoE / GigE camera is reached by its IP address "
+                                                            "or its serial number."),
     "camera_cfg.type":        ("Camera type", "enum", ""),
     "critical":               ("Critical", "bool", "A fault on this device stops the run."),
     "simulation":             ("Simulation", "bool", "On = nothing is sent to the real device."),
@@ -203,7 +207,7 @@ def schema(name, cfg, scene):
         want("rail_cfg.type")
         want("rail_cfg.offset")
     if ctype.startswith("inspection_"):
-        for k in ("camera_cfg.server", "camera_cfg.serial_number", "camera_cfg.type"):
+        for k in ("camera_cfg.server", "camera_cfg.type", "camera_cfg.serial_number", "camera_cfg.ip"):
             want(k)
     if ctype == "vision_server":
         want("ip")
@@ -238,6 +242,11 @@ def schema(name, cfg, scene):
             f["options"] = [""] + servers
         elif k == "camera_cfg.type":
             f["options"] = CAMERA_TYPES
+            dflt = (defaults(ctype).get("camera_cfg") or {}).get("type")
+            if dflt:
+                f["default"] = dflt
+        elif k == "camera_cfg.ip":
+            f["types"] = sorted(NETWORK_TYPES)       # PoE / GigE: the window shows it for these only
         if k == "simulation" and f["value"] is None:
             f["value"] = True               # the library default
         fields.append(f)
@@ -275,8 +284,8 @@ def coerce(field, value):
         except ValueError:
             raise ValueError(f"{field['label']}: a number")
     v = "" if value is None else str(value).strip()
-    if field["key"] == "ip" and v and not re.fullmatch(r"[A-Za-z0-9.\-:]+", v):
-        raise ValueError("IP address: an address like 192.168.1.20 or a host name")
+    if field["key"] in ("ip", "camera_cfg.ip") and v and not re.fullmatch(r"[A-Za-z0-9.\-:]+", v):
+        raise ValueError(f"{field['label']}: an address like 192.168.1.20 or a host name")
     if kind == "enum" and v and field.get("options") and v not in field["options"]:
         raise ValueError(f"{field['label']}: one of {', '.join(o for o in field['options'] if o)}")
     if kind == "serial" and v and not v.startswith("/dev/"):
