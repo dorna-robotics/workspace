@@ -4,7 +4,7 @@
 // Workflow is the project page (with simulation switches on its devices)
 // plus the AI builder's Flowchart and the builder's Recipes and Replay.
 // HMI previews Main + Parameters; Calibration is its own page.
-import { apiFetch, esc, stateVariant, stateLabel, isLaunched } from "/orchestrator/api.js";
+import { apiFetch, esc, stateVariant, stateLabel, isLaunched, wireCommand, toast, notify, unnotify } from "/orchestrator/api.js";
 import { openFlowchart, closeFlowchart, preloadFlowchart } from "/dev/flow.js";
 
 const $ = (s, r = document) => r.querySelector(s);
@@ -54,6 +54,7 @@ function showTab(t) {
   setAiContext();
   ({ scene: openScene, workflow: openWorkflow, hmi: openHmi, calibration: openCalibration })[t]();
   syncFrame();
+  renderRun(); showWfMsg();
 }
 $$("#dvRail button").forEach(b => b.onclick = () => showTab(b.dataset.tab));
 
@@ -152,6 +153,8 @@ async function loadScene() {
     w.addEventListener("sb-select", e => onSelect(e.detail || {}));
     w.addEventListener("sb-menu", e => e.detail?.name && openParams(e.detail.name));
     w.document.getElementById("sbDevClose")?.addEventListener("click", () => setView(""));
+    relayBuilder(w);
+    $("#sbFiles").setAttribute("aria-pressed", "false");
     pushMenus();
     syncFrame();
     // The project's picture for the Projects page, once the scene is in.
@@ -223,6 +226,13 @@ $("#sbEditPart").onclick = () => sbSel && buildComponent(sbSel.type);
 $("#sbCamera").onclick = () => sbSel && openCamera(sbSel.name);
 $("#sbVision").onclick = () => sbSel && openVision(sbSel.name);
 $("#sbThumb").onclick = () => saveThumb(false);
+// The builder's own files section (hidden in here unless asked for):
+// which file new parts go to, the YAML (copy, download), importing a file.
+$("#sbFiles").onclick = () => {
+  const doc = $("#sbFrame").contentDocument;
+  if (!doc?.getElementById("sbConfigSection")) return;
+  $("#sbFiles").setAttribute("aria-pressed", String(doc.documentElement.classList.toggle("sb-cfg")));
+};
 
 $("#sbSave").onclick = async () => {
   const w = $("#sbFrame").contentWindow;
@@ -515,9 +525,14 @@ let wf = null;            // /workflow: the project's charts (for the flowchart)
 let wv = "";              // "" (the project page) | "flow" | "recipes" | "replay"
 const pageUrl = () => `/orchestrator/workspace.html?name=${encodeURIComponent(PROJECT)}`;
 
-function openWorkflow() {
+function loadWorkflowPage() {
   const f = $("#wfFrame");
-  if (!f.getAttribute("src")) f.src = `${pageUrl()}&embed=1`;
+  if (f.getAttribute("src")) return;
+  f.addEventListener("load", relayWorkflow);
+  f.src = `${pageUrl()}&embed=1`;
+}
+function openWorkflow() {
+  loadWorkflowPage();
   setTimeout(preloadFlowchart, 3000);
 }
 
@@ -530,6 +545,7 @@ async function setView(v) {
   if (v) { $("#dvMain").dataset.wv = v; openScene(); } else delete $("#dvMain").dataset.wv;
   $$("#wfSeg button").forEach(b => b.classList.toggle("on", b.dataset.wv === v));
   syncFrame();
+  renderRun(); showWfMsg();
   if (v === "flow") openChart();
 }
 $$("#wfSeg button").forEach(b => b.onclick = () => setView(b.dataset.wv));
@@ -562,7 +578,7 @@ function openHmi() {
   // Main: the live pendant while the project runs; before that, the
   // project's own screen mounted from its files (hmi.html).
   $("#hmiMain").src = launched
-    ? `/orchestrator/workspace.html?name=${encodeURIComponent(PROJECT)}&pendant=1`
+    ? `${pageUrl()}&pendant=1&hosted=1`
     : `/dev/hmi.html?${q}&screen=main`;
   $("#hmiSetup").src = `/dev/hmi.html?${q}&screen=setup`;
   $("#hmiMsg").textContent = launched
@@ -573,6 +589,7 @@ $$("#hmiSeg button").forEach(b => b.onclick = () => {
   $$("#hmiSeg button").forEach(x => x.classList.toggle("on", x === b));
   $("#hmiGrid").dataset.v = b.dataset.v;
 });
+$("#hmiOpen").href = `${pageUrl()}&pendant=1`;
 $("#hmiReload").onclick = () => { hmiLaunchedShown = null; $("#hmiSetup").src = ""; openHmi(); };
 
 // ── 4 · Calibration ─────────────────────────────────────────────────
@@ -589,6 +606,121 @@ window.__dvTopShot = async (b) => {
   return { prod: w.__sbTopShot(b.x0, b.y0, b.x1, b.y1, "prod"), cal: w.__sbTopShot(b.x0, b.y0, b.x1, b.y1, "cal") };
 };
 
+// ── the embedded pages' messages and run controls ───────────────────
+// The project page (Workflow) and the builder (Scene) post their messages
+// into their own top bars, hidden in here: the host's line carries them.
+// What the project page asks or reports (a pause's question, an alarm,
+// a device down) shows on every tab, with the way to it; the run
+// controls of its sidebar are in the top bar wherever it isn't on screen.
+function watchLine(line, onChange) {
+  if (!line) return;
+  const read = () => onChange(line.hidden ? null : {
+    level: line.dataset.level || "info", urgent: line.classList.contains("urgent"),
+    text: line.querySelector(".msg-first")?.textContent || "",
+  });
+  new MutationObserver(read).observe(line, { attributes: true, childList: true, subtree: true, characterData: true });
+  read();
+}
+
+let sbLast = "";
+function relayBuilder(w) {
+  watchLine(w.document.querySelector(".msg-line"), (m) => {
+    const k = m ? `${m.level}|${m.text}` : "";
+    if (k && k !== sbLast) toast(m.text, m.level);
+    sbLast = k;
+  });
+  const ls = w.document.getElementById("sbLoadStatus");       // "Importing scene n/N"
+  if (ls) new MutationObserver(() => {
+    const t = ls.style.display === "none" ? "" : ls.textContent.trim();
+    if (t) notify({ id: "sbload", level: "info", label: "Scene", text: t }); else unnotify("sbload");
+  }).observe(ls, { attributes: true, childList: true, subtree: true, characterData: true });
+}
+
+let wfMsg = null, wfKey = "";
+function relayWorkflow() {
+  const d = $("#wfFrame").contentDocument;
+  watchLine(d?.getElementById("deskMsg"), (m) => { wfMsg = m; showWfMsg(); });
+  const ctl = d?.getElementById("controls");
+  if (ctl) new MutationObserver(renderRun).observe(ctl, { childList: true, subtree: true, attributes: true, attributeFilter: ["disabled"] });
+  renderRun();
+}
+const onProjectPage = () => tab === "workflow" && !wv;
+function goProjectPage() { if (tab !== "workflow") showTab("workflow"); setView(""); }
+function showWfMsg() {
+  const m = wfMsg && (wfMsg.urgent || wfMsg.level === "warn") ? wfMsg : null;
+  $('#dvRail [data-tab="workflow"]').classList.toggle("attn", !!m && !onProjectPage());
+  const k = m && !onProjectPage() ? `${m.level}|${m.text}` : "";
+  if (k === wfKey) return;
+  wfKey = k;
+  if (!k) return unnotify("wf");
+  notify({ id: "wf", level: m.level, label: "Workflow", text: m.text,
+           actions: [{ label: "Open Workflow", primary: true, wire: (b) => { b.onclick = () => { unnotify("wf"); goProjectPage(); }; } }] });
+}
+
+// The strip mirrors the sidebar's buttons. A tap presses the sidebar's
+// own (its gates, run parameters and sounds); Park and Kill are held here
+// (a hold can't be passed on) and send the command. Start with a device
+// down, and Replan, open their dialogs — on the project page.
+function renderRun() {
+  const box = $("#dvRun");
+  const ctl = $("#wfFrame").contentDocument?.getElementById("controls");
+  box.hidden = !ctl || !ctl.children.length || onProjectPage();
+  if (box.hidden) return;
+  const src = [...ctl.children].filter(el => el.matches("button, .ctrl-starting") && el.textContent.trim() !== "Parameters");
+  const key = src.map(el => `${el.textContent}|${el.disabled}`).join(";");
+  if (box.dataset.key === key) return;
+  box.dataset.key = key;
+  box.innerHTML = "";
+  for (const el of src) {
+    const label = el.textContent.trim();
+    if (!el.matches("button")) { box.insertAdjacentHTML("beforeend", `<span class="muted dv-small">${esc(label)}</span>`); continue; }
+    const verb = label.toLowerCase();
+    const b = document.createElement("button");
+    b.className = el.className.split(/\s+/).filter(c => /^btn/.test(c)).join(" ");
+    b.textContent = label;
+    b.disabled = el.disabled;
+    if (el.title && !/^Hold /.test(el.title)) b.title = el.title;
+    if (verb === "park" || verb === "kill") {
+      wireCommand(b, verb, async () => {
+        await apiFetch(`/workspace/${encodeURIComponent(PROJECT)}/cmd`, { method: "POST", body: JSON.stringify({ cmd: verb }) });
+        pollStatus();
+      });
+    } else {
+      b.onclick = async () => {
+        let there = verb === "replan";
+        if (verb === "start" || verb === "resume") {
+          const st = await apiFetch(`/workspace/${encodeURIComponent(PROJECT)}/status`).catch(() => ({}));
+          there = !!st.devices_summary?.blocking;
+        }
+        if (there) goProjectPage();
+        el.click();
+      };
+    }
+    box.appendChild(b);
+  }
+}
+
+// Tools: the bench's other programs, as the old start page linked them —
+// Jupyter here; Dorna Lab at the robot's address (the scene's, else the
+// bench subnet's .10); the vision server a camera names (else .40).
+function setTools() {
+  const h = location.hostname, net = /^(\d{1,3}\.\d{1,3}\.\d{1,3})\.\d{1,3}$/.exec(h)?.[1];
+  const field = (c, k) => c?.settings?.fields.find(f => f.key === k)?.value;
+  const robot = info?.components.find(c => c.kind === "robot");
+  const cam = info?.components.find(c => c.camera && field(c, "camera_cfg.server"));
+  const link = (id, url, why) => {
+    const a = $(id);
+    if (url) { a.href = url; a.removeAttribute("aria-disabled"); a.title = url; }
+    else { a.removeAttribute("href"); a.setAttribute("aria-disabled", "true"); a.title = why; }
+  };
+  link("#toolJupyter", `http://${h}:8888/doc/workspaces/auto`);
+  const lab = field(robot, "ip") || (net && `${net}.10`);
+  link("#toolLab", lab && `http://${lab}/`, "Set the robot's ip in its Settings (Scene)");
+  link("#toolVision", net ? `http://${net}.40/` : (cam ? "#" : ""), "No vision server: set a camera's server in its Settings (Scene)");
+  $("#toolVision").onclick = cam ? (e) => { e.preventDefault(); $("#wfTools").open = false; openVision(cam.name); } : null;
+}
+document.addEventListener("click", (e) => { if (!e.target.closest("#wfTools")) $("#wfTools").open = false; });
+
 // ── project + status ────────────────────────────────────────────────
 async function loadInfo() {
   info = await api("/info");
@@ -598,6 +730,7 @@ async function loadInfo() {
   schemas.clear();
   for (const c of info.components) if (c.settings) schemas.set(c.name, c.settings);
   pushMenus();
+  setTools();
 }
 
 async function pollStatus() {
@@ -626,6 +759,7 @@ async function boot() {
   }
   await pollStatus();
   setInterval(pollStatus, 2000);
+  loadWorkflowPage();
   let t = location.hash.slice(1);
   if (!TABS.includes(t)) { try { t = localStorage.getItem("dv_tab"); } catch (_) {} }
   showTab(t);

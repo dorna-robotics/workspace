@@ -227,6 +227,7 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--
           <div class="start-bar">
             <div class="what"><div class="st-name" id="startWhat"></div><div class="muted" id="startSub"></div></div>
             <label class="toggle locked" title="Robot probing comes with the calibration runner; until then every step runs on the simulated robot and nothing is saved"><input type="checkbox" id="dryRun" checked disabled/> Dry run in simulation</label>
+            <a class="btn btn-ghost" id="calJupyter" target="_blank" rel="noopener" title="Probing on the robot runs as code for now: the project's calibration (Recipe.calibrate) in Jupyter">On the robot: Jupyter ↗</a>
             <button class="btn btn-primary btn-lg" id="btnStart">Start calibration</button>
           </div>
         </div>
@@ -748,6 +749,7 @@ async function onPrimary() {
 function doKill() { halted = true; busy = false; log("KILL: program stopped, robot halted"); $("#haltBanner").hidden = false; render(); }
 $("#btnResume").onclick = () => { halted = false; $("#haltBanner").hidden = true; delete results[cur]; log("Restarted at this step"); render(); };
 
+$("#calJupyter").href = `http://${location.hostname}:8888/doc/workspaces/auto`;
 $("#btnStart").onclick = () => {
   dry = true; steps = buildSteps(); cur = 0; results = {}; toolOn = null; halted = false; busy = false;
   $("#log").innerHTML = ""; log(`Calibration started${dry ? " (dry run in simulation)" : ""}: ${selected.size} stations`);

@@ -4,7 +4,7 @@
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>Dorna Workspace</title>
-  <script>(function(){ document.documentElement.setAttribute("data-theme", localStorage.getItem("orch_theme")||"light"); if(/[?&]pendant=(1|true)(&|$)/i.test(location.search))document.documentElement.classList.add("pendant-boot"); if(/[?&]embed=1(&|$)/.test(location.search))document.documentElement.classList.add("embedded"); })();</script>
+  <script>(function(){ document.documentElement.setAttribute("data-theme", localStorage.getItem("orch_theme")||"light"); if(/[?&]pendant=(1|true)(&|$)/i.test(location.search))document.documentElement.classList.add("pendant-boot"); if(/[?&]embed=1(&|$)/.test(location.search))document.documentElement.classList.add("embedded","hosted"); if(/[?&]hosted=1(&|$)/.test(location.search))document.documentElement.classList.add("hosted"); })();</script>
   <link rel="icon" type="image/png" href="favicon.png"/>
   <link rel="stylesheet" href="/vendor/base.css"/>
   <link rel="stylesheet" href="/vendor/nav.css"/>
@@ -22,10 +22,14 @@
     .ws-title    { font-size: var(--text-xl); font-weight: 600; letter-spacing: -0.3px; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .ws-subtitle { font-size: var(--text-sm); color: var(--muted); }
 
-    /* Embedded (?embed=1 — Developer mode's Workflow tab): the host
-       page owns navigation, account and theme; no Schedule there. */
-    html.embedded .ws-header > a[href="/"],
-    html.embedded .ws-header .js-theme-toggle, html.embedded .acct, html.embedded .acct-fixed, html.embedded .ai-fab, html.embedded .ai-panel,
+    /* Hosted in Developer mode (?embed=1 — its Workflow tab; ?hosted=1
+       — its HMI tab's live pendant): the host page owns navigation,
+       account, theme and fullscreen. Embedded: no Schedule there; the
+       HMI tab is the pendant only (no Desktop view). */
+    html.hosted .ws-header > a[href="/"], html.hosted #pendantExit,
+    html.hosted .js-theme-toggle, html.hosted .js-fullscreen-toggle,
+    html.hosted .acct, html.hosted .acct-fixed, html.hosted .ai-fab, html.hosted .ai-panel,
+    html.hosted:not(.embedded) #pendantDesktop,
     html.embedded .viewer-tab[data-vtab="sched"] { display: none !important; }
     /* each scene device's simulation switch (embedded only): saved to
        the project's scene — mode, not state (device-guide §16) */
