@@ -622,13 +622,30 @@ function watchLine(line, onChange) {
   read();
 }
 
-let sbLast = "";
+// The builder's messages: each card its stack makes (vendor/messages.js;
+// stack and line are hidden in here) is posted here, then dropped there —
+// an error there would otherwise stay on top of its line for good.
 function relayBuilder(w) {
-  watchLine(w.document.querySelector(".msg-line"), (m) => {
-    const k = m ? `${m.level}|${m.text}` : "";
-    if (k && k !== sbLast) toast(m.text, m.level);
-    sbLast = k;
-  });
+  const doc = w.document;
+  const take = (card) => {
+    const text = [card.querySelector(".msg-title")?.textContent, card.querySelector(".msg-text")?.textContent].filter(Boolean).join(" — ");
+    if (text) toast(text, card.dataset.level || "info");
+    card.querySelector(".msg-x")?.click();
+  };
+  const watch = (stack) => {
+    [...stack.children].forEach(take);
+    new MutationObserver((ms) => ms.forEach(m => m.addedNodes.forEach(n => n.classList?.contains("msg-card") && take(n))))
+      .observe(stack, { childList: true });
+  };
+  const stack = doc.getElementById("msgStack");
+  if (stack) watch(stack);
+  else {
+    const mo = new MutationObserver(() => {
+      const st = doc.getElementById("msgStack");
+      if (st) { mo.disconnect(); watch(st); }
+    });
+    mo.observe(doc.body, { childList: true });
+  }
   const ls = w.document.getElementById("sbLoadStatus");       // "Importing scene n/N"
   if (ls) new MutationObserver(() => {
     const t = ls.style.display === "none" ? "" : ls.textContent.trim();
@@ -645,7 +662,12 @@ function relayWorkflow() {
   renderRun();
 }
 const onProjectPage = () => tab === "workflow" && !wv;
-function goProjectPage() { if (tab !== "workflow") showTab("workflow"); setView(""); }
+// To the project page; false when it couldn't go (an unsaved flowchart kept open).
+async function goProjectPage() {
+  if (tab !== "workflow") showTab("workflow");
+  await setView("");
+  return onProjectPage();
+}
 function showWfMsg() {
   const m = wfMsg && (wfMsg.urgent || wfMsg.level === "warn") ? wfMsg : null;
   $('#dvRail [data-tab="workflow"]').classList.toggle("attn", !!m && !onProjectPage());
@@ -692,7 +714,7 @@ function renderRun() {
           const st = await apiFetch(`/workspace/${encodeURIComponent(PROJECT)}/status`).catch(() => ({}));
           there = !!st.devices_summary?.blocking;
         }
-        if (there) goProjectPage();
+        if (there && !(await goProjectPage())) return;    // its dialog opens where it shows
         el.click();
       };
     }
