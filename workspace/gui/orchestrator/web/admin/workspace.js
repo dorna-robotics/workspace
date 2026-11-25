@@ -2267,7 +2267,7 @@ function renderDevicesPanel() {
         <span class="dot"></span>
         <span class="device-id">${escHtml(id)}</span>
         ${_simSwitch(id)}
-      </div>`).join("");
+      </div>`).join("") + `<div class="step-empty">Launch to connect, recover and control them.</div>`;
     if (_devicesListLastHtml !== html) { el.innerHTML = html; _devicesListLastHtml = html; }
     if (!_devicesExpanded) { _devicesExpanded = true; setFold($("devicesFold"), true, $("devicesChevron")); }
     dvRender();
