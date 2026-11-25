@@ -102,7 +102,7 @@ One input takes 5.9 ms on the Jetson Orin Nano.
 
 ## 3. Check A: the place check
 
-> **Current direction (2026-11-24): section 14.** A classifier trained on CAD renders only, plus a small adapter
+> **Current direction (2026-11-24): section 14; the design for a real setup and the vision server: section 15.** A classifier trained on CAD renders only, plus a small adapter
 > trained on a few labelled photos per site. The reference-photo method below still works, but needs real
 > reference photos of every place and state.
 
@@ -475,6 +475,7 @@ network.
 | 2026-11-24 | Keep the CAD maps as classifier input | Without them: 44/48 on photo 2, with confident misses on open vials |
 | 2026-11-24 | No black and white, no over-exposure added after rendering | 578 and 611 of 624 places right, against 622 without them |
 | 2026-11-24 | Whole-rack RF-DETR not used | Trained on the same CAD data: 44/48 on photo 2, calling open amber vials capped at 0.9+ confidence |
+| 2026-11-24 | Real setup = check A (CAD base + site adapter) for the state, before/after for each action, check B for anything foreign; unsure or disagreeing means pause and ask (section 15) | Each covers what the others cannot; only check A and check B are measured so far |
 
 ## 13. Where the experiment lives
 
@@ -538,6 +539,14 @@ picture, with 20 and 33 open vials.
 3. **Crop:** the place's check box (CAD silhouette x 1.4) at 224 x 224.
    Training jitter: shift up to 3 mm, scale 5 %, turn 4 deg, on 80 % of crops,
    plus `pairlib.light`. Kept in colour.
+   **The jitter rule, for every item type (in percentages, so it scales with
+   the object):** shift up to **13.3 % of the place's box side** per axis, but
+   never more than **21.4 % of the pitch** (centre-to-centre to the nearest
+   place); scale ±5 %; rotation ±4°; on 80 % of training crops. Both numbers
+   come from the 2 ml rack. There, 3 mm = 7.8 px = 13.3 % of its 59 px box and
+   21.4 % of its 36 px pitch. On the tip rack, 13.3 % of its 43 px box would be
+   27 % of its 21 px pitch, so the cap applies: 4.5 px, about 2 mm
+   (`tip_jitter.py` -> `tip/jitter.json`).
 4. **Model:** DINOv3 ViT-S/16, frozen (the unit's TensorRT engine), gives
    14 x 14 x 384 per crop. The **CAD maps** are added to each square: how much
    of it is this place's item, its visible outline, and the neighbours' items
@@ -614,3 +623,104 @@ All on the 2 ml rack; numbers are places right.
   - One heavy job at a time, 5 GB cap.
   - User jobs stop when no ssh session is open (linger is off).
   - Keep about 3 GB of disk free; per-epoch checkpoints are 0.5 GB each.
+
+## 15. The design for a real setup (what goes into the vision server)
+
+Agreed 2026-11-24. Three checks with different jobs. A decision rule
+combines them so the system is never silently wrong. Nothing here is in the
+vision server yet; sections 3, 4 and 14 are the measured parts.
+
+### 15.1 The three checks
+
+| Check | Question | Method | When it runs | Cost | Status |
+|---|---|---|---|---|---|
+| **A: place state** | What is in each place (e.g. empty / open vial / vial with cap; tip / no tip)? | Base trained on CAD only (per item type) + site adapter (per site), section 14 | Start of a run, after any pause or restart, and periodically | About 7 ms per place (DINOv3 ViT-S about 5 ms + classifier 2 ms); a 48-place rack about 0.35 s | 2 ml rack measured (section 14.1); tip rack in training; other types to do |
+| **Before/after** | Did the robot's action change this place the way the plan says? | Compare the place's crop just before and just after the action, inside its CAD outline, with DINOv3 features (the same features as check B). Real photo against real photo, seconds apart: no render-to-photo gap, no training | After every action, for the places it touched | About the cost of check A for one place | Not built, not measured. The real-reference check A (0 false alarms against 56-175 for CAD references, section 3) is the evidence that photo-to-photo comparison works |
+| **B: anything foreign** | Is there anything on the bench that should not be there (a dropped cap, a tool, a hand)? | The small fast model compares the current frame with the bench's reference frame (section 4.2) | Continuously or per frame while running; always before a move | 5.1 ms per frame for the three plates | Built and measured (section 4); sensitive to a change of room light |
+
+Before/after cannot know the starting state, and it misses changes that no
+action caused. Check A cannot see things that are not in the plan. Check B
+does not know what a place should hold. That is why all three are kept.
+
+### 15.2 The decision rule
+
+- **Pass** only when everything agrees: check A matches the plan at every
+  place with confidence, before/after shows the expected change, and check B
+  finds nothing.
+- **Unsure means ask.** A place is unsure when its top probability is below
+  a level set from real data (0.9 on the photos so far). The 7-of-9
+  stability rule (nudge the box 9 times) is the stricter option: it had 0
+  silently wrong answers on r01/r02.
+- **Any disagreement means pause** and an operator question on the HMI,
+  through the platform's normal pause flow: "C1: expected an open vial, the
+  camera reads empty. What is there?", with the crop.
+- **Every operator answer is stored** with its crop. These are labelled site
+  data for the next adapter update.
+- **Confident mistakes are the danger:** they would never be asked. For the
+  first runs at a new site, the operator also confirms a small random
+  sample of the "sure" places, so those mistakes get found and labelled.
+
+### 15.3 Installing at a site
+
+1. **Camera:** its defaults (auto exposure, auto white balance). Frames from
+   the first 5 s after it starts are not used (section 2.1). Lens from the
+   camera's factory calibration.
+2. **Camera fit:** refit on the plate holes for each photo, with the coarse
+   shift search first (section 14.3). The camera moved 35 px between two
+   sessions here.
+3. **Check A, for each rack type used at the site:**
+   1. Take about 10 setups with varied layouts: every item kind, open and
+      capped, crowded places, empty corners.
+   2. Draw the base model's answers on the whole rack (`label_sheet.py`).
+      The operator corrects them. A VLM can pre-fill this sheet, but that
+      has not been measured yet.
+   3. Train the site adapter: about 4 minutes on the Jetson, a 40 KB file.
+   4. Test on new setups that were not used for training. Freeze.
+4. **Check B:**
+   1. Capture the bench's reference frame.
+   2. If the site's light or bench differs a lot from ours, record about
+      10 minutes while a person moves things, and retrain the small model
+      (about 10 minutes, section 4.2).
+
+### 15.4 Building it into the vision server
+
+- **Where it runs:** inside the vision server, on the raw frame in memory.
+  Only results travel, as small messages (section 10). There's no JPEG
+  between the camera and a check.
+- **Model files:**
+  - one check-A base per item type (DINOv3 ViT-S is the unit's shared
+    TensorRT backbone; the classifier weights are about 1.4 MB);
+  - one site adapter per item type and site (about 40 KB);
+  - check B's small model;
+  - the camera fit and the bench reference frame.
+- **What the workspace gives it:**
+  - the plan state of every place;
+  - action events with the places they touch: "before" is taken when the
+    action starts, "after" when the robot is clear of the view.
+- **What it sends back:**
+  - per place: answer, confidence, sure / unsure;
+  - per action: pass / fail;
+  - from check B: boxes with scores.
+- **Operator questions:** a pause with the crop and the choices, through the
+  HMI (`docs/hmi-guide.md`). The answer is stored for the next adapter update.
+- **Adapter update job:** retrain from the stored answers on demand or at
+  night. Then test on held-out site photos before switching to the new
+  adapter.
+- **Same rules everywhere:**
+  - the jitter rule as percentages: shift 13.3 % of the box side, at most
+    21.4 % of the place pitch, scale ±5 %, rotation ±4°, on 80 % of crops
+    (section 14);
+  - a random colour per part;
+  - balanced classes;
+  - CAD maps as an input.
+
+### 15.5 Open before building
+
+- Before/after: build it and measure it on real robot actions.
+- The "unsure" level: set it from more real photos, per item type.
+- The tip rack: adapter and test (in progress); then the other item types.
+- Check B: its sensitivity to room light (section 4.2, section 9).
+- The VLM label helper: measure it on the 336 labelled places of r01-r07
+  before relying on it.
+- Optional speed-up: the classifier as a TensorRT engine; a smaller picture
+  from the camera (section 10).
