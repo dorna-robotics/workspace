@@ -18,7 +18,7 @@ CPU priority, files read in small pieces, uploads throttled (slower still
 while a project is launched), and when the server can't be reached it backs
 off and tries later.
 
-Never sent: secrets (.env*, account.json, keys, *key*/*secret*/*token*
+Never sent: secrets (.env*, account.json, key files, *secret*/*passw*/*credential* and key / token files
 files), .git internals, Python caches, temp files, files over
 DORNA_SYNC_MAX_FILE_MB. Each is listed in the manifest's ``skipped`` with
 the reason, not dropped silently. A log over LOG_TAIL is sent as its tail.
@@ -56,7 +56,8 @@ SKIP_SUFFIX = (".pyc", ".pyo", ".tmp", ".part", ".swp", ".lock")
 LOG_SUFFIX = (".log", ".jsonl", ".txt", ".csv")
 # the same test the server applies (builder/device_sync.py _SECRET)
 SECRET = re.compile(r"(^|/)(\.env(\..*)?|account\.json|\.netrc|id_[a-z0-9]+(\.pub)?|[^/]*\.(pem|p12|pfx))$"
-                    r"|(^|/)[^/]*(key|secret|token|passw|credential)[^/]*$", re.I)
+                    r"|(^|/)[^/]*(secret|passw|credential)[^/]*$"
+                    r"|(^|/)([^/]*[-_.])?(api[-_]?key|private[-_]?key|access[-_]?key|keys?|tokens?)([-_.][^/]*)?$", re.I)
 # ~/.workspace: what isn't worth sending
 UNIT_SKIP = {"component_meshes": "mesh cache (rebuilt on demand)", "trash": "deleted projects (kept in history)",
              "sync_cache.json": "this sync's own cache", "pycache": "python cache"}
