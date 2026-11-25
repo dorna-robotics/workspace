@@ -102,6 +102,10 @@ One input takes 5.9 ms on the Jetson Orin Nano.
 
 ## 3. Check A: the place check
 
+> **Current direction (2026-11-24): section 14.** A classifier trained on CAD renders only, plus a small adapter
+> trained on a few labelled photos per site. The reference-photo method below still works, but needs real
+> reference photos of every place and state.
+
 **How it decides.** For one place and the state the plan expects there:
 
 1. Cut the plain box from the photo. Nothing is drawn on it or blanked out.
@@ -467,6 +471,10 @@ network.
 | 2026-11-20 | Checks run on the raw picture inside the vision server; results go as messages; video (WebRTC, later) is for people only | Fetching a 12-megapixel JPEG per frame cost 350 to 600 ms; compressed video must never feed a decision |
 | 2026-11-20 | Light and shadow are handled by training on changes we create and label "same" (section 9), not by a relighting model | Free labels, exact, and the robot's shadow can be cast from its CAD; relighting models can alter small details |
 | 2026-11-24 | Camera on automatic exposure and white balance; frames from the first 5 s are not used | The hand-picked 30 ms / ISO 540 burnt 73 % of the white rack out and broke A1; auto: 0.2 %, stable once settled |
+| 2026-11-24 | Check A from CAD only: a place classifier (random colour per part, CAD maps, DINOv3 ViT-S) + a per-site adapter trained on a few labelled site photos (section 14) | The base alone missed 7 of 192 places on 4 site photos, all open amber vials; an adapter from those 4 photos cut a new photo from 11 wrong to 1, and photos 6 and 7 came out 48/48 |
+| 2026-11-24 | Keep the CAD maps as classifier input | Without them: 44/48 on photo 2, with confident misses on open vials |
+| 2026-11-24 | No black and white, no over-exposure added after rendering | 578 and 611 of 624 places right, against 622 without them |
+| 2026-11-24 | Whole-rack RF-DETR not used | Trained on the same CAD data: 44/48 on photo 2, calling open amber vials capped at 0.9+ confidence |
 
 ## 13. Where the experiment lives
 
@@ -481,3 +489,128 @@ Nothing below is platform code. It is the experiment, kept for re-running.
 | `~/Downloads/scene_monitor/cad/jude/pairs2/`, `jude/show/` | Result files and pictures |
 | `~/scene_test2/` (Jetson) | Photos, recording (`rec/20261120_145910`), trained small models (`rec/fast/student_*.pt`) |
 | `~/train_venv/` (Jetson) | The separate PyTorch environment used for training |
+| `~/Downloads/scene_monitor/cad/jetson/` (section 14) | CAD-only classifier and site adapter: `rcolv_make.py`, `rcolv_render.py` + `rcolg_render.py` (renders), `rcolv_masks.py`, `rcolv_tokens.py`, `rcolv150_nn.py` (base), `site_labels.py`, `site_tokens.py`, `site_adapter.py`, `site_ft.py` (adapter), `infer_a.py`, `infer_b.py`, `tok_only.py`, `quick.sh`, `quick_site.sh`, `label_sheet.py` (photos); rejected variants: `rcolj_tokens.py`, `rcolg_nn.py`, `stab_*.py`, `rack_*.py`; camera tests: `camtest*.py`, `camana.py`. The Jetson copies in `~/scene_test2/` are the ones that run |
+| `~/Downloads/scene_monitor/cad/serve/rcolg_view.html` | Render page with `&rcolpart=` (random colour per part) and `&fast=1` (scene loaded once, `setView()` per shot) |
+| `~/scene_test2/rcol/` (Jetson) | Trained weights: base `rows_rcolv150_cls_mask3_224_w.pt`, site adapter `adapter_site5.pt` (40 KB); earlier `rows_rcolj_*`, `rows_rcolx_*` |
+| `~/rackshots/` (Jetson) | Site photos `r01`-`r07.png`, their place boxes, labels (`rNN_truth.json`), answers and grids |
+
+## 14. Check A from CAD only, with a site adapter (current, 2026-11-24)
+
+The goal: decide what is in each place (empty, open vial, vial with cap)
+**without real reference photos**. The base model is trained on CAD renders
+only and ships the same to every site. Each site then trains a small adapter
+on a few of its own labelled photos. No images leave the site.
+
+Tested on the 2 ml rack (`vial_plate_3`, 48 places) only.
+
+### 14.1 Results on site photos
+
+Photos `r01`-`r07`, taken 2026-11-24 with the camera on auto exposure and
+auto white balance, with racks set at random. Places right out of 48.
+Every photo is counted as new to the model unless marked.
+
+| Photo | Base (CAD only) | Base + adapter (4 site photos) | Base + adapter (5 site photos) |
+|---|---|---|---|
+| r01 | 48 | trained on | trained on |
+| r02 | 47 (C1) | trained on | trained on |
+| r03 | 46 (A8, E5) | trained on | trained on |
+| r04 | 44 (A4, C4, C7, E7) | trained on | trained on |
+| r05 | 37 (11 wrong) | **47** (E5) | trained on |
+| r06 | not run | not run | **48** |
+| r07 | not run | not run | **48** |
+
+Every base mistake was an open amber vial, read as empty or as capped. The
+CAD renders have no glass, and open vials were the rarest class in the first
+training sets. r06 and r07 were confirmed by eye from the whole-rack label
+picture, with 20 and 33 open vials.
+
+### 14.2 How the base model works
+
+1. **Renders:** plain CAD, with **a random colour per part** (every material
+   of every component, so a cap's body and top differ) and random light (sun
+   direction 0-25 deg from vertical, strength, fill, exposure). Rendered on the
+   Jetson GPU with one browser page kept open (`rcolg_view.html` `&fast=1`,
+   `setView()`), about 1 s per image. CPU rendering (swiftshader) was about
+   5 s, and a fresh browser per state about 9.5 s.
+2. **States:** every 2 ml place is independently 1/3 empty, 1/3 open vial,
+   1/3 vial with cap (`rcolv_make.py`). The base uses 150 training states x 4
+   colourings = 28,800 crops, about 9,600 per class, plus 30 validation states.
+3. **Crop:** the place's check box (CAD silhouette x 1.4) at 224 x 224.
+   Training jitter: shift up to 3 mm, scale 5 %, turn 4 deg, on 80 % of crops,
+   plus `pairlib.light`. Kept in colour.
+4. **Model:** DINOv3 ViT-S/16, frozen (the unit's TensorRT engine), gives
+   14 x 14 x 384 per crop. The **CAD maps** are added to each square: how much
+   of it is this place's item, its visible outline, and the neighbours' items
+   (the fourth channel, the plan's expected state for this place, is off).
+   A 2-layer transformer (width 128) reads the 196 squares and outputs the 3
+   classes. 6,000 steps, about 13 min on the Jetson.
+
+### 14.3 How a photo is read
+
+1. **Camera fit** on the plate holes (`infer_a.py prep`): first a coarse
+   search for the shift (up to 120 px), then the usual refit. The old refit
+   searches only 14 px around each hole. When the camera had moved 35 px it
+   locked onto almost nothing (13 holes) and put every place one row off. With
+   the search: 586 holes, 0.77 px median.
+2. One crop per place, CAD maps of a full-rack plan, one pass. About 7 ms per
+   place: DINOv3 about 5 ms, classifier 2 ms.
+3. `quick_site.sh <name>` does shot + crops + base + adapter + grid in about
+   25 s, mostly loading. `label_sheet.py <name>` draws every answer on the
+   whole rack for checking.
+
+### 14.4 The site adapter
+
+- **Base frozen.** Two small bottlenecks start at zero, so at first the model
+  equals the base: one on every square's input, one on the class token.
+  8,992 numbers, a 40 KB file (`site_adapter.py`).
+- **Data:** each labelled site place cut 16 times (1 plain + 15 with the
+  training jitter), with the CAD maps used at inference (`site_tokens.py`).
+- **Training** (`site_ft.py`): every batch is half site crops, half CAD crops
+  from 40 states the base never saw, so the CAD knowledge stays. 1,500 steps,
+  about 4 min. After training, the CAD validation errors were still 0 of 1,440.
+- **Labels decide everything.** They come from the whole-rack label picture
+  (`label_sheet.py`), checked by a person. A single crop is not enough to
+  label from: C1 and A8 look different with the whole rack around them.
+
+### 14.5 On-site procedure (next step)
+
+1. Camera on its defaults (auto). Fit the camera on the plate holes.
+2. Collect about 10 setups with varied layouts: every kind of item the site
+   uses, open and capped, crowded places, empty corners.
+3. Read each with the base, draw the label picture, have the operator correct
+   it, and save `rNN_truth.json`.
+4. Train the adapter on all of them, then test on new setups that were not
+   used for training. Freeze base + adapter as the site's model.
+
+### 14.6 What was tried and rejected
+
+All on the 2 ml rack; numbers are places right.
+
+| Variant | Result | Why rejected |
+|---|---|---|
+| Skin CAD (photo-textured models) | 624/624 on the 13 old photos | Every item needs a hand-made skin: does not scale |
+| Random colour per component | 622/624 (A1 wrong) | Per part is the same or better and fits other items |
+| Black and white, training and inference | 578/624 | Brightness differences remain; colour helps |
+| Over-exposure added to the render image | 611/624 | It clipped caps, not the rack; hurt open vials |
+| A brighter fill light | Images barely changed | Not run |
+| Plain classifier, no CAD maps (bigger jitter) | r02 44/48, confident misses | Cannot tell its own vial from a neighbour's |
+| Input 448 instead of 224 | 10-26 misses on the 13 photos | Only 57 real pixels per place: upscaling adds blur |
+| Whole-rack RF-DETR (CAD only, 1,536 images, 10 epochs at 6 min on the Jetson) | r01 48, r02 44 | Called open amber vials capped at 0.9+ confidence |
+| Balanced classes alone (vs 18 % open vials) | r02 47 against 48 | No gain alone; kept as the base for the adapter |
+| 7-of-9 stability rule (nudge the box 9 times) | 0 silently wrong on r01/r02, 4 places asked | Not needed with the adapter; kept as an option |
+| DINOv3 ViT-B/16 | Downloaded, not run | Stopped in favour of the adapter |
+
+### 14.7 Lessons
+
+- **The camera setting broke the first results.** A hand-picked 30 ms /
+  ISO 540 burnt the white rack out (73 %), and the empty corner A1 read as a
+  cap. Auto: 0.2 % (section 2.1).
+- **Bigger jitter mattered.** Training with 1 mm of jitter flipped answers
+  when the box moved 3-8 px. 3 mm fixed C1.
+- **A few real labelled photos close the gap that renders leave.** The
+  amber open vials were the gap here.
+- **Practical, on the Jetson:**
+  - All data stays on the Jetson; the Pi link is about 1 MB/s.
+  - One heavy job at a time, 5 GB cap.
+  - User jobs stop when no ssh session is open (linger is off).
+  - Keep about 3 GB of disk free; per-epoch checkpoints are 0.5 GB each.
