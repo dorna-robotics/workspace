@@ -577,6 +577,14 @@ picture, with 20 and 33 open vials.
 - **Training** (`site_ft.py`): every batch is half site crops, half CAD crops
   from 40 states the base never saw, so the CAD knowledge stays. 1,500 steps,
   about 4 min. After training, the CAD validation errors were still 0 of 1,440.
+- **Classes are weighted equally in the loss** (the same rule as the vision
+  training notebook). Site photos are rarely balanced: the 4 tip-rack training
+  photos were 84 % tip, 16 % empty. Each class's weight is 1 / (number of
+  classes × its share in a batch), with the share counted over the real mix
+  (half site crops, half CAD replay). For those tip photos the shares were
+  0.338 / 0.662, giving loss weights empty 1.48 and tip 0.76
+  (`tip_site_ft.py`). The base model needs no weights, because its CAD states
+  are drawn balanced (14.2).
 - **Labels decide everything.** They come from the whole-rack label picture
   (`label_sheet.py`), checked by a person. A single crop is not enough to
   label from: C1 and A8 look different with the whole rack around them.
@@ -675,6 +683,8 @@ does not know what a place should hold. That is why all three are kept.
       The operator corrects them. A VLM can pre-fill this sheet, but that
       has not been measured yet.
    3. Train the site adapter: about 4 minutes on the Jetson, a 40 KB file.
+      Weight the classes equally in the loss: site photos are usually
+      unbalanced, mostly full racks (14.4).
    4. Test on new setups that were not used for training. Freeze.
 4. **Check B:**
    1. Capture the bench's reference frame.
