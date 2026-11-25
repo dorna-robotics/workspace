@@ -93,7 +93,8 @@ LABELS = {
 # ── helpers ──────────────────────────────────────────────────────────
 
 def _cameras(scene):
-    return [n for n, c in scene.items() if isinstance(c, dict) and isinstance(c.get("camera_cfg"), dict)]
+    return [n for n, c in scene.items() if isinstance(c, dict) and isinstance(c.get("camera_cfg"), dict)
+            and c.get("has_camera") is not False]
 
 
 def _resolve(session, a):
@@ -246,7 +247,8 @@ def approval(name, a, session):
         cam = a.get("camera") or "the camera"
         proj = (a.get("project") or session.project or "")
         warn = " The project is running: its next pictures use these settings." if proj and _running(proj) else ""
-        return f"Change {cam}: " + "; ".join(bits) + "." + warn
+        why = f" Why: {a['reason'].strip()}" if (a.get("reason") or "").strip() else ""
+        return f"Change {cam}: " + "; ".join(bits) + "." + why + warn
     if name == "detection_test" and a.get("apply_focus"):
         return f"Test {a.get('detection')} with its focus pin applied — the camera's lens moves to it."
     return None

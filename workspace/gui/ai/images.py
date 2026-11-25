@@ -114,7 +114,10 @@ def stats(im, box=None):
         verdict.append("underexposed")
     else:
         verdict.append("exposure OK")
-    verdict.append("white balance off: " + cast if cast != "neutral" else "white balance neutral")
+    if box:     # a crop's colors are mostly the object's own: no white-balance verdict from it
+        cast = f"channel balance of the crop (the object's own color; judge white balance on the whole frame)"
+    else:
+        verdict.append("white balance off: " + cast if cast != "neutral" else "white balance neutral")
     return {
         "size": [w, h] if not box else [int(box[2] - box[0]), int(box[3] - box[1])],
         "luma_mean": round(mean, 1),

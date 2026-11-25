@@ -206,7 +206,7 @@ def t_setup_status(session, a):
     for n, c in scene.items():
         if not isinstance(c, dict):
             continue
-        if isinstance(c.get("camera_cfg"), dict):
+        if isinstance(c.get("camera_cfg"), dict) and c.get("has_camera") is not False:
             try:
                 host, port, serial, _ = camera.resolve(scene, n)
                 cams.append(f"  {n}: wired — camera {serial} on {host}:{port} (camera_view can look)")
