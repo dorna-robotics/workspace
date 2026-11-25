@@ -18,6 +18,13 @@ offline mode runs existing projects and nothing else).
     GET  /dev/api/projects/<n>/workflow                the workflow: steps (actions), stations (recipes), charts (flow/)
     GET  /dev/api/projects/<n>/flowchart?name=         one chart (flow/<name>.json) and its checks
     POST /dev/api/projects/<n>/flowchart               {name, doc} → checked; saved only when it checks out
+    GET  /dev/api/projects/<n>/part?type=              a project component for the component builder (parts.py)
+    POST /dev/api/projects/<n>/part                    {type, anchors, collision_boxes, glb_b64?, …} → saved;
+                                                       {type, delete: true} → removed (refused while the scene uses it)
+    GET  /dev/api/projects/<n>/part/<type>/<file>      its model (<type>.glb, and a compressed one's .glb.bin)
+    POST /dev/api/component/template                   {kind?, type, dims, top, holes, pegs, xy} → the kind's anchors
+    POST /dev/api/component/mesh                       {tris} → {id}: the model kept for the assistant's measuring
+    POST /dev/api/component/ai                         {message, history, …} → the assistant's anchors and boxes
 """
 import asyncio
 import json
@@ -31,7 +38,7 @@ import tornado.web
 
 from gui.orchestrator.handlers import ProjectScreenFileHandler
 
-from . import access, camera, params, scene_edit, workflow
+from . import access, camera, component_ai, component_kinds, mesh_measure, params, parts, scene_edit, workflow
 
 DEV_DIR = os.path.dirname(os.path.abspath(__file__))
 WEB_DIR = os.path.join(DEV_DIR, "web")
@@ -170,7 +177,7 @@ class InfoHandler(_Base):
         self.finish({"ok": True, "name": name, "label": ws.label, "dir": str(d),
                      "main": ws.path_to_file, "launched": self.orch.is_launched(name),
                      "port": ws.port, "scene_files": files, "scene_sig": sig, "scene_error": scene_err,
-                     "components": comps})
+                     "components": comps, "own_types": parts.project_types(d)})
 
 
 class ParamsHandler(_Base):
@@ -387,6 +394,89 @@ class FlowchartHandler(_Base):
         self.finish({"ok": True, "saved": check["ok"], "check": check})
 
 
+# ── the component builder (web/compbuilder.js) ─────────────────────
+class PartHandler(_Base):
+    def get(self, name):
+        p = self.project(name)
+        if not p:
+            return
+        try:
+            self.finish({"ok": True, **parts.read(p[1], self.get_argument("type", ""))})
+        except parts.PartError as e:
+            self.fail(400, str(e))
+
+    async def post(self, name):
+        p = self.project(name)
+        if not p:
+            return
+        b = self.body()
+        try:
+            if b.get("delete"):
+                scene = await _off_loop(scene_edit.merged, p[1])
+                out = parts.delete(p[1], b.get("type"), scene)
+                import gui.scene_builder.server as sb
+                sb.COMPONENT_MAP.pop(out["deleted"], None)     # the builder's catalog drops it
+            else:
+                out = await _off_loop(parts.save, p[1], b)
+        except parts.PartError as e:
+            return self.fail(400, str(e))
+        self.finish({"ok": True, **out})
+
+
+class PartModelHandler(_Base):
+    """A project part's model, by path, so a compressed model's relative
+    ``<type>.glb.bin`` resolves next to it."""
+    def get(self, name, ctype, fname):
+        p = self.project(name)
+        if not p:
+            return
+        f = parts.folder(p[1], ctype) / fname
+        if not parts.TYPE_RE.match(ctype) or fname not in (f"{ctype}.glb", f"{ctype}.glb.bin") or not f.is_file():
+            raise tornado.web.HTTPError(404)
+        raw = f.read_bytes()
+        self.set_header("Content-Type", "application/octet-stream" if fname.endswith(".bin") else
+                        "model/gltf+json" if raw[:1] == b"{" else "model/gltf-binary")
+        self.finish(raw)
+
+
+class ComponentTemplateHandler(_Base):
+    def post(self):
+        CK = component_kinds
+        d = self.body()
+        kind = d.get("kind") if d.get("kind") in CK.KINDS else CK.detect(d.get("type"), d.get("file_name"), d.get("description"))
+        self.finish({"ok": True, "kinds": CK.kinds(),
+                     **CK.template(kind, d.get("dims"), d.get("top"), d.get("holes"), d.get("xy"), d.get("pegs"))})
+
+
+class ComponentMeshHandler(_Base):
+    async def post(self):
+        try:
+            self.finish({"ok": True, **await _off_loop(mesh_measure.store, self.body().get("tris") or "")})
+        except parts.PartError as e:
+            self.finish({"ok": False, "error": str(e)})
+
+
+class ComponentAIHandler(_Base):
+    """The assistant reaches the model through the account's relay
+    (gui/ai/agent.client) — metered there; nothing here counts cost."""
+    async def post(self):
+        import anthropic
+        from gui.ai import agent
+        try:
+            return self.finish({"ok": True, **await component_ai.design(self.body())})
+        except agent.NotLoggedIn:
+            msg = "Log in (top right) to use the assistant — everything else here works without it."
+        except anthropic.PermissionDeniedError:
+            msg = agent.OUT_OF_CREDITS
+        except anthropic.RateLimitError:
+            msg = "The assistant is busy right now — wait a moment and try again."
+        except anthropic.APIConnectionError:
+            msg = "Couldn't reach the Dorna server — check this robot's internet connection."
+        except anthropic.APIStatusError as e:
+            msg = f"Dorna AI couldn't answer (error {e.status_code}). Try again in a moment."
+        self.finish({"ok": False, "error": msg})
+
+
 # ── calibration plan ────────────────────────────────────────────────
 _plan_lock = asyncio.Lock()
 _plan_cache = {}              # main.py → (signature, result)
@@ -454,5 +544,10 @@ def routes(orch):
         (P + r"/calibration/plan", CalibrationPlanHandler, o),
         (P + r"/workflow", WorkflowHandler, o),
         (P + r"/flowchart", FlowchartHandler, o),
+        (P + r"/part", PartHandler, o),
+        (P + r"/part/([a-z0-9_]+)/([A-Za-z0-9_.]+)", PartModelHandler, o),
+        (r"/dev/api/component/template", ComponentTemplateHandler, o),
+        (r"/dev/api/component/mesh", ComponentMeshHandler, o),
+        (r"/dev/api/component/ai", ComponentAIHandler, o),
         (r"/dev/(.*)", DevStaticHandler, {"path": WEB_DIR}),
     ]

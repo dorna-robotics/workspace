@@ -207,6 +207,7 @@ function onSelect({ name, type }) {
   $("#sbParams").hidden = !menu;
   $("#sbCamera").hidden = !(type || "").startsWith("inspection_");
   $("#sbVision").hidden = !isVisionPart(type);
+  $("#sbEditPart").hidden = !info?.own_types.includes(type);
   if (name && isVisionPart(type)) prefetchVision(name);
   if (menu) openParams(name);
   else document.getElementById("dvParams")?.querySelector("[data-close]")?.click();
@@ -217,6 +218,8 @@ $("#sbNew").onclick = () => {
   if (w && w.__sbOpenInsert) w.__sbOpenInsert();
 };
 $("#sbParams").onclick = () => sbSel && openParams(sbSel.name, true);
+$("#sbBuild").onclick = () => buildComponent(null);
+$("#sbEditPart").onclick = () => sbSel && buildComponent(sbSel.type);
 $("#sbCamera").onclick = () => sbSel && openCamera(sbSel.name);
 $("#sbVision").onclick = () => sbSel && openVision(sbSel.name);
 $("#sbThumb").onclick = () => saveThumb(false);
@@ -247,6 +250,27 @@ $("#sbSave").onclick = async () => {
     btn.disabled = false;
   }
 };
+
+// The component builder (compbuilder.js, loaded on first use — it brings
+// three.js): a dialog over the Scene tab. A saved part is registered with
+// the builder at once (set_project re-scans components/) and its catalog
+// opens on it; a deleted one leaves the catalog.
+async function buildComponent(type) {
+  const { openComponentBuilder } = await import("/dev/compbuilder.js");
+  openComponentBuilder({ api: API, type, onSaved: async (r) => {
+    try {
+      await fetch("/scene-builder/api/set_project", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: info.dir }),
+      });
+      await loadInfo();
+    } catch (_) {}
+    onSelect(sbSel || {});
+    if (r.deleted) return banner(`Deleted the component ${esc(r.deleted)} (components/${esc(r.deleted)}/).`);
+    banner(`Saved ${esc(r.type)} to components/${esc(r.type)}/ — it is in New component now.`
+      + (type ? " Parts already placed show the change when the Scene builder reloads." : ""));
+    $("#sbFrame").contentWindow?.__sbOpenInsert?.();
+  } });
+}
 
 // The project's picture, the AI builder's standard view (scene builder
 // __sbSnapshot): the same angle, framing and backdrop on every card.
