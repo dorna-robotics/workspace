@@ -1,7 +1,11 @@
 // The Workspace assistant — a floating button that opens a side panel, on
 // every page once this robot is logged in (hidden in offline mode).
 // Talks to /ai/api (gui/ai/handlers.py): POST /chat streams NDJSON events
-// (text / think / tool / tool_done / ui / error / done). The look and the
+// (text / think / tool / tool_done / image / excerpt / approve / approval /
+// ui / error / done). A picture a tool showed is drawn inline (click to
+// enlarge); an excerpt is a log / file excerpt with its lines highlighted;
+// an approve card holds a hardware action until the user presses Approve
+// or Decline (POST /approve). The look and the
 // message rendering are the AI builder's chat (dorna_ai_builder
 // builder/web/builder/ai_chat.js); files go up through POST /upload
 // (attach button, drag and drop, paste) and ride the next message.
@@ -11,6 +15,10 @@
 // and can follow what the assistant changed with
 //   window.addEventListener("ai-ui", (e) => e.detail)   // {type: reload|status, what?: scene|hmi|parameters|files, project}
 //   window.addEventListener("ai-turn", ...)             // a turn finished
+// Any page brings a message to the assistant with
+//   window.dispatchEvent(new CustomEvent("ask-ai", {detail: {level, label, title, text}}))
+// (vendor/messages.js's "Ask Dorna AI" on an error / warning card); <html>
+// has the class "ai-ready" while the assistant can take it.
 (() => {
   if (window.__aiChatLoaded) return;
   // a page embedded in another (the Scene builder inside Developer mode):
@@ -137,6 +145,31 @@
     return out.join("");
   }
   const scrollDown = () => { log.scrollTop = log.scrollHeight; };
+  // an image from /ai/api: a plain src, or — when the orchestrator token is
+  // on (an <img> can't send its header) — fetched with it into a blob URL
+  function authImg(img, url) {
+    const h = hdrs(false);
+    if (!h["X-Orch-Token"]) { img.src = url; return; }
+    fetch(url, { headers: h }).then((r) => r.ok ? r.blob() : null).then((b) => { if (b) img.src = URL.createObjectURL(b); }).catch(() => {});
+  }
+  const shotUrl = (shot) => `${API}/shot?session=${encodeURIComponent(sid || "")}&id=${encodeURIComponent(shot)}`;
+  let lightbox = null;
+  function enlarge(src, caption) {
+    if (!lightbox) {
+      lightbox = document.createElement("div");
+      lightbox.className = "ai-lightbox"; lightbox.hidden = true;
+      lightbox.setAttribute("role", "dialog"); lightbox.setAttribute("aria-label", "Picture");
+      lightbox.innerHTML = `<figure><img alt=""/><figcaption></figcaption></figure><button type="button" class="ai-lb-x" aria-label="Close">${CLOSE_ICON}</button>`;
+      lightbox.addEventListener("click", () => { lightbox.hidden = true; });
+      document.body.appendChild(lightbox);
+    }
+    lightbox.querySelector("img").src = src;
+    lightbox.querySelector("figcaption").textContent = caption || "";
+    lightbox.hidden = false;
+  }
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && lightbox && !lightbox.hidden) { e.stopImmediatePropagation(); lightbox.hidden = true; }
+  }, true);
   const fmtSize = (n) => n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(0)} KB` : `${(n / 1048576).toFixed(1)} MB`;
   function kindOf(name) {
     const e = (String(name).match(/\.[^.]+$/) || [""])[0].toLowerCase();
@@ -306,6 +339,80 @@
         scrollDown();
       },
       error(msg) { api.seal(); const e = document.createElement("div"); e.className = "ai-error"; e.textContent = msg; d.appendChild(e); api.textEl = null; api.toolsEl = null; scrollDown(); },
+      // something shown between the actions: the group closes, the next starts anew
+      block(el) { api.thinkDone(); api.seal(); api.textEl = null; api.toolsEl = null; d.appendChild(el); scrollDown(); return el; },
+      image(shot, caption) {
+        const f = document.createElement("figure");
+        f.className = "ai-shot";
+        f.innerHTML = `<button type="button" class="ai-shot-img" title="Click to enlarge"><img alt=""/></button>${caption ? "<figcaption></figcaption>" : ""}`;
+        const img = f.querySelector("img");
+        img.alt = caption || "A picture from the assistant";
+        img.addEventListener("load", scrollDown, { once: true });
+        authImg(img, shotUrl(shot));
+        if (caption) f.querySelector("figcaption").textContent = caption;
+        f.querySelector("button").onclick = () => enlarge(img.src, caption);
+        return api.block(f);
+      },
+      excerpt(x) {
+        const el = document.createElement("div");
+        el.className = "ai-excerpt";
+        el.innerHTML = `<div class="ai-ex-head"><span class="t"></span><span class="s"></span></div><div class="ai-ex-body" role="log"></div>`;
+        el.querySelector(".t").textContent = x.title || "Excerpt";
+        el.querySelector(".s").textContent = x.source && x.source !== x.title ? x.source : "";
+        const body = el.querySelector(".ai-ex-body");
+        for (const l of x.lines || []) {
+          const r = document.createElement("div");
+          r.className = "ln" + (l.hit ? " hit" : "") + (l.gap ? " gap" : "");
+          r.innerHTML = `<span class="no"></span><span class="tx"></span>`;
+          r.querySelector(".no").textContent = l.n != null ? l.n : "";
+          r.querySelector(".tx").textContent = l.text;
+          body.appendChild(r);
+        }
+        return api.block(el);
+      },
+      // a hardware action waiting for the user: Approve / Decline
+      approve(id, label, text, state, live) {
+        let el = d.querySelector(`.ai-approve[data-id="${CSS.escape(id)}"]`);
+        if (!el) {
+          el = document.createElement("div");
+          el.className = "ai-approve"; el.dataset.id = id;
+          el.setAttribute("role", "group"); el.setAttribute("aria-label", "Approve this action");
+          el.innerHTML = `<div class="ai-ap-head"><span class="ai-ap-mark" aria-hidden="true">!</span><span class="ai-ap-q">Approve this action?</span></div>
+            <div class="ai-ap-text"></div><div class="ai-ap-foot"></div>`;
+          el.querySelector(".ai-ap-text").textContent = text || toolText(label);
+          api.block(el);
+        }
+        api.approvalState(id, state, live);
+        return el;
+      },
+      approvalState(id, state, live, why) {
+        const el = d.querySelector(`.ai-approve[data-id="${CSS.escape(id)}"]`);
+        if (!el) return;
+        el.dataset.state = state;
+        el.querySelector(".ai-ap-mark").textContent = state === "approved" ? "✓" : state === "pending" && live ? "!" : "×";
+        el.querySelector(".ai-ap-q").textContent = state === "pending" && live ? "Approve this action?" : "Dorna AI asked to do this";
+        const foot = el.querySelector(".ai-ap-foot");
+        if (state === "pending" && live) {
+          foot.innerHTML = `<button type="button" class="btn btn-sm ai-ap-no">Decline</button><button type="button" class="btn btn-primary btn-sm ai-ap-ok">Approve</button>`;
+          const answer = async (ok) => {
+            foot.querySelectorAll("button").forEach((b) => { b.disabled = true; });
+            try {
+              const r = await fetch(API + "/approve", { method: "POST", headers: hdrs(true), body: JSON.stringify({ session: sid, id, ok }) });
+              if (!r.ok) { foot.innerHTML = `<span class="ai-ap-st">No longer waiting — not run</span>`; el.dataset.state = "declined"; }
+            } catch (e) { foot.querySelectorAll("button").forEach((b) => { b.disabled = false; }); }
+          };
+          foot.querySelector(".ai-ap-ok").onclick = () => answer(true);
+          foot.querySelector(".ai-ap-no").onclick = () => answer(false);
+          setTimeout(() => foot.querySelector(".ai-ap-ok")?.focus({ preventScroll: true }), 30);
+        } else {
+          const word = state === "approved" ? "Approved" : state === "pending" ? "Not answered — not run"
+            : why === "timeout" ? "No answer — not run" : "Declined — not run";
+          foot.innerHTML = `<span class="ai-ap-st"></span>`;
+          foot.querySelector(".ai-ap-st").textContent = word;
+          if (state === "pending") el.dataset.state = "declined";
+        }
+        scrollDown();
+      },
     };
     return api;
   }
@@ -321,6 +428,9 @@
         if (p.kind === "text") b.text(p.text);
         else if (p.kind === "tool") b.tool(p.id, p.label, p.ok === false ? "bad" : (p.ok == null && live ? "running" : "ok"), p.error);
         else if (p.kind === "error") b.error(p.text);
+        else if (p.kind === "image") b.image(p.shot, p.caption);
+        else if (p.kind === "excerpt") b.excerpt(p);
+        else if (p.kind === "approve") b.approve(p.id, p.label, p.text, p.state, live);
       }
       if (!live) b.seal();
     });
@@ -329,7 +439,7 @@
   }
 
   // ── chat ─────────────────────────────────────────────────────────
-  async function send(text) {
+  async function send(text, extra) {
     text = (text || "").trim();
     if (busy || outOfCredits) return;
     if (atts.some((a) => a.state === "up")) { note("Wait for the files to finish uploading."); input.value = text; return; }
@@ -345,7 +455,7 @@
     try {
       const res = await fetch(API + "/chat", {
         method: "POST", headers: hdrs(true),
-        body: JSON.stringify({ session: sid, text, context: pageContext(), attachments: ready.map((a) => a.rec.id) }),
+        body: JSON.stringify({ session: sid, text, context: Object.assign(pageContext(), extra || {}), attachments: ready.map((a) => a.rec.id) }),
       });
       if (res.status === 401) { bubble.error("This robot isn't logged in any more — log in again (top right)."); window.dornaAccount?.refresh(true); return; }
       if (res.status === 409) {
@@ -402,6 +512,10 @@
       case "tool": bubble.tool(ev.id, ev.label, "running"); break;
       case "tool_done": bubble.tool(ev.id, null, ev.ok ? "ok" : "bad", ev.error); break;
       case "error": bubble.error(ev.message); break;
+      case "image": bubble.image(ev.shot, ev.caption); break;
+      case "excerpt": bubble.excerpt(ev); break;
+      case "approve": bubble.approve(ev.id, ev.label, ev.text, "pending", true); break;
+      case "approval": bubble.approvalState(ev.id, ev.ok ? "approved" : "declined", false, ev.why); break;
       case "ui": onUi(ev); break;
     }
   }
@@ -467,6 +581,7 @@
     const on = !!(st && st.logged_in);
     if (on === enabled) return;
     enabled = on;
+    document.documentElement.classList.toggle("ai-ready", on);
     if (!on) { loaded = false; log.innerHTML = ""; }
     setOpen(on && ls.get(OPEN_KEY) === "1");
   }
@@ -644,5 +759,23 @@
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", mount); else mount();
 
-  window.aiChat = { open: () => setOpen(true), close: () => setOpen(false), send, attach: addFiles, get sid() { return sid; }, get busy() { return busy; } };
+  // "Ask Dorna AI" on a message card (messages.js): the chat opens with the
+  // message and the page in context, and the assistant looks into it
+  const LEVEL_WORD = { bad: "Error", warn: "Warning", info: "Notice", ok: "Done" };
+  async function ask(m) {
+    if (!enabled || !m) return;
+    setOpen(true);
+    const word = (LEVEL_WORD[m.level] || "message").toLowerCase();
+    const what = [m.label && m.label.toLowerCase() !== word ? `(${m.label})` : "",
+                  [m.title, m.text].filter(Boolean).join(" — ")].filter(Boolean).join(" ");
+    const text = `Help me with this ${word}${what ? ": " + what : ""}`;
+    const message = { level: m.level, label: m.label || "", title: m.title || "", text: m.text || "" };
+    if (busy || outOfCredits) { input.value = text; input.focus(); return; }
+    if (!loaded) { try { await loadSession(); } catch (_) {} }
+    if (busy) { input.value = text; input.focus(); return; }
+    send(text, { message });
+  }
+  window.addEventListener("ask-ai", (e) => ask(e.detail));
+
+  window.aiChat = { open: () => setOpen(true), close: () => setOpen(false), send, ask, attach: addFiles, get sid() { return sid; }, get busy() { return busy; } };
 })();

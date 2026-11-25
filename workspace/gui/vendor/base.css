@@ -789,3 +789,9 @@ html.theme-switching *::after {
 .hold.hold-fired { animation: pendant-flash 0.4s ease; }
 .cmd-pressed { animation: pendant-flash 0.4s ease; }
 @keyframes pendant-flash { 0% { box-shadow: 0 0 0 3px var(--accent-dim); } 100% { box-shadow: none; } }
+
+/* "Ask Dorna AI" on an error / warning card (messages.js): only while the
+   assistant is on the page and can take it (ai_chat.js sets .ai-ready) */
+.msg-ask-ai { margin-right: auto; }
+html:not(.ai-ready) .msg-ask-ai { display: none; }
+html:not(.ai-ready) .msg-acts:not(:has(.btn:not(.msg-ask-ai))) { display: none; }

@@ -21,7 +21,9 @@
    the id replaces it, and only its owner (unnotify) or its × takes it
    away; past MSG_MAX the oldest UNOWNED message goes. ``ttl`` (ms): it
    goes on its own. ``actions``: [{label, primary?, wire(btn)}] — the
-   caller wires each button. ``onDismiss``: called when the operator
+   caller wires each button; an error or a warning also gets "Ask Dorna AI"
+   (an "ask-ai" event on window with the message — vendor/ai_chat.js takes
+   it; hidden unless <html> has "ai-ready"). ``onDismiss``: called when the operator
    drops it with its × (the owner then knows not to post it again).
    Pages call notifyHost() when their bar
    changes (the pendant); otherwise the cards hang under the first line. */
@@ -130,6 +132,10 @@ function _msgPlace() {
 // it goes: another message coming in never rebuilds a card — a
 // question's Resume keeps its state mid-press. Newest on top.
 function _msgCard(m) {
+  // an error or a warning can be handed to the assistant: the button shows
+  // while one is on the page (<html class="ai-ready">, base.css) and only
+  // raises "ask-ai" — what the assistant does with it is its own business
+  const askable = m.level === "bad" || m.level === "warn";
   const el = document.createElement("div");
   el.className = "msg-card";
   el.dataset.level = m.level;
@@ -141,9 +147,14 @@ function _msgCard(m) {
     ${m.title ? `<h3 class="msg-title">${esc(m.title)}</h3>` : ""}
     ${m.text ? `<p class="msg-text">${esc(m.text)}</p>` : ""}
     ${m.img ? `<figure class="msg-img"><img src="${esc(m.img)}" alt="">${m.caption ? `<span class="msg-cap">${esc(m.caption)}</span>` : ""}</figure>` : ""}
-    ${m.actions?.length ? `<div class="msg-acts">${m.actions.map((a, i) =>
+    ${m.actions?.length || askable ? `<div class="msg-acts">${askable
+      ? `<button type="button" class="btn btn-ghost msg-ask-ai" title="Open Dorna AI with this message — it looks into it">Ask Dorna AI</button>` : ""}${(m.actions || []).map((a, i) =>
       `<button type="button" class="btn${a.primary ? " btn-primary" : ""}" data-act="${i}">${esc(a.label)}</button>`).join("")}</div>` : ""}`;
   (m.actions || []).forEach((a, i) => a.wire?.(el.querySelector(`[data-act="${i}"]`)));
+  el.querySelector(".msg-ask-ai")?.addEventListener("click", () => {
+    window.dispatchEvent(new CustomEvent("ask-ai", { detail: { level: m.level, label: m.label || "", title: m.title || "", text: m.text || "" } }));
+    _msgOpen(false);
+  });
   return el;
 }
 

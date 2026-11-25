@@ -300,3 +300,62 @@
 /* the pendant's bottom bar (Start … Kill) stays clear: the button and panel sit above it */
 html.pendant-open .ai-fab, html.pendant-boot .ai-fab { bottom: calc(var(--pendant-bar-h, 108px) + var(--space-3)); }
 html.pendant-open .ai-panel, html.pendant-boot .ai-panel { bottom: calc(var(--pendant-bar-h, 108px) + var(--space-3)); }
+
+/* a picture a tool showed (a camera frame, an ROI, a detection's result):
+   inline, click to enlarge */
+.ai-shot { margin: 0; display: grid; gap: var(--space-1); }
+.ai-shot-img {
+  display: block; justify-self: start; padding: 0; border: 1px solid var(--border2); border-radius: var(--radius-sm);
+  overflow: hidden; background: #000; cursor: zoom-in; max-width: 100%;
+}
+/* never wider than the picture itself: a small crop stays crisp */
+.ai-shot-img img { display: block; width: auto; height: auto; max-width: 100%; max-height: 320px; }
+.ai-shot-img:focus-visible { outline: none; box-shadow: var(--glow); }
+.ai-shot figcaption { font-size: var(--text-xs); color: var(--muted); }
+.ai-lightbox {
+  position: fixed; inset: 0; z-index: 60000; background: rgba(0, 0, 0, .86);
+  display: flex; align-items: center; justify-content: center; padding: var(--space-6); cursor: zoom-out;
+}
+.ai-lightbox[hidden] { display: none; }
+.ai-lightbox figure { margin: 0; display: grid; gap: var(--space-3); justify-items: center; max-width: 100%; max-height: 100%; }
+.ai-lightbox img { max-width: calc(100vw - 48px); max-height: calc(100vh - 96px); object-fit: contain; border-radius: var(--radius-sm); }
+.ai-lightbox figcaption { color: #eee; font-size: var(--text-md); text-align: center; }
+.ai-lb-x {
+  position: absolute; top: var(--space-5); right: var(--space-5); width: 44px; height: 44px; border-radius: 50%;
+  border: 0; background: rgba(255, 255, 255, .14); color: #fff; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+
+/* an excerpt of a log / file / the records, the lines that matter marked */
+.ai-excerpt { border: 1px solid var(--border2); border-radius: var(--radius-sm); overflow: hidden; background: var(--surface2); }
+.ai-ex-head {
+  display: flex; gap: var(--space-2); align-items: baseline; padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border2); font-size: var(--text-sm);
+}
+.ai-ex-head .t { font-weight: 600; }
+.ai-ex-head .s { color: var(--muted); font-size: var(--text-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ai-ex-body { max-height: 260px; overflow: auto; font-family: var(--mono); font-size: var(--text-xs); line-height: 1.5; padding: var(--space-1) 0; }
+.ai-ex-body .ln { display: flex; gap: var(--space-3); padding: 0 var(--space-3); white-space: pre; }
+.ai-ex-body .ln .no { flex: none; min-width: 3ch; text-align: right; color: var(--muted2); user-select: none; }
+.ai-ex-body .ln.hit { background: color-mix(in srgb, var(--amber) 18%, transparent); box-shadow: inset 3px 0 0 var(--amber); }
+.ai-ex-body .ln.gap { color: var(--muted2); }
+
+/* a hardware action held for the user's OK */
+.ai-approve {
+  border: 1px solid color-mix(in srgb, var(--amber) 55%, var(--border)); border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--amber) 9%, var(--surface)); padding: var(--space-4); display: grid; gap: var(--space-3);
+}
+.ai-approve[data-state="approved"] { border-color: color-mix(in srgb, var(--green) 50%, var(--border)); background: color-mix(in srgb, var(--green) 7%, var(--surface)); }
+.ai-approve[data-state="declined"] { border-color: var(--border); background: var(--surface2); }
+.ai-ap-head { display: flex; align-items: center; gap: var(--space-2); font-weight: 600; font-size: var(--text-md); }
+.ai-ap-mark {
+  width: 18px; height: 18px; border-radius: 50%; background: var(--amber); color: #000; font-size: 12px; font-weight: 800;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.ai-approve[data-state="approved"] .ai-ap-mark { background: var(--green); }
+.ai-approve[data-state="declined"] .ai-ap-mark { background: var(--muted2); }
+.ai-ap-text { font-size: var(--text-md); line-height: 1.45; overflow-wrap: anywhere; }
+.ai-ap-foot { display: flex; gap: var(--space-3); justify-content: flex-end; align-items: center; }
+.ai-ap-foot .btn { min-height: 36px; min-width: 96px; justify-content: center; }
+.ai-ap-st { font-size: var(--text-sm); color: var(--muted); font-weight: 600; }
+.ai-approve[data-state="approved"] .ai-ap-st { color: var(--green); }
