@@ -98,6 +98,8 @@ function makeWin(id, title, cls = "") {
 // panel (side), or the 3D view alone (.sb-viewonly) behind the chart.
 let sbReady = false, sbSel = null, thumbDone = false;
 let baseSig = "";         // the scene files as the builder loaded them (Save refuses on a mismatch)
+let settled;              // resolves with the builder's window once its models are in
+const sceneSettled = new Promise(r => { settled = r; });
 let side = null;          // "recipes" | "replay" — opened from the Workflow panel
 
 async function openScene() {
@@ -157,7 +159,7 @@ async function loadScene() {
       syncFrame();                                // the import put the builder back on Scene
       setSaveReady(ok);
       if (!ok) return banner("The scene did not finish loading in the builder — Reload the page to try again.", true);
-      if (!thumbDone) meshesSettled(w).then((ok) => ok && saveThumb(true));
+      meshesSettled(w).then((ok) => { settled(w); if (ok && !thumbDone) saveThumb(true); });
     });
   }, { once: true });
 }
@@ -250,7 +252,8 @@ $("#sbSave").onclick = async () => {
 // __sbSnapshot): the same angle, framing and backdrop on every card.
 function snapshot() {
   const w = $("#sbFrame").contentWindow;
-  return w && w.__sbSnapshot ? w.__sbSnapshot(640, 400) : null;
+  try { return w && w.__sbSnapshot ? w.__sbSnapshot(640, 400) : null; }
+  catch (_) { return null; }                        // the 3D view is not on screen (another tab)
 }
 
 // models stream in after the import: wait until the mesh count is still
@@ -553,6 +556,14 @@ function openCalibration() {
   const f = $("#calFrame");
   if (!f.src) f.src = `/dev/calibration.html?project=${encodeURIComponent(PROJECT)}`;
 }
+
+// The calibration page's bench map: the builder's straight-down renders
+// over the box it asks for — the bench (robot hidden) and the bare plates.
+window.__dvTopShot = async (b) => {
+  openScene();
+  const w = await sceneSettled;
+  return { prod: w.__sbTopShot(b.x0, b.y0, b.x1, b.y1, "prod"), cal: w.__sbTopShot(b.x0, b.y0, b.x1, b.y1, "cal") };
+};
 
 // ── project + status ────────────────────────────────────────────────
 async function loadInfo() {

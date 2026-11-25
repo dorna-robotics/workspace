@@ -332,6 +332,7 @@ function where(s) {
 let selected = new Set();
 function openProject(p) {
   P = p; ST = p.stations;
+  renderShots();
   railHomed = !p.rail_axis;            // read from the robot once the runner exists; until then the dry run homes
   $("#projTitle").textContent = p.project;
   $("#runTitle").textContent = `Calibrating ${p.project}`;
@@ -363,6 +364,22 @@ function plates() {
   for (const s of Object.values(ST)) for (const [fx, fy, sx, sy] of s.footprint)
     g += `<rect x="${fx}" y="${-(fy + sy)}" width="${sx}" height="${sy}" rx="4" fill="var(--muted2)" fill-opacity="0.25"/>`;
   return g;
+}
+// In Developer mode the scene builder renders them (dev.js __dvTopShot);
+// until they are in — or on their own — the plates are drawn from the plan.
+let shotGen = 0;
+async function renderShots() {
+  const top = window.parent !== window && window.parent.__dvTopShot;
+  const pl = Object.values(P.plates);
+  if (!top || !pl.length || P.images) return;
+  const gen = ++shotGen;
+  const xs = pl.flatMap(p => [p.box[0], p.box[0] + p.box[2]]), ys = pl.flatMap(p => [p.box[1], p.box[1] + p.box[3]]);
+  const b = { x0: Math.min(...xs) - 60, x1: Math.max(...xs) + 60, y0: Math.min(...ys) - 60, y1: Math.max(...ys) + 60 };
+  let imgs = null;
+  try { imgs = await top(b); } catch (_) {}
+  if (gen !== shotGen || !imgs || !imgs.prod) return;
+  P.shot = b; P.images = imgs;
+  if (!$("#vSetup").hidden) $("#benchMap").innerHTML = benchSVG();
 }
 function shot(which) {
   if (!P.images || !P.shot) return which === "prod" ? plates() : "";

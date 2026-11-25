@@ -2148,6 +2148,52 @@ if (node) {
         _snapBg.colorSpace = THREE.SRGBColorSpace;
         return _snapBg;
       }
+      // The calibration page's bench map (Developer mode): straight down over
+      // a world box (mm), as the bench is with the robot hidden ("prod"), or
+      // bare — fixture plates and the chassis only, holes showing ("cal").
+      window.__sbTopShot = (x0, y0, x1, y1, mode = "prod") => {
+        const comps = (window.builderState && window.builderState.components) || {};
+        const hide = [];
+        const core = objectsByName.get("core");
+        if (core) for (const o of core.children) if (/^robot_|_robot_side$/.test(o.name)) hide.push(o);
+        for (const [n, cc] of Object.entries(comps)) {
+          const t = String((cc && cc.type) || ""), o = objectsByName.get(n);
+          if (!o || n === "core") continue;
+          if (/robot/.test(t) || (mode === "cal" && t !== "fixture_plate" && !/^table/.test(t))) hide.push(o);
+        }
+        scene.traverse((o) => {
+          if (/^__/.test(o.name || "")) hide.push(o);
+          const m = o.isMesh && (Array.isArray(o.material) ? o.material[0] : o.material);
+          if (m && m.transparent && m.opacity < 0.9) hide.push(o);       // collision boxes, ghosts
+        });
+        if (_sbGridMesh) hide.push(_sbGridMesh);
+        const was = hide.map((o) => o.visible);
+        hide.forEach((o) => { o.visible = false; });
+        // at most 2048 px a side (2 px/mm where it fits)
+        const ppm = Math.min(2, 2048 / Math.max(x1 - x0, y1 - y0));
+        const W = Math.round((x1 - x0) * ppm), H = Math.round((y1 - y0) * ppm);
+        const cam = new THREE.OrthographicCamera(x0, x1, y1, y0, 1, 50000);
+        cam.up.set(0, 1, 0);
+        cam.position.set(0, 0, 20000);
+        cam.lookAt(0, 0, -1);
+        cam.updateMatrixWorld();
+        const size = renderer.getSize(new THREE.Vector2()), pr = renderer.getPixelRatio(), bg = scene.background;
+        scene.background = new THREE.Color(0xf4f5f8);
+        let url = null;
+        try {
+          renderer.setPixelRatio(1);
+          renderer.setSize(W, H, false);
+          renderer.render(scene, cam);
+          url = renderer.domElement.toDataURL("image/webp", 0.85);
+        } finally {
+          scene.background = bg;
+          hide.forEach((o, i) => { o.visible = was[i]; });
+          renderer.setPixelRatio(pr);
+          renderer.setSize(size.x, size.y, false);
+          renderer.render(scene, camera);
+        }
+        return url;
+      };
       window.__sbMeshCount = () => { let n = 0; scene.traverse((o) => { if (o.isMesh) n++; }); return n; };
       window.__sbSnapshot = (W = 640, H = 400, info = null) => {
         const box = new THREE.Box3(), parts = [];                  // the whole setup; each part's own box
