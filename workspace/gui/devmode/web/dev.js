@@ -152,7 +152,6 @@ async function loadScene() {
     w.addEventListener("sb-menu", e => e.detail?.name && openParams(e.detail.name));
     w.document.getElementById("sbDevClose")?.addEventListener("click", () => setView(""));
     relayBuilder(w);
-    $("#sbFiles").setAttribute("aria-pressed", "false");
     pushMenus();
     syncFrame();
     // The project's picture for the Projects page, once the scene is in.
@@ -224,13 +223,6 @@ $("#sbEditPart").onclick = () => sbSel && buildComponent(sbSel.type);
 $("#sbCamera").onclick = () => sbSel && openCamera(sbSel.name);
 $("#sbVision").onclick = () => sbSel && openVision(sbSel.name);
 $("#sbThumb").onclick = () => saveThumb(false);
-// The builder's own files section (hidden in here unless asked for):
-// which file new parts go to, the YAML (copy, download), importing a file.
-$("#sbFiles").onclick = () => {
-  const doc = $("#sbFrame").contentDocument;
-  if (!doc?.getElementById("sbConfigSection")) return;
-  $("#sbFiles").setAttribute("aria-pressed", String(doc.documentElement.classList.toggle("sb-cfg")));
-};
 
 $("#sbSave").onclick = async () => {
   const w = $("#sbFrame").contentWindow;

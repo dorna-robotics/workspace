@@ -263,8 +263,6 @@ button.cb-del:focus-visible, .cb-disc:focus-visible { outline: none; box-shadow:
 .dv-rail button { position: relative; }
 .dv-rail button.attn::after { content: ""; position: absolute; top: 8px; right: 16px; width: 9px; height: 9px; border-radius: 50%;
   background: var(--red); box-shadow: 0 0 0 2px var(--surface); }
-/* Scene files: pressed while the builder's files section shows */
-#sbFiles[aria-pressed="true"] { background: var(--accent-dim); color: var(--accent); }
 /* Workflow's Tools menu */
 .dv-menu { position: relative; }
 .dv-menu > summary { list-style: none; }
