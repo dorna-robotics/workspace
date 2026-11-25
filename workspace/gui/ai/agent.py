@@ -24,14 +24,17 @@ from gui.account import account
 from gui.account.client import server_url
 from gui.data_home import data_path
 
-from . import uploads
+from . import images, uploads
+from .images import Shot
 from .prompts import system_blocks
-from .tools import TOOLS, ToolError, run_tool, tool_label
+from .show import Excerpt
+from .tools import TOOLS, ToolError, approval, run_tool, tool_label
 
 MODEL = os.environ.get("WORKSPACE_AI_MODEL", "claude-opus-5-5")
 EFFORT = os.environ.get("WORKSPACE_AI_EFFORT", "medium")
 MAX_ROUNDS = 60
 MAX_RESULT_CHARS = 30_000
+APPROVAL_TIMEOUT_S = 15 * 60      # an unanswered approval card is a decline
 UPDATES_MODELS = ("claude-opus-5-5", "claude-fable-5-1")   # between-tool notes come as "updates" thinking
 
 _CLIENT = None          # (token, server, client)
@@ -81,6 +84,7 @@ class Session:
         self.lock = asyncio.Lock()
         self.live = []
         self._wake = None
+        self.approvals = {}          # tool_use id → Future(bool): the user's Approve / Decline
 
     @property
     def path(self):
@@ -214,6 +218,63 @@ def _truncate(text):
     return text
 
 
+def tool_content(session, result):
+    """A tool's content → (the tool_result content for the model, the chat
+    events and transcript blocks for the user). A text stays a text; a list
+    becomes text and image blocks — each images.Shot is also kept in the
+    session's shot store and shown in the chat, each show.Excerpt only shown."""
+    if not isinstance(result, list):
+        return _truncate(result), []
+    content, shown = [], []
+    for part in result:
+        if isinstance(part, Shot):
+            sh = images.save(session.id, part.jpeg)
+            content.append(images.block(part.jpeg))
+            shown.append({"kind": "image", "shot": sh, "caption": part.caption})
+        elif isinstance(part, Excerpt):
+            shown.append({"kind": "excerpt", **part.public()})
+        elif part:
+            content.append({"type": "text", "text": _truncate(part)})
+    return content or "(no content)", shown
+
+
+def resolve_approval(session, tool_id, ok):
+    """The user's answer on an approval card; False when nothing waits on it."""
+    fut = session.approvals.get(tool_id)
+    if fut is None or fut.done():
+        return False
+    fut.set_result(bool(ok))
+    return True
+
+
+def decline_all(session):
+    for fut in list(session.approvals.values()):
+        if not fut.done():
+            fut.set_result(False)
+
+
+async def _ask_approval(session, emit, reply, block_id, label, text):
+    """Show the approval card and wait for Approve / Decline (or Stop, or
+    the timeout: a decline). The card is in the transcript, so a reloaded
+    page shows it again and can still answer it."""
+    card = {"kind": "approve", "id": block_id, "label": label, "text": text, "state": "pending"}
+    reply["blocks"].append(card)
+    fut = asyncio.get_running_loop().create_future()
+    session.approvals[block_id] = fut
+    session.save()
+    await emit({"t": "approve", "id": block_id, "label": label, "text": text})
+    try:
+        ok = await asyncio.wait_for(fut, APPROVAL_TIMEOUT_S)
+        why = "approved" if ok else "declined"
+    except asyncio.TimeoutError:
+        ok, why = False, "timeout"
+    finally:
+        session.approvals.pop(block_id, None)
+    card["state"] = "approved" if ok else "declined"
+    await emit({"t": "approval", "id": block_id, "ok": ok, "why": why})
+    return ok, why
+
+
 def user_content(session, user_text, context=None, attachments=None):
     """The user message's content: the attached files first (image and
     document blocks, or a note naming the saved file), then the text."""
@@ -252,6 +313,7 @@ async def run_turn(session, user_text, emit, context=None, attachments=None):
         for _round in range(MAX_ROUNDS):
             if session.cancel:
                 break
+            images.prune(session.messages)
             try:
                 async with client().beta.messages.stream(**_request_kwargs(session)) as stream:
                     async for event in stream:
@@ -303,14 +365,19 @@ async def run_turn(session, user_text, emit, context=None, attachments=None):
                 item = {"kind": "tool", "id": block.id, "name": block.name, "label": label, "ok": None}
                 reply["blocks"].append(item)
                 await emit({"t": "tool", "id": block.id, "name": block.name, "label": label})
-                events = []
+                events, shown = [], []
+                ask = None if session.cancel or response.stop_reason == "max_tokens" else approval(session, block.name, args)
                 if session.cancel:
                     text, ok = "cancelled by the user", False
                 elif response.stop_reason == "max_tokens":
                     text, ok = "input was cut off (max_tokens) — send it again in smaller pieces", False
+                elif ask and not (await _ask_approval(session, emit, reply, block.id, label, ask))[0]:
+                    text, ok = ("NOT RUN — the user declined this action (or did not answer). Don't retry it "
+                                "unasked; say what you would do instead, or ask what they want."), False
                 else:
                     try:
-                        text, events = await loop.run_in_executor(None, run_tool, session, block.name, args)
+                        res, events = await loop.run_in_executor(None, run_tool, session, block.name, args)
+                        text, shown = await loop.run_in_executor(None, tool_content, session, res)
                         ok = True
                     except ToolError as ex:
                         text, ok = str(ex), False
@@ -320,9 +387,13 @@ async def run_turn(session, user_text, emit, context=None, attachments=None):
                 item["ok"] = ok
                 if not ok:
                     item["error"] = text[:300]
-                results.append({"type": "tool_result", "tool_use_id": block.id, "content": _truncate(text),
+                results.append({"type": "tool_result", "tool_use_id": block.id,
+                                "content": text if not isinstance(text, str) else _truncate(text),
                                 **({} if ok else {"is_error": True})})
                 await emit({"t": "tool_done", "id": block.id, "ok": ok, "error": None if ok else text[:300]})
+                for b in shown:
+                    reply["blocks"].append(b)
+                    await emit({"t": b["kind"], **{k: v for k, v in b.items() if k != "kind"}})
                 for e in events:
                     await emit({"t": "ui", **e})
             session.messages.append({"role": "user", "content": results})

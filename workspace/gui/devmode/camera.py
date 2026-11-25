@@ -20,7 +20,7 @@ TIMEOUT_S = 4.0
 
 _clients = {}                 # (host, port) → VisionClient
 _opened = set()               # (host, port, serial) camera_add'ed by this session
-_last = {}                    # (host, port, serial) → (t, jpeg)
+_last = {}                    # (host, port, serial, quality) → (t, jpeg)
 _lock = threading.Lock()
 
 
@@ -77,33 +77,55 @@ def _drop(host, port):
             pass
 
 
-def grab(host, port, serial, cam_cfg):
-    """One JPEG (bytes). Blocking — call it off the IOLoop."""
+def _opened_client(host, port, serial, cam_cfg, fn):
+    """``fn(client)`` on this module's own session, the camera opened on
+    it first when it is not yet (no run has opened it: the server's pool
+    is per serial, so a run that opens it later shares it). The session
+    is dropped on any failure. Call it holding ``_lock``."""
     key = (host, port, serial)
+    try:
+        c = _client(host, port)
+        try:
+            return fn(c)
+        except Exception:
+            if key in _opened:
+                raise
+            c.camera_add(serial, timeout=15, **cam_cfg)
+            _opened.add(key)
+            return fn(c)
+    except Exception:
+        _drop(host, port)
+        raise
+
+
+def grab(host, port, serial, cam_cfg, quality=QUALITY):
+    """One JPEG (bytes). Blocking — call it off the IOLoop."""
+    key = (host, port, serial, quality)
     with _lock:
         t, jpg = _last.get(key, (0.0, None))
         if jpg is not None and time.monotonic() - t < MIN_INTERVAL_S:
             return jpg
-        try:
-            c = _client(host, port)
-            try:
-                jpg, _ = c.camera_get_img(serial, type="color_img", quality=QUALITY, timeout=TIMEOUT_S)
-            except Exception:
-                if key in _opened:
-                    raise
-                # Not open on the server yet (no run has opened it): open
-                # it once for this session — the server's pool is per
-                # serial, so a run that opens it later shares it.
-                c.camera_add(serial, timeout=15, **cam_cfg)
-                _opened.add(key)
-                jpg, _ = c.camera_get_img(serial, type="color_img", quality=QUALITY, timeout=TIMEOUT_S)
-        except Exception:
-            _drop(host, port)
-            raise
+        jpg, _ = _opened_client(host, port, serial, cam_cfg, lambda c: c.camera_get_img(
+            serial, type="color_img", quality=quality, timeout=TIMEOUT_S))
         if not jpg:
             raise RuntimeError("the vision server sent no image")
         _last[key] = (time.monotonic(), jpg)
         return jpg
+
+
+def call(host, port, serial, cam_cfg, fn):
+    """``fn(client)`` on the same private session as ``grab`` (camera
+    settings, a test detection) — never a running project's VisionStation.
+    Blocking, serialised with the grabs."""
+    with _lock:
+        return _opened_client(host, port, serial, cam_cfg, fn)
+
+
+def forget(host, port, serial):
+    """Drop the cached frames of a camera (after its settings changed)."""
+    with _lock:
+        for k in [k for k in _last if k[:3] == (host, port, serial)]:
+            _last.pop(k, None)
 
 
 def configurator(scene, name):

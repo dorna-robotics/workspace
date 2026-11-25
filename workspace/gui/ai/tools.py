@@ -9,8 +9,11 @@ Workspace's own knowledge (docs/, .claude/skills/, examples/, the source),
 and the files the user attached (uploads.py): list / read them, make a 3D
 model a project component, install a vision model in vision/.
 
-``run_tool(session, name, args) -> (text, ui_events)``; a ToolError is the
-model's mistake (shown to it as an error result, not a crash).
+``run_tool(session, name, args) -> (content, ui_events)``: content is a
+text, or a list of texts and images.Shot (a picture the model sees and the
+chat shows); a ToolError is the model's mistake (shown to it as an error
+result, not a crash). ``approval(session, name, args)`` says which calls
+the user approves first (hardware). The camera tools are in vision.py.
 """
 import ast
 import json
@@ -85,16 +88,23 @@ TOOLS = [
     _tool("runtime_command", "Control the project's run. launch = start the project's runtime process; start = begin a run "
           "(with the run parameters); pause / resume; park = finish safely and send the robot home; kill = stop the "
           "runtime process at once; relaunch = restart the runtime (after scene or HMI edits); replan / replan_cancel; "
-          "speed (simulation only). launch, start, resume and kill move or stop a real robot: ask the user first.",
+          "speed (simulation only). launch, start, resume, park, kill and relaunch move or stop real hardware: the user "
+          "approves them in the chat before they run (pause, replan and speed need no approval).",
           {"project": _P, "cmd": {"type": "string", "enum": ["launch", "start", "pause", "resume", "park", "kill",
                                                              "relaunch", "replan", "replan_cancel", "speed"]},
            "kwargs": {"type": "object", "description": "start only: run parameters for this run (default: the saved ones)."},
            "speed": {"type": "number", "description": "speed only: 0.25–16."}}, ["cmd"]),
     _tool("list_devices", "The running project's devices: state (ok / error / down), message, simulated or real, online.",
           {"project": _P}),
-    _tool("device_command", "Recover a device that reports an error, or release a device's claim.",
+    _tool("device_command", "Recover a device that reports an error, or release a device's claim (the user approves "
+          "it in the chat before it runs).",
           {"project": _P, "device": {"type": "string", "description": "The device id from list_devices."},
            "action": {"type": "string", "enum": ["recover", "release"]}}, ["device", "action"]),
+    _tool("diagnose_run", "Everything at once about why a run paused, stopped or failed: the run state and its "
+          "last error, the last steps (with their levels — the failed one), the operator notice the run is waiting "
+          "on (its title, text and picture), the devices that are not ok, the log's last error lines, and the "
+          "latest per-item records. Start here for any 'why did it stop / what is this error' question.",
+          {"project": _P}),
     _tool("get_run_parameters", "The project's run parameters: the schema from launch.yaml, the saved values, and the "
           "values of the run in progress.", {"project": _P}),
     _tool("set_run_parameters", "Save run parameters for the next run (merged into the saved values). Refused while the "
@@ -114,7 +124,9 @@ TOOLS = [
           "what a zip / tar holds, a 3D model's size and parts, or a vision model's type.",
           {"upload": {"type": "string", "description": "The upload's id (or its file name)."},
            "first_page": {"type": "integer"}, "last_page": {"type": "integer"},
-           "offset": {"type": "integer"}, "limit": {"type": "integer"}}, ["upload"]),
+           "offset": {"type": "integer"}, "limit": {"type": "integer"},
+           "grep": {"type": "string", "description": "A text file: only the lines matching this regular expression."}},
+          ["upload"]),
     _tool("add_component_from_file", "Make an attached 3D model (.glb, .gltf or .stl) a component of the project: "
           "creates components/<type>/<type>.glb + <type>.py (+ __init__.py), with the model's measured bounding box "
           "as its first collision box and center / place / top anchors. Units: millimetres, Z up (the Workspace's "
@@ -574,6 +586,111 @@ def t_device_command(session, a):
     return json.dumps(j, default=str)[:2000], [{"type": "status", "project": name}]
 
 
+def _runtime_port(name):
+    ws = ORCH.workspaces.get(name) if ORCH is not None else None
+    if ws is None or ws.is_remote() or not ORCH.is_launched(name):
+        return None
+    return ws.port
+
+
+def _runtime_get(port, path, timeout=8):
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}{path}", timeout=timeout) as r:
+            return r.read(), r.headers.get("Content-Type", "")
+    except (OSError, urllib.error.URLError):
+        return None, ""
+
+
+def _op_values(port):
+    """The runtime's operator values (rt.op: the notice …) — one snapshot
+    from its /ws/op socket."""
+    try:
+        from websocket import create_connection
+        ws = create_connection(f"ws://127.0.0.1:{port}/ws/op", timeout=4)
+        try:
+            return (json.loads(ws.recv()) or {}).get("set") or {}
+        finally:
+            ws.close()
+    except Exception:
+        return {}
+
+
+ERR_RX = re.compile(r"Traceback|Error|Exception|FAILED|✗|fault|refused|timed out|timeout", re.I)
+
+
+def t_diagnose_run(session, a):
+    from .images import Shot, decode, encode
+    name = _name(session, a)
+    out, shots = [], []
+    code, st = _local("GET", f"/orchestrator/api/workspace/{_q(name)}/status", timeout=20)
+    st = st if isinstance(st, dict) else {}
+    out.append(f"state: {st.get('state', '?')}" + (f" — last error: {st.get('last_error')}" if st.get("last_error") else ""))
+    step = st.get("step") or {}
+    steps = step.get("steps") or []
+    if steps:
+        out.append("last steps (oldest first; level in brackets):")
+        for s_ in steps[-12:]:
+            if isinstance(s_, dict):
+                out.append(f"  [{s_.get('level', 'info')}] {s_.get('label', '')}")
+            else:
+                out.append(f"  {s_}")
+        bad = [x for x in steps if isinstance(x, dict) and x.get("level") in ("error", "warning")]
+        if bad:
+            out.append(f"the last problem step: [{bad[-1].get('level')}] {bad[-1].get('label')}")
+    port = _runtime_port(name)
+    if port is None:
+        out.append("the project is not launched here: no live notice, devices or records")
+    else:
+        ops = _op_values(port)
+        n = ops.get("notice")
+        if isinstance(n, dict):
+            out.append(f"operator notice (the run waits on it): [{n.get('level')}] {n.get('title')} — {n.get('text')}"
+                       + (f" (caption: {n.get('caption')})" if n.get("caption") else ""))
+            if n.get("img"):
+                raw, ctype = _runtime_get(port, n["img"])
+                if raw:
+                    try:
+                        shots.append(Shot(encode(decode(raw)), f"The notice's picture — {n.get('title') or ''}"))
+                    except Exception:
+                        out.append("(the notice's picture didn't decode)")
+        else:
+            out.append("no operator notice pending")
+        code, j = _local("GET", f"/orchestrator/api/workspace/{_q(name)}/devices", timeout=20)
+        devs = (j or {}).get("devices", []) if isinstance(j, dict) else []
+        notok = [d for d in devs if d.get("state") not in ("ok", None) or d.get("online") is False]
+        out.append("devices not ok: " + ("; ".join(f"{d.get('id')}: {d.get('state')}"
+                                                     f"{' — ' + str(d.get('msg')) if d.get('msg') else ''}"
+                                                     f"{' (offline)' if d.get('online') is False else ''}" for d in notok)
+                                         if notok else f"none (of {len(devs)})"))
+        raw, _ = _runtime_get(port, "/records")
+        try:
+            rec = json.loads(raw) if raw else {}
+        except ValueError:
+            rec = {}
+        rows = rec.get("records")
+        if isinstance(rows, dict):
+            rows = [{"key": k, **(v if isinstance(v, dict) else {"value": v})} for k, v in rows.items()]
+        if rows:
+            out.append(f"latest records ({len(rows)} in this run; the last 5):")
+            out.extend("  " + json.dumps(r, default=str)[:600] for r in rows[-5:])
+    code, j = _local("GET", f"/orchestrator/api/workspace/{_q(name)}/logs?tail=400", timeout=20)
+    lines = (j or {}).get("lines") if isinstance(j, dict) else None
+    if isinstance(lines, str):
+        lines = lines.splitlines()
+    lines = [l if isinstance(l, str) else json.dumps(l, default=str) for l in (lines or [])]
+    hits = [i for i, l in enumerate(lines) if ERR_RX.search(l)]
+    if hits:
+        last = hits[-1]
+        start = max(0, (hits[-8] if len(hits) >= 8 else hits[0]) - 2, last - 40)
+        out.append("the log around its last errors:\n" + "\n".join(lines[start:last + 6]))
+    else:
+        out.append("no error lines in the log's last 400 lines")
+    out.append("Next: runtime_logs (grep) for more, read the action that failed in the project's files, "
+               "camera_view if a camera check failed.")
+    text = "\n".join(out)
+    return ([text, *shots] if shots else text), []
+
+
 def t_get_run_parameters(session, a):
     name = _name(session, a)
     code, j = _local("GET", f"/orchestrator/api/workspace/{_q(name)}/launch_config", timeout=20)
@@ -764,6 +881,14 @@ def t_read_upload(session, a):
         shown = json.dumps(meta, default=str)[:1500] if meta is not None else "unknown"
         return f"{head}\nvision model meta: {shown} ({note})", []
     if kind == "text":
+        if a.get("grep"):
+            try:
+                rx = re.compile(a["grep"], re.I)
+            except re.error as e:
+                raise ToolError(f"bad pattern: {e}")
+            hits = [f"{i:>6}  {l}" for i, l in enumerate(path.read_text(errors="replace").splitlines(), 1) if rx.search(l)]
+            more = f"\n… {len(hits) - 400} more matches" if len(hits) > 400 else ""
+            return f"{head}\n{len(hits)} matching lines\n" + "\n".join(hits[:400]) + more, []
         return _read_text(path, a.get("offset"), a.get("limit")), []
     return f"{head}\n(a binary file — nothing to read as text)", []
 
@@ -1004,7 +1129,12 @@ def t_install_vision_model(session, a):
     return "\n".join(out), events
 
 
-HANDLERS = {n: globals()["t_" + n] for n in TOOL_NAMES}
+from . import show as _show, vision as _vision  # noqa: E402  (their tools use the helpers above)
+
+TOOLS += _vision.TOOLS + _show.TOOLS
+TOOL_NAMES = {t["name"] for t in TOOLS}
+HANDLERS = {**{n: globals()["t_" + n] for n in TOOL_NAMES if "t_" + n in globals()},
+            **_vision.HANDLERS, **_show.HANDLERS}
 
 LABELS = {
     "list_projects": lambda a: "Listing the projects",
@@ -1025,6 +1155,7 @@ LABELS = {
                                   "speed": f"Setting the speed to {a.get('speed')}x"}.get(a.get("cmd"), "Run command"),
     "list_devices": lambda a: "Checking the devices",
     "device_command": lambda a: f"{'Recovering' if a.get('action') == 'recover' else 'Releasing'} {a.get('device', '')}",
+    "diagnose_run": lambda a: "Looking into the run",
     "get_run_parameters": lambda a: "Reading the run parameters",
     "set_run_parameters": lambda a: "Saving the run parameters",
     "read_hmi_spec": lambda a: "Reading the HMI pages",
@@ -1034,6 +1165,8 @@ LABELS = {
     "read_upload": lambda a: "Reading the attached file",
     "add_component_from_file": lambda a: f"Making the component {a.get('type', '')}",
     "install_vision_model": lambda a: "Installing the vision model",
+    **_vision.LABELS,
+    **_show.LABELS,
 }
 
 
@@ -1042,6 +1175,32 @@ def tool_label(name, args):
         return LABELS[name](args if isinstance(args, dict) else {})
     except Exception:
         return name
+
+
+HARDWARE_CMDS = {"launch": "Launch the project (its devices connect; a real robot powers its motors)",
+                 "start": "Start a run — the robot moves",
+                 "resume": "Resume the run — the robot moves",
+                 "park": "Park — finish safely and send the robot home",
+                 "kill": "Kill the project's runtime at once (motion stops where it is)",
+                 "relaunch": "Relaunch the project (stops its runtime and starts it again)"}
+
+
+def approval(session, name, args):
+    """The action the user must approve in the chat before this call runs
+    (a sentence), or None. Every physical or live-device action needs one;
+    reading never does."""
+    if not isinstance(args, dict) or validate(name, args):
+        return None                     # an invalid call fails on its own, unasked
+    proj = args.get("project") or session.project or ""
+    if name == "runtime_command" and args.get("cmd") in HARDWARE_CMDS:
+        what = HARDWARE_CMDS[args["cmd"]]
+        if args["cmd"] == "start" and args.get("kwargs"):
+            what += f", with {json.dumps(args['kwargs'], default=str)[:300]}"
+        return f"{what} — {proj}."
+    if name == "device_command":
+        verb = "Recover" if args.get("action") == "recover" else "Release"
+        return f"{verb} the device {args.get('device')} — {proj}."
+    return _vision.approval(name, args, session)
 
 
 def run_tool(session, name, args):

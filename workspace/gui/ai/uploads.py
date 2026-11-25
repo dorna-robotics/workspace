@@ -349,20 +349,28 @@ def content_blocks(sid, ids):
 
 def strip_binary(messages):
     """A copy of the history for the session file: image and PDF data are
-    replaced by a short note (the file itself stays in the upload store),
-    so a session file never carries megabytes of base64."""
+    replaced by a short note (an attached file stays in the upload store, a
+    tool's picture in the shot store), so a session file never carries
+    megabytes of base64."""
+    def note(b):
+        return {"type": "text", "text": f"[{b['type']} {b.get('title') or ''} shown here earlier — "
+                                        "the file is in the upload store (list_uploads)]"}
+
+    def nested(b):
+        if not (isinstance(b, dict) and b.get("type") == "tool_result" and isinstance(b.get("content"), list)):
+            return b
+        if not any(isinstance(x, dict) and x.get("type") == "image" for x in b["content"]):
+            return b
+        from .images import STUB
+        return {**b, "content": [{"type": "text", "text": STUB}
+                                 if isinstance(x, dict) and x.get("type") == "image" else x for x in b["content"]]}
+
     out = []
     for m in messages:
         c = m.get("content")
-        if not isinstance(c, list) or not any(isinstance(b, dict) and b.get("type") in ("image", "document") for b in c):
+        if not isinstance(c, list):
             out.append(m)
             continue
-        nc = []
-        for b in c:
-            if isinstance(b, dict) and b.get("type") in ("image", "document"):
-                nc.append({"type": "text", "text": f"[{b['type']} {b.get('title') or ''} shown here earlier — "
-                                                    "the file is in the upload store (list_uploads)]"})
-            else:
-                nc.append(b)
-        out.append({**m, "content": nc})
+        out.append({**m, "content": [note(b) if isinstance(b, dict) and b.get("type") in ("image", "document")
+                                     else nested(b) for b in c]})
     return out

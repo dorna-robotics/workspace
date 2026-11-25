@@ -6,7 +6,9 @@
     GET  /ai/api/uploads  ?session=  → {uploads: [...]}
     GET  /ai/api/upload_file ?session=&id=  → an uploaded image (the chat's thumbnails)
     GET  /ai/api/attach   ?id=&from=   → a running turn's events from `from` on (after a reload)
-    POST /ai/api/cancel   {session}
+    POST /ai/api/cancel   {session}   (declines a waiting approval too)
+    POST /ai/api/approve  {session, id, ok}   the user's Approve / Decline on a hardware action's card
+    GET  /ai/api/shot     ?session=&id=   a picture a tool showed in the chat (images.py's shot store)
     GET  /ai/api/session  ?id=         → {id, project, transcript, busy, live_seq} (a new one if unknown)
     GET  /ai/api/sessions              → {sessions: [{id, title, project, saved}]} — the last 10 on this robot
     POST /ai/api/session               → a fresh conversation
@@ -23,7 +25,7 @@ from gui.account import account, login_required
 from gui.data_home import data_path
 from gui.account.handlers import guard_post, same_origin, token_ok
 
-from . import agent, tools, uploads
+from . import agent, images, tools, uploads
 
 
 def setup(orch):
@@ -151,7 +153,36 @@ class CancelHandler(_Json):
         s = agent.get_session(data.get("session") or data.get("id"), owner=_owner(), create=False)
         if s is not None:
             s.cancel = True
+            agent.decline_all(s)
         self.write({"ok": True})
+
+
+class ApproveHandler(_Json):
+    """The answer to an approval card: only the conversation's owner, only
+    while the turn waits on it (an old card's buttons answer nothing)."""
+    @login_required
+    def post(self):
+        data = self.body()
+        s = agent.get_session(data.get("session"), owner=_owner(), create=False)
+        tid = data.get("id")
+        if s is None or not isinstance(tid, str) or not agent.resolve_approval(s, tid, data.get("ok") is True):
+            self.set_status(409)
+            self.write({"error": "nothing is waiting for that answer any more"})
+            return
+        self.write({"ok": True})
+
+
+class ShotHandler(_Json):
+    @login_required
+    def get(self):
+        s = agent.get_session(self.get_argument("session", None), owner=_owner(), create=False)
+        p = images.path(s.id, self.get_argument("id", "")) if s else None
+        if not p:
+            raise tornado.web.HTTPError(404, "no such picture")
+        self.set_header("Content-Type", "image/jpeg")
+        self.set_header("Cache-Control", "private, max-age=86400")
+        with open(p, "rb") as f:
+            self.finish(f.read())
 
 
 class SessionHandler(_Json):
@@ -294,6 +325,8 @@ def routes(orch):
         (r"/ai/api/chat", ChatHandler),
         (r"/ai/api/attach", AttachHandler),
         (r"/ai/api/cancel", CancelHandler),
+        (r"/ai/api/approve", ApproveHandler),
+        (r"/ai/api/shot", ShotHandler),
         (r"/ai/api/session", SessionHandler),
         (r"/ai/api/sessions", SessionsHandler),
         (r"/ai/api/upload", UploadHandler),
