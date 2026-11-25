@@ -64,17 +64,21 @@
         <button class="btn btn-ghost" id="sbThumb" title="Use the current view as this project's picture on the Projects page">Save picture</button>
       </div>
 
-      <!-- Workflow: the panel beside the 3D view (dev.js renders it) -->
-      <aside class="dv-wf" id="wfPanel" aria-label="Workflow"></aside>
+      <!-- Workflow: the project page; Flowchart, Recipes and Replay in its place -->
+      <div class="dv-toolbar" id="wfBar">
+        <div class="dv-seg" id="wfSeg" role="tablist" aria-label="Workflow view">
+          <button data-wv="" class="on" title="The project page: run controls, steps, devices, parameters, operator controls, logs">Project</button>
+          <button data-wv="flow" title="The project's flowchart — the AI builder's editor">Flowchart</button>
+          <button data-wv="recipes" title="The project's recipes (recipes.j2): pick one to pose the robot at its reference">Recipes</button>
+          <button data-wv="replay" title="Play back a recorded run in the 3D view">Replay</button>
+        </div>
+      </div>
+      <iframe class="dv-frame" id="wfFrame" title="Project page"></iframe>
 
-      <!-- The 3D view: the scene builder (Scene, and Workflow before a
-           launch), or the running project's own viewer (Workflow, Live) -->
+      <!-- The 3D view: the scene builder (Scene; Workflow's Flowchart,
+           Recipes and Replay) -->
       <div class="dv-view" id="dvView">
         <iframe class="dv-frame" id="sbFrame" title="Scene builder"></iframe>
-        <iframe class="dv-frame" id="liveFrame" title="The running project" hidden></iframe>
-        <div class="dv-seg dv-viewsw" id="viewSw" hidden>
-          <button data-v="scene" class="on">Scene</button><button data-v="live">Live</button>
-        </div>
         <div class="dv-flow" id="flowView" hidden></div>
       </div>
 

@@ -36,67 +36,30 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--
 .dv-rail button.on span { font-weight: 600; }
 
 /* One stage per tab. Scene: the tools over the builder (its panel and
-   3D view). Workflow: the panel beside the same 3D view. HMI and
+   3D view). Workflow: its view switch over the project page — or over
+   the builder's 3D view for Flowchart, Recipes and Replay. HMI and
    Calibration fill it. */
-.dv-main { flex: 1; min-width: 0; min-height: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+.dv-main { flex: 1; min-width: 0; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
 .dv-main > * { min-height: 0; min-width: 0; }
-#sbBar { grid-column: 1 / -1; grid-row: 1; }
-.dv-wf { grid-column: 1; grid-row: 1 / -1; width: 380px; }
-.dv-view { grid-column: 1 / -1; grid-row: 2; position: relative; display: flex; }
-.dv-pane { grid-column: 1 / -1; grid-row: 1 / -1; display: flex; flex-direction: column; }
+#sbBar, #wfBar { grid-column: 1; grid-row: 1; }
+#wfFrame, .dv-view { grid-column: 1; grid-row: 2; }
+#wfFrame { height: 100%; }
+.dv-view { position: relative; display: flex; }
+.dv-pane { grid-column: 1; grid-row: 1 / -1; display: flex; flex-direction: column; }
 .dv-main:not([data-tab="scene"]) #sbBar,
-.dv-main:not([data-tab="workflow"]) .dv-wf,
+.dv-main:not([data-tab="workflow"]) #wfBar, .dv-main:not([data-tab="workflow"]) #wfFrame,
+.dv-main[data-tab="workflow"][data-wv] #wfFrame,
+.dv-main[data-tab="workflow"]:not([data-wv]) .dv-view,
 .dv-main[data-tab="hmi"] .dv-view, .dv-main[data-tab="calibration"] .dv-view,
 .dv-main:not([data-tab="hmi"]) [data-pane="hmi"],
 .dv-main:not([data-tab="calibration"]) [data-pane="calibration"] { display: none; }
-.dv-main[data-tab="workflow"] .dv-view { grid-column: 2; grid-row: 1 / -1; }
-.dv-main:not([data-tab="workflow"]) .dv-viewsw, .dv-main:not([data-tab="workflow"]) .dv-flow { display: none; }
-.dv-view .dv-frame[hidden] { display: block !important; visibility: hidden; position: absolute; inset: 0; }
-.dv-viewsw { position: absolute; top: var(--space-3); left: 50%; transform: translateX(-50%); z-index: 5; box-shadow: var(--shadow-sm); }
-
+.dv-main:not([data-tab="workflow"]) .dv-flow, .dv-main:not([data-wv="flow"]) .dv-flow { display: none; }
 .dv-toolbar { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border2); background: var(--surface); flex-wrap: wrap; }
 .dv-toolbar .btn { min-height: 44px; }
 .dv-sep { width: 1px; align-self: stretch; background: var(--border2); margin: 0 var(--space-2); }
 .dv-sel { max-width: 340px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dv-frame { flex: 1; width: 100%; min-height: 0; border: none; background: var(--bg); display: block; }
 .dv-small { font-size: var(--text-sm); }
-
-/* Workflow panel — the AI builder's: controls, the chart, steps, devices */
-.dv-wf { display: flex; flex-direction: column; background: var(--surface); border-right: 1px solid var(--border2); overflow-y: auto; }
-.dv-wf-in { padding: var(--space-4) var(--space-5); display: flex; flex-direction: column; gap: var(--space-5); }
-.dv-wf .section-label { margin: 0 0 var(--space-2); display: flex; align-items: center; gap: var(--space-2); }
-.dv-wf .btn { min-height: 44px; }
-.dv-ctrls { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
-.dv-ctrls .spacer { flex: 1; }
-.dv-card { background: var(--surface2); border-radius: var(--radius-md); padding: var(--space-3) var(--space-4); display: flex; flex-direction: column; gap: var(--space-2); }
-.dv-card b { font-weight: 600; }
-.dv-row2 { display: flex; gap: var(--space-2); flex-wrap: wrap; align-items: center; }
-.dv-row2 .btn[aria-pressed="true"] { background: var(--accent-dim); color: var(--accent); }
-.dv-fold { display: flex; align-items: center; gap: var(--space-2); width: 100%; min-height: 44px; padding: 0; border: none; background: none;
-  color: inherit; font: inherit; cursor: pointer; text-align: left; }
-.dv-fold .section-label { margin: 0; flex: 1; }
-.dv-fold svg { transition: transform var(--motion-fast) var(--ease); color: var(--muted); }
-.dv-fold[aria-expanded="true"] svg { transform: rotate(90deg); }
-.dv-count { font-size: var(--text-xs); color: var(--muted); font-weight: 600; }
-.dv-steps { margin: 0; padding: 0 0 0 var(--space-5); display: flex; flex-direction: column; gap: var(--space-2); }
-.dv-steps li { line-height: 1.4; }
-.dv-steps li small { display: block; color: var(--muted); font-size: var(--text-sm); }
-.dv-steps .mono { font-family: var(--mono); font-size: var(--text-xs); }
-.dv-tag { display: inline-block; font-size: var(--text-xs); font-weight: 600; color: var(--accent); background: var(--accent-dim); border-radius: var(--radius-xs); padding: 0 var(--space-2); margin-left: var(--space-1); }
-.dv-err { color: var(--red); font-size: var(--text-sm); line-height: 1.4; word-break: break-word; }
-.dv-link { align-self: flex-start; }
-
-/* hold-to-activate (api.js holdToActivate) — the orchestrator's sweep */
-.hold { position: relative; overflow: hidden; isolation: isolate; user-select: none; -webkit-user-select: none; touch-action: none; }
-.hold::before { content: ""; position: absolute; inset: 0; z-index: -1;
-  background: repeating-linear-gradient(-45deg, var(--hold-color, currentColor) 0 8px, transparent 8px 16px);
-  background-size: 22.63px 100%; opacity: 0.6; clip-path: inset(0 100% 0 0);
-  transition: clip-path var(--motion-fast) var(--ease); will-change: clip-path; }
-.hold.holding::before { clip-path: inset(0 0 0 0); transition: clip-path var(--hold-ms, 2000ms) linear; animation: dv-hold 0.5s linear infinite; }
-@keyframes dv-hold { to { background-position: 22.63px 0; } }
-.hold-kill { --hold-color: var(--red); }
-.hold-park { --hold-color: var(--amber); }
-.btn.btn-warn.hold { --hold-color: rgba(0, 0, 0, 0.55); }
 
 /* the flowchart, over the 3D view (flow.js — the AI builder's editor) */
 .dv-flow { position: absolute; inset: var(--space-4); z-index: 6; display: flex; flex-direction: column; overflow: hidden; container-type: inline-size;
@@ -153,25 +116,13 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--
 .dv-flow-paper .af-sel [joint-selector="line"] { stroke: var(--accent) !important; stroke-width: 2.5 !important; }
 .dv-flow-paper .available-magnet { fill: var(--accent); }
 
-/* Devices: one row each, its simulation switch */
-.dv-note { background: var(--accent-dim); border-radius: var(--radius-md); padding: var(--space-3) var(--space-4); display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
-.dv-grp { font-size: var(--text-xs); color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; margin: var(--space-3) 0 var(--space-1); }
-.dv-row { display: flex; align-items: center; gap: var(--space-3); min-height: 48px; border-bottom: 1px solid var(--border2); }
-.dv-row:last-child { border-bottom: none; }
-.dv-row .nm { flex: 1; min-width: 0; }
-.dv-row .nm b { display: block; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.dv-row .nm span { font-size: var(--text-sm); color: var(--muted); }
-
 /* a switch: 44 px target, sim = cyan (device-guide §16: mode, not state) */
+.dv-grp { font-size: var(--text-xs); color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; margin: var(--space-3) 0 var(--space-1); }
 .dv-switch { display: inline-flex; align-items: center; gap: var(--space-3); min-height: 44px; cursor: pointer; user-select: none; font-size: var(--text-sm); color: var(--muted); }
 .dv-switch input { appearance: none; width: 44px; height: 26px; border-radius: 13px; background: var(--live); position: relative; cursor: pointer; margin: 0; transition: background var(--motion-fast) var(--ease); }
 .dv-switch input::after { content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: var(--surface); transition: transform var(--motion-fast) var(--ease); }
 .dv-switch input:checked { background: var(--sim); }
 .dv-switch input:checked::after { transform: translateX(18px); }
-.dv-switch input:disabled { opacity: 0.5; }
-
-.dv-empty { color: var(--muted); padding: var(--space-5) 0; text-align: center; line-height: 1.5; }
-
 /* HMI */
 .dv-hmi { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); padding: var(--space-4); }
 .dv-hmi[data-v="main"], .dv-hmi[data-v="setup"] { grid-template-columns: 1fr; }

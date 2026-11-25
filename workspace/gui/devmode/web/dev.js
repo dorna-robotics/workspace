@@ -1,14 +1,11 @@
 // Developer mode — /dev/?project=<name>
-// One project, laid out like the AI builder: a rail (Scene · Workflow ·
-// HMI · Calibration), a panel and the 3D view. Scene is the embedded
-// builder with its Settings + Camera windows. Workflow is the AI
-// builder's panel — run controls, the flowchart, steps, devices and
-// their simulation switches, Recipes and Replay — beside the same 3D
-// view (the running project's own viewer once it is up). HMI previews
-// Main + Parameters; Calibration is its own page.
-import { apiFetch, esc, stateVariant, stateLabel, isLaunched, isBooting, isRunning, canStart, isStarted,
-         wireCommand, deviceFaultGate } from "/orchestrator/api.js";
-import { openFlowchart, closeFlowchart, flowchartOpen, preloadFlowchart } from "/dev/flow.js";
+// One project, a rail on the left (Scene · Workflow · HMI · Calibration).
+// Scene is the embedded builder with its Settings + Camera windows.
+// Workflow is the project page (with simulation switches on its devices)
+// plus the AI builder's Flowchart and the builder's Recipes and Replay.
+// HMI previews Main + Parameters; Calibration is its own page.
+import { apiFetch, esc, stateVariant, stateLabel, isLaunched } from "/orchestrator/api.js";
+import { openFlowchart, closeFlowchart, preloadFlowchart } from "/dev/flow.js";
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -41,21 +38,14 @@ async function api(path, opts = {}) {
   return j;
 }
 const post = (path, body) => api(path, { method: "POST", body: JSON.stringify(body) });
-const ICO = {
-  chev: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>`,
-  recipes: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3h6"/><path d="M10 3v6.6L4.7 19a2 2 0 0 0 1.8 3h11a2 2 0 0 0 1.8-3L14 9.6V3"/><line x1="7" y1="15" x2="17" y2="15"/></svg>`,
-  replay: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><polygon points="10 8 16 12 10 16" fill="currentColor" stroke="none"/></svg>`,
-  flow: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="6" height="5" rx="1"/><rect x="15" y="15" width="6" height="5" rx="1"/><path d="M6 9v4a2 2 0 0 0 2 2h7"/></svg>`,
-};
 
 function setAiContext() {
   window.__aiContext = { page: "developer", project: PROJECT, tab };
 }
 
 // ── the rail ─────────────────────────────────────────────────────────
-async function showTab(t) {
+function showTab(t) {
   if (!TABS.includes(t)) t = "scene";
-  if (t !== tab && !(await closeFlowchart())) return;      // an unsaved chart stays open
   tab = t;
   $$("#dvRail button").forEach(b => { b.classList.toggle("on", b.dataset.tab === t); b.setAttribute("aria-selected", b.dataset.tab === t); });
   $("#dvMain").dataset.tab = t;
@@ -102,10 +92,10 @@ function makeWin(id, title, cls = "") {
 }
 
 // ── 1 · Scene ───────────────────────────────────────────────────────
-// The builder is the 3D view of Scene and of Workflow: loaded once, for
-// whichever opens first. On Scene it shows its panel (Objects, controls);
-// on Workflow the 3D view alone (.sb-viewonly), or its Recipes / Replay
-// panel beside it when the Workflow panel opens one (side).
+// The builder is the 3D view of Scene and of Workflow's Flowchart,
+// Recipes and Replay: loaded once, for whichever opens first. On Scene it
+// shows its panel (Objects, controls); on Workflow its Recipes / Replay
+// panel (side), or the 3D view alone (.sb-viewonly) behind the chart.
 let sbReady = false, sbSel = null, thumbDone = false;
 let baseSig = "";         // the scene files as the builder loaded them (Save refuses on a mismatch)
 let side = null;          // "recipes" | "replay" — opened from the Workflow panel
@@ -125,13 +115,6 @@ function syncFrame() {
   if (doc.documentElement.getAttribute("data-sbtab") !== want) doc.querySelector(`#sbTabs button[data-tab="${want}"]`)?.click();
   doc.documentElement.classList.toggle("sb-viewonly", tab === "workflow" && !side);
   w.dispatchEvent(new Event("resize"));
-  $$("[data-side]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.side === side)));
-}
-
-function openSide(which) {
-  side = side === which ? null : which;
-  if (side) showView("scene");
-  syncFrame();
 }
 
 // The builder holds ONE project server-side and keeps its own copy in
@@ -166,11 +149,12 @@ async function loadScene() {
     const w = frame.contentWindow;
     w.addEventListener("sb-select", e => onSelect(e.detail || {}));
     w.addEventListener("sb-menu", e => e.detail?.name && openParams(e.detail.name));
-    w.document.getElementById("sbDevClose")?.addEventListener("click", () => { side = null; syncFrame(); });
+    w.document.getElementById("sbDevClose")?.addEventListener("click", () => setView(""));
     pushMenus();
     syncFrame();
     // The project's picture for the Projects page, once the scene is in.
     waitForScene(w).then(ok => {
+      syncFrame();                                // the import put the builder back on Scene
       setSaveReady(ok);
       if (!ok) return banner("The scene did not finish loading in the builder — Reload the page to try again.", true);
       if (!thumbDone) meshesSettled(w).then((ok) => ok && saveThumb(true));
@@ -495,228 +479,42 @@ function openCamera(name) {
 }
 
 // ── 2 · Workflow ────────────────────────────────────────────────────
-// The AI builder's Workflow panel, on the project's own files: the run
-// controls, the flowchart (over the 3D view), the steps (actions.py,
-// with their times), the devices and their simulation switches, the
-// run parameters — and Recipes and Replay, the builder's own panels.
-// The full project page stays one click away.
-let wf = null;            // /workflow: actions, recipes, charts
-let chartCheck = null;    // the first chart's checks
-let launchCfg = null;     // the run parameters (orchestrator launch_config)
-const folds = { steps: true, devices: true, params: false };
+// The project page itself (orchestrator workspace.html, ?embed=1): run
+// controls, status, steps, devices with Recover / Connect and their
+// simulation switches, run parameters, operator controls, logs, its 3D
+// view. Above it, the AI builder's Flowchart and the builder's Recipes
+// and Replay panels, each in place of the page until Project is picked.
+let wf = null;            // /workflow: the project's charts (for the flowchart)
+let wv = "";              // "" (the project page) | "flow" | "recipes" | "replay"
 const pageUrl = () => `/orchestrator/workspace.html?name=${encodeURIComponent(PROJECT)}`;
 
-async function openWorkflow() {
-  openScene();
-  renderWorkflow();
+function openWorkflow() {
+  const f = $("#wfFrame");
+  if (!f.getAttribute("src")) f.src = `${pageUrl()}&embed=1`;
   setTimeout(preloadFlowchart, 3000);
-  try {
-    wf = await api("/workflow");
-    const c = wf.charts[0];
-    chartCheck = c && !c.error ? (await api(`/flowchart?name=${encodeURIComponent(c.name)}`)).check : null;
-  } catch (e) {
-    banner(`Workflow: ${esc(e.message)}`, true);
-  }
-  try { launchCfg = await apiFetch(`/workspace/${encodeURIComponent(PROJECT)}/launch_config`); } catch (_) { launchCfg = null; }
-  renderWorkflow();
 }
 
-const fold = (key, label, count) => `<button class="dv-fold" type="button" data-fold="${key}" aria-expanded="${folds[key]}">
-  <span class="section-label">${label}</span>${count != null ? `<span class="dv-count">${count}</span>` : ""}${ICO.chev}</button>`;
-
-function renderWorkflow() {
-  const box = $("#wfPanel");
-  if (!info) return;
-  const devs = info.components.filter(c => c.device);
-  const acts = wf?.actions || [];
-  const chart = wf?.charts?.[0];
-  box.innerHTML = `<div class="dv-wf-in">
-    <div><div class="section-label">Controls</div><div class="dv-ctrls" id="wfControls"></div>
-      <div class="dv-err" id="wfErr" hidden></div></div>
-
-    <div><div class="section-label">Flowchart</div>
-      <div class="dv-card">
-        ${!wf ? `<span class="muted">Loading…</span>`
-          : chart ? `<b>${esc(chart.title)}</b><span class="muted dv-small">flow/${esc(chart.name)}.json · ${chart.nodes ?? 0} nodes${chart.error ? ` · ${esc(chart.error)}` : ""}</span>
-            ${chartCheck ? (chartCheck.ok ? `<span class="muted dv-small">✓ The chart checks out.</span>`
-              : `<span class="dv-err">✗ ${chartCheck.errors.length} problem${chartCheck.errors.length === 1 ? "" : "s"} — open it to see them</span>`) : ""}`
-          : `<span class="muted dv-small">No flowchart yet. A project has one workflow, for one sample — the scheduler runs the batch.</span>`}
-        <div class="dv-row2"><button class="btn" id="wfFlow" type="button" ${wf ? "" : "disabled"}>${ICO.flow}${chart ? "Open flowchart" : "New flowchart"}</button></div>
-      </div></div>
-
-    <div class="dv-row2">
-      <button class="btn" type="button" data-side="recipes" aria-pressed="${side === "recipes"}" title="The project's recipes (recipes.j2): pick one to pose the robot at its reference">${ICO.recipes}Recipes</button>
-      <button class="btn" type="button" data-side="replay" aria-pressed="${side === "replay"}" title="Play back a recorded run in the 3D view">${ICO.replay}Replay</button>
-    </div>
-
-    <div>${fold("steps", "Steps", acts.length || null)}
-      <div data-body="steps" ${folds.steps ? "" : "hidden"}>${!wf ? `<div class="muted dv-small">Loading…</div>`
-        : acts.length ? `<ol class="dv-steps">${acts.map(a => `<li><b>${esc(a.name.replace(/([a-z])([A-Z])/g, "$1 $2"))}</b>${a.per_item ? `<span class="dv-tag">per item</span>` : ""}
-            ${a.doc ? `<small>${esc(a.doc)}</small>` : ""}
-            <small class="mono">${[a.duration != null ? `~${a.duration} s` : "", a.resource ? "on " + a.resource : "", a.tool ? "tool " + a.tool : ""].filter(Boolean).map(esc).join(" · ")}</small></li>`).join("")}</ol>`
-        : `<div class="muted dv-small">No steps yet — the project's actions.py has no actions.</div>`}</div></div>
-
-    <div>${fold("devices", "Devices", devs.length || null)}
-      <div data-body="devices" ${folds.devices ? "" : "hidden"}>
-        <div class="muted dv-small">Simulation is saved to the project's scene: a simulated device answers, nothing real moves.</div>
-        <div class="dv-note" id="wfSimNote" hidden></div>
-        <div id="wfSim"></div>
-        ${devs.length ? `<div class="dv-row2"><button class="btn" type="button" data-all="1">All simulated</button><button class="btn" type="button" data-all="0">All real</button></div>` : ""}
-      </div></div>
-
-    <div>${fold("params", "Run parameters")}
-      <div data-body="params" ${folds.params ? "" : "hidden"}>${paramsHtml()}</div></div>
-
-    <a class="btn btn-ghost dv-link" href="${pageUrl()}" target="_blank" rel="noopener" title="The project page: logs, device buttons, parameters, the pendant">Open project page</a>
-  </div>`;
-  box.querySelector("#wfFlow").onclick = openChart;
-  box.querySelectorAll("[data-side]").forEach(b => b.onclick = () => openSide(b.dataset.side));
-  box.querySelectorAll("[data-fold]").forEach(b => b.onclick = () => {
-    const k = b.dataset.fold;
-    folds[k] = !folds[k];
-    b.setAttribute("aria-expanded", folds[k]);
-    box.querySelector(`[data-body="${k}"]`).hidden = !folds[k];
-  });
-  box.querySelectorAll("[data-all]").forEach(b => b.onclick = () => setSim(devs.map(c => c.name), b.dataset.all === "1"));
-  box.querySelector("#wfSim").addEventListener("change", e => {
-    const el = e.target.closest("[data-sim]");
-    if (el) setSim([el.dataset.sim], el.checked);
-  });
-  lastControls = null;
-  renderControls();
-  renderSim();
+async function setView(v) {
+  if (v === wv) return;
+  const was = wv;
+  wv = v;
+  if (was === "flow" && !(await closeFlowchart())) { wv = was; return; }      // an unsaved chart stays open
+  side = v === "recipes" || v === "replay" ? v : null;
+  if (v) { $("#dvMain").dataset.wv = v; openScene(); } else delete $("#dvMain").dataset.wv;
+  $$("#wfSeg button").forEach(b => b.classList.toggle("on", b.dataset.wv === v));
+  syncFrame();
+  if (v === "flow") openChart();
 }
-
-function paramsHtml() {
-  if (!launchCfg) return `<div class="muted dv-small">Loading…</div>`;
-  const vals = {};
-  for (const [k, spec] of Object.entries(launchCfg.kwargs_schema || {})) if (!k.startsWith("_")) vals[k] = spec && spec.default;
-  for (const [k, v] of Object.entries(launchCfg.kwargs_values || {})) if (!k.startsWith("_")) vals[k] = v;
-  const rows = Object.entries(vals);
-  const fmt = (v) => v == null || v === "" ? "—" : typeof v === "object" ? (Array.isArray(v) ? `${v.length} items` : `${Object.keys(v).length} entries`)
-    : typeof v === "boolean" ? (v ? "yes" : "no") : String(v);
-  const label = (k) => { const t = String(k).replace(/_/g, " ").trim(); return t.charAt(0).toUpperCase() + t.slice(1); };
-  return (rows.length ? `<div class="meta-list">${rows.map(([k, v]) => `<div class="meta-row"><span class="meta-key">${esc(label(k))}</span><span class="meta-val">${esc(fmt(v))}</span></div>`).join("")}</div>`
-    : `<div class="muted dv-small">No parameters.</div>`)
-    + `<div class="muted dv-small">The next run uses these. Change them on the project page.</div>`;
-}
-
-// Launch · Start / Resume · Pause · Park … Kill — the project page's
-// controls (api.js wireCommand: Park and Kill are held, Start passes the
-// device-fault gate). The server merges the saved parameters on Start.
-let lastControls = null;
-function renderControls() {
-  const box = $("#wfControls");
-  if (!box) return;
-  const s = (status.state || "NOT_LAUNCHED").toUpperCase();
-  const err = $("#wfErr");
-  err.hidden = !status.last_error;
-  err.textContent = status.last_error ? `Last error: ${status.last_error}` : "";
-  if (s === lastControls) return;
-  lastControls = s;
-  box.innerHTML = "";
-  const launched = isLaunched(s);
-  const add = (label, cmd, cls = "", disabled = false) => {
-    const b = document.createElement("button");
-    b.className = `btn ${cls}`;
-    b.textContent = label;
-    b.disabled = disabled;
-    wireCommand(b, cmd, async () => {
-      if (cmd === "start" && !(await deviceFaultGate(PROJECT, s === "PAUSED" ? "Resume" : "Start"))) return false;
-      await apiFetch(`/workspace/${encodeURIComponent(PROJECT)}/cmd`, { method: "POST", body: JSON.stringify({ cmd }) });
-      await pollStatus();
-    });
-    box.appendChild(b);
-  };
-  if (!launched) add("Launch", "launch", "btn-primary");
-  else if (isBooting(s)) box.insertAdjacentHTML("beforeend", `<span class="muted">Starting…</span>`);
-  else {
-    const active = isRunning(s) || s === "PARKING";
-    add(isStarted(s) ? "Resume" : "Start", "start", "btn-primary", !canStart(s));
-    add("Pause", "pause", "", !active);
-    add("Park", "park", "btn-warn", !active || s === "PARKING");
-  }
-  if (launched) {
-    box.insertAdjacentHTML("beforeend", `<div class="spacer"></div>`);
-    add("Kill", "kill", "btn-danger");
-  }
-}
+$$("#wfSeg button").forEach(b => b.onclick = () => setView(b.dataset.wv));
 
 async function openChart() {
-  if (flowchartOpen()) return;
-  showView("scene");
+  try { wf = await api("/workflow"); } catch (e) { banner(`Flowchart: ${esc(e.message)}`, true); }
+  if (wv !== "flow") return;
   await openFlowchart({
     view: $("#flowView"), project: PROJECT, charts: wf?.charts || [],
     api: { get: (path) => api(path), post },
-    onSaved: openWorkflow,
+    onClose: () => wv === "flow" && setView(""),
   });
-}
-
-// The 3D view of Workflow: the builder's scene, or — once the project is
-// up — its own live viewer (the runtime's server, as on the project page).
-let view = "scene", liveUrl = "";
-function showView(v) {
-  view = v;
-  $("#sbFrame").hidden = v !== "scene";
-  $("#liveFrame").hidden = v !== "live";
-  $$("#viewSw button").forEach(b => b.classList.toggle("on", b.dataset.v === v));
-}
-$$("#viewSw button").forEach(b => b.onclick = () => {
-  if (b.dataset.v === "live") { side = null; syncFrame(); }
-  showView(b.dataset.v);
-});
-function syncLive() {
-  const s = status.state || "NOT_LAUNCHED";
-  const up = isLaunched(s) && !isBooting(s) && !!info?.port;
-  const url = up ? `${location.protocol}//${location.hostname}:${info.port}` : "";
-  $("#viewSw").hidden = !up;
-  if (url === liveUrl) return;
-  liveUrl = url;
-  const f = $("#liveFrame");
-  if (url) {
-    f.src = `${url}/?theme=${document.documentElement.getAttribute("data-theme") || "light"}`;
-    if (!side && !flowchartOpen()) showView("live");          // it just came up: watch it run
-  } else {
-    f.src = "about:blank";
-    showView("scene");
-  }
-}
-
-function renderSim() {
-  const box = $("#wfSim");
-  if (!box || !info) return;
-  const devs = info.components.filter(c => c.device);
-  if (!devs.length) { box.innerHTML = `<div class="dv-empty">This project's scene has no devices.</div>`; return; }
-  const groups = [["robot", "Robot"], ["camera", "Cameras"], ["device", "Devices"]];
-  box.innerHTML = groups.map(([k, label]) => {
-    const rows = devs.filter(c => c.kind === k);
-    if (!rows.length) return "";
-    return `<div class="dv-grp">${label}</div>` + rows.map(c => `
-      <div class="dv-row"><div class="nm"><b>${esc(c.name)}</b><span>${esc(c.type)}</span></div>
-        <label class="dv-switch"><span>${c.simulation ? "Simulated" : "Real"}</span>
-          <input type="checkbox" data-sim="${esc(c.name)}" ${c.simulation ? "checked" : ""} title="Simulation"/></label></div>`).join("");
-  }).join("");
-}
-
-async function setSim(names, on) {
-  try {
-    const r = await post("/simulation", { components: names, on });
-    if (r.scene_sig) baseSig = r.scene_sig;
-    const note = $("#wfSimNote");
-    if (r.relaunch && note) {
-      note.innerHTML = `<span>The running project still uses the old setting — relaunch it to apply.</span><button class="btn btn-sm" data-relaunch>Relaunch now</button>`;
-      note.hidden = false;
-      note.querySelector("[data-relaunch]").onclick = async () => {
-        note.hidden = true;
-        try { await apiFetch(`/workspace/${encodeURIComponent(PROJECT)}/cmd`, { method: "POST", body: JSON.stringify({ cmd: "relaunch" }) }); }
-        catch (err) { banner(`Relaunch: ${esc(err.message)}`, true); }
-        pollStatus();
-      };
-    }
-  } catch (e) {
-    banner(`Simulation: ${esc(e.message)}`, true);
-  }
-  await loadInfo();
 }
 
 // The theme toggle is the host's: the embedded pages follow it.
@@ -765,7 +563,6 @@ async function loadInfo() {
   schemas.clear();
   for (const c of info.components) if (c.settings) schemas.set(c.name, c.settings);
   pushMenus();
-  renderSim();
 }
 
 async function pollStatus() {
@@ -778,8 +575,6 @@ async function pollStatus() {
   const pill = $("#dvState");
   pill.className = `pill ${stateVariant(s)}`;
   pill.innerHTML = `<span class="dot ${stateVariant(s)}"></span><span>${esc(stateLabel(s))}</span>`;
-  renderControls();
-  syncLive();
   if (tab === "hmi") openHmi();
 }
 

@@ -42,7 +42,7 @@ const SIZE = { round: [160, 44], rect: [230, 70], para: [240, 66], diamond: [200
 const POINTS = { diamond: "50,0 100,50 50,100 0,50", para: "12,0 100,0 88,100 0,100", trap: "0,0 100,0 88,100 12,100" };
 const ico = (d, w = 16) => `<svg width="${w}" height="${w}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
 
-let view = null, api = null, project = "", onSaved = null;
+let view = null, api = null, project = "", onSaved = null, onClose = null;
 let userView = false, paper = null, graph = null, doc = null, name = null, selected = null, dirty = false;
 
 let libsReady = null;
@@ -61,9 +61,9 @@ function loadLibs() {
 export const preloadFlowchart = () => loadLibs().catch(() => {});
 
 // ── open / close ─────────────────────────────────────────────────────
-// opts: {view, api: {get, post}, project, charts, onSaved}
+// opts: {view, api: {get, post}, project, charts, onSaved, onClose}
 export async function openFlowchart(opts) {
-  ({ view, api, project, onSaved } = opts);
+  ({ view, api, project, onSaved, onClose } = opts);
   view.hidden = false;
   document.documentElement.classList.add("dv-flow-open");
   view.innerHTML = `<div class="dv-flow-empty">Loading the flowchart…</div>`;
@@ -80,6 +80,7 @@ export async function closeFlowchart() {
   view.innerHTML = "";
   paper = graph = null;
   dirty = false;
+  onClose && onClose();
   return true;
 }
 export const flowchartOpen = () => !!view && !view.hidden;

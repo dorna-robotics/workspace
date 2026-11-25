@@ -2258,6 +2258,21 @@ function renderDevicesPanel() {
   const list = Array.from(_devices.values()).sort((a, b) => a.id.localeCompare(b.id));
   if (badge) badge.textContent = list.length ? `${list.length}` : "";
   if (!list.length) _setDevicesAttention(0, 0);
+  if (!list.length && _simDevs.size) {
+    // Not running (embedded): the scene's devices, to pick sim or real
+    // before the launch. Recover / Connect come with the bus.
+    if (badge) badge.textContent = `${_simDevs.size}`;
+    const html = [..._simDevs.keys()].sort().map(id => `
+      <div class="device-row" data-device-id="${escAttr(id)}">
+        <span class="dot"></span>
+        <span class="device-id">${escHtml(id)}</span>
+        ${_simSwitch(id)}
+      </div>`).join("");
+    if (_devicesListLastHtml !== html) { el.innerHTML = html; _devicesListLastHtml = html; }
+    if (!_devicesExpanded) { _devicesExpanded = true; setFold($("devicesFold"), true, $("devicesChevron")); }
+    dvRender();
+    return;
+  }
   if (!list.length) {
     const emptyHtml = _devicesKnown ? `<div class="step-empty">No devices declared</div>`
                                     : _pendingListHtml("devices");
@@ -2356,6 +2371,7 @@ function renderDevicesPanel() {
         ${msg ? `<span class="device-msg" title="${escAttr(msg)}">${escHtml(msg)}</span>` : ""}
         ${control}
         ${modePill}
+        ${_simSwitch(d.id)}
       </div>`;
   }).join("");
   _setDevicesAttention(nDown, nRecovering);
@@ -2397,7 +2413,12 @@ function _robotAlarmAction(d) {
 function _wireDeviceListClicks(el) {
   if (!el || el.dataset.delegated === "1") return;
   el.dataset.delegated = "1";
+  el.addEventListener("change", (ev) => {
+    const sw = ev.target.closest("[data-sim]");
+    if (sw) setSimulation(sw.dataset.sim, sw.checked);
+  });
   el.addEventListener("click", async (ev) => {
+    if (ev.target.closest(".sim-sw")) { ev.stopPropagation(); return; }
     // The robot's alarm button: the Operator Controls action itself.
     const clearBtn = ev.target.closest('[data-device-act="clear-alarm"]');
     if (clearBtn) {
@@ -2422,6 +2443,63 @@ function _wireDeviceListClicks(el) {
       if (id) openDeviceModal(id);
     }
   });
+}
+
+// ── Simulation switches (embedded in Developer mode) ────────────────
+// Each scene device's `simulation`, from Developer mode's project info;
+// a switch writes it to the scene (POST …/simulation). A running project
+// keeps the old setting until a relaunch — the note offers one.
+const _embedded = document.documentElement.classList.contains("embedded");
+const _simDevs = new Map();          // scene device name → simulated?
+const _simBusy = new Set();
+const DEV_API = `/dev/api/projects/${encodeURIComponent(wsName)}`;
+
+function _simSwitch(id) {
+  if (!_simDevs.has(id)) return "";
+  const on = _simDevs.get(id);
+  return `<label class="sim-sw" title="Simulation — saved to the project's scene"><span>${on ? "Sim" : "Real"}</span>
+    <input type="checkbox" data-sim="${escAttr(id)}" ${on ? "checked" : ""} ${_simBusy.has(id) ? "disabled" : ""} aria-label="Simulate ${escAttr(id)}"/></label>`;
+}
+
+async function loadSimDevices() {
+  if (!_embedded) return;
+  try {
+    const r = await fetch(`${DEV_API}/info`, { cache: "no-store" });
+    if (!r.ok) return;
+    const j = await r.json();
+    _simDevs.clear();
+    for (const c of j.components || []) if (c.device) _simDevs.set(c.name, !!c.simulation);
+  } catch (_) { return; }
+  _devicesListLastHtml = "";
+  renderDevicesPanel();
+}
+
+async function setSimulation(id, on) {
+  _simBusy.add(id);
+  _simDevs.set(id, on);
+  _devicesListLastHtml = "";
+  renderDevicesPanel();
+  try {
+    const r = await fetch(`${DEV_API}/simulation`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ components: [id], on }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || j.ok === false) throw new Error(j.error || (j.errors || []).join("; ") || r.statusText);
+    if (j.relaunch) {
+      const note = $("simNote");
+      note.innerHTML = `<span>The running project still uses the old setting — relaunch to apply.</span><button class="btn btn-sm" data-relaunch>Relaunch now</button>`;
+      note.hidden = false;
+      note.querySelector("[data-relaunch]").onclick = async () => {
+        note.hidden = true;
+        try { await sendCmd("relaunch"); } catch (e) { toast(String(e.message || e), "bad"); }
+      };
+    }
+  } catch (e) {
+    toast(`Simulation: ${e.message}`, "bad");
+  }
+  _simBusy.delete(id);
+  await loadSimDevices();
 }
 
 // ── Device detail modal ─────────────────────────────────────────────
@@ -3655,6 +3733,7 @@ async function init() {
   _hydrateAriaLabels();
   _setupModalFocusObserver();
   _wireDevicesPanelDelegation();
+  loadSimDevices();
   try {
     const j   = await apiFetch("/workspaces");
     const arr = Array.isArray(j?.workspaces) ? j.workspaces : [];
