@@ -38,7 +38,9 @@ import sys
 import tempfile
 import traceback
 
+import numpy as np
 import yaml
+from dorna2.pose import xyzabc_to_T
 from workspace.j2 import render_text
 
 MAX_POINTS = 8          # a station with more (an SBS adapter has 24) gets its corners and middle
@@ -70,6 +72,32 @@ def _tree(ws, name):
     out = []
     for k in _kids(ws, name):
         out += [k] + _tree(ws, k)
+    return out
+
+
+def _box_xy(b):
+    """A world collision box's outline from above: the x/y extent of its
+    eight corners, turned as the box is (a part rotated 90° swaps its
+    sides), and its top — [x0, y0, sx, sy, top]."""
+    sx, sy, sz = b["scale"]
+    T = np.asarray(xyzabc_to_T(b["pose"]), dtype=float)
+    c = np.array([[dx * sx / 2, dy * sy / 2, dz * sz / 2, 1.0]
+                  for dx in (-1, 1) for dy in (-1, 1) for dz in (-1, 1)]) @ T.T
+    x0, y0, z1 = c[:, 0].min(), c[:, 1].min(), c[:, 2].max()
+    return [round(x0, 1), round(y0, 1), round(c[:, 0].max() - x0, 1), round(c[:, 1].max() - y0, 1), round(z1, 1)]
+
+
+def _held(ws, name, foot):
+    """An adapter's red box is what it holds (a rack, a vial plate): the
+    outlines of the nearest parts standing on it that have one. An SBS
+    adapter plate is its own box; so is an adapter holding nothing."""
+    t = str(getattr(ws.components.get(name), "type", "") or "")
+    if "adapter" not in t or t.startswith("adapter_plate_sbs"):
+        return []
+    out, level = [], [k for k in _kids(ws, name) if getattr(ws.components[k], "type", None) != "collision_box"]
+    while level and not out:
+        out = [f for k in level for f in foot.get(k, [])]
+        level = [g for k in level for g in _kids(ws, k) if getattr(ws.components[g], "type", None) != "collision_box"]
     return out
 
 
@@ -153,10 +181,7 @@ def build(main_py, port=5997):
     world, _, _ = ws.compute_collision_boxes(0)
     foot = {}
     for b in world:
-        x, y, z = b["pose"][:3]
-        sx, sy, sz = b["scale"]
-        foot.setdefault(b.get("componentName"), []).append(
-            [round(x - sx / 2, 1), round(y - sy / 2, 1), round(sx, 1), round(sy, 1), round(z + sz / 2, 1)])
+        foot.setdefault(b.get("componentName"), []).append(_box_xy(b))
     plates = {}
     for n, c in ws.components.items():
         if not str(getattr(c, "type", n)).startswith("fixture_plate") and not n.startswith("fixture_plate"):
@@ -231,7 +256,7 @@ def build(main_py, port=5997):
         for k in on:
             t = _nice(getattr(ws.components[k], "type", k))
             counts[t] = counts.get(t, 0) + 1
-        fp = foot.get(comp.name) or []
+        fp = _held(ws, comp.name, foot) or foot.get(comp.name) or []
         if not fp:                                  # an adapter without a collision box: around its points
             xs, ys = [p["xyz"][0] for p in points], [p["xyz"][1] for p in points]
             fp = [[min(xs) - 25, min(ys) - 25, max(xs) - min(xs) + 50, max(ys) - min(ys) + 50, 0]]
