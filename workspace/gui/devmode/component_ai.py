@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import string
 
 from gui.ai import agent
 from . import component_kinds as CK
@@ -35,8 +34,8 @@ Frame: millimetres, Z up, origin at the part's base centre. An anchor is
 [x, y, z, rx, ry, rz] (degrees). Workspace's conventions:
 - "center" [0,0,0,0,0,0] always exists; "top" sits on the top face; "place"
   is where a thing set on the part lands.
-- Slots in a grid are named row letter + column number: A1 is the −x, −y
-  corner, columns run along +x, rows (A, B, …) along +y. A slot anchor sits
+- Slots in a grid are named row letter(s) + column number (after row Z come
+  AA, AB…): A1 is the −x, −y corner, columns run along +x, rows (A, B, …) along +y. A slot anchor sits
   at the slot's FLOOR (the hole's bottom), rz 45 like Workspace's racks unless
   the user says otherwise.
 - Mounting holes for fixture plates are hole_0, hole_1, … at z 0.
@@ -105,7 +104,7 @@ TOOL = {
                 "name": {"type": "string"},
                 "pose": {"type": "array", "items": {"type": "number"}, "minItems": 6, "maxItems": 6}},
                 "required": ["name", "pose"]}},
-            "grids": {"type": "array", "description": "slots named row letter + column (A1 at −x, −y; columns +x, rows +y)",
+            "grids": {"type": "array", "description": "slots named row letter(s) + column (A1 at −x, −y; columns +x, rows +y)",
                       "items": {"type": "object", "properties": {
                           "rows": {"type": "integer"}, "cols": {"type": "integer"},
                           "first": {"type": "array", "items": {"type": "number"}, "description": "A1's [x, y, z]"},
@@ -128,11 +127,12 @@ TOOL = {
 
 def expand_grid(g):
     rows, cols = int(g["rows"]), int(g["cols"])
+    if not (0 < rows and 0 < cols and rows * cols <= 4000):
+        raise ValueError(f"a grid of {rows} × {cols} slots — at most 4000, at least 1 × 1")
     x0, y0, z0 = (list(g["first"]) + [0, 0, 0])[:3]
     dx, dy = (list(g["pitch"]) + [0, 0])[:2]
     rz, pre = float(g.get("rz", 45)), str(g.get("prefix") or "")
-    letters = string.ascii_uppercase
-    return [{"name": f"{pre}{letters[r]}{c + 1}", "pose": [round(x0 + c * dx, 2), round(y0 + r * dy, 2), round(z0, 2), 0, 0, rz]}
+    return [{"name": f"{pre}{CK.row_name(r)}{c + 1}", "pose": [round(x0 + c * dx, 2), round(y0 + r * dy, 2), round(z0, 2), 0, 0, rz]}
             for r in range(rows) for c in range(cols)]
 
 
@@ -147,11 +147,16 @@ def apply(part, anchors, boxes):
     for g in part.get("grids") or []:
         for a in expand_grid(g):
             out[a["name"]] = a["pose"]
+    def nums(v, n, what):
+        v = [float(x) for x in v]
+        if len(v) != n:
+            raise ValueError(f"{what} needs {n} numbers")
+        return v
     for a in part.get("anchors") or []:
-        out[a["name"]] = [float(v) for v in a["pose"]][:6]
+        out[str(a["name"])] = nums(a["pose"], 6, f"anchor {a['name']}")
     out.setdefault("center", [0, 0, 0, 0, 0, 0])
-    new_boxes = [{"center": b["center"], "size": b["size"]} for b in part["collision_boxes"]] \
-        if part.get("collision_boxes") else boxes
+    new_boxes = [{"center": nums(b["center"], 3, "a box centre"), "size": nums(b["size"], 3, "a box size")}
+                 for b in part["collision_boxes"]] if part.get("collision_boxes") else boxes
     return [{"name": k, "pose": v} for k, v in out.items()], new_boxes
 
 
@@ -195,12 +200,16 @@ async def design(data):
         results = []
         for c in calls:
             if c.name == "set_part":
-                used = dict(c.input)
-                anchors, boxes = apply(used, anchors, boxes)
-                if used.get("kind") in CK.KINDS:
-                    kind = used["kind"]
-                settings.update({k: v for k, v in (used.get("settings") or {}).items() if v is not None})
-                out = {"ok": True, "anchors": len(anchors), "collision_boxes": len(boxes)}
+                try:                                      # a malformed call goes back to the model, not a crash
+                    anchors, boxes = apply(dict(c.input), anchors, boxes)
+                except (KeyError, TypeError, ValueError, IndexError) as ex:
+                    out = {"error": f"set_part not applied: {type(ex).__name__}: {ex}"}
+                else:
+                    used = dict(c.input)
+                    if used.get("kind") in CK.KINDS:
+                        kind = used["kind"]
+                    settings.update({k: v for k, v in (used.get("settings") or {}).items() if v is not None})
+                    out = {"ok": True, "anchors": len(anchors), "collision_boxes": len(boxes)}
             else:
                 try:                                      # numpy work off the server's event loop
                     out = await loop.run_in_executor(None, MM.run, c.name, c.input, tris)

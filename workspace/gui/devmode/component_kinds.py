@@ -75,7 +75,24 @@ KINDS = {
         rule="'center' at the base centre, 'top' on the top face, 'place' where a thing set on it lands."),
 }
 
-SLOT = re.compile(r"^([A-Z])(\d+)$")
+SLOT = re.compile(r"^([A-Z]+)(\d+)$")
+
+
+def row_name(r):
+    """Row r's letters: A…Z, then AA, AB… (a 1536-well plate's 32 rows end at AF)."""
+    s = ""
+    r += 1
+    while r:
+        r, m = divmod(r - 1, 26)
+        s = string.ascii_uppercase[m] + s
+    return s
+
+
+def row_index(name):
+    n = 0
+    for ch in name:
+        n = n * 26 + ord(ch) - 64
+    return n - 1
 
 
 def detect(*texts):
@@ -123,7 +140,7 @@ def fit_grid(holes):
     tol = max(1.5, d * 0.3)
     xs, ys = _clusters([h["x"] for h in main], tol), _clusters([h["y"] for h in main], tol)
     cols, rows = len(xs), len(ys)
-    if rows > 26 or rows * cols < len(main) or rows * cols > len(main) * 1.25:
+    if rows * cols < len(main) or rows * cols > len(main) * 1.25:
         return None
     px = (xs[-1] - xs[0]) / (cols - 1) if cols > 1 else 0
     py = (ys[-1] - ys[0]) / (rows - 1) if rows > 1 else 0
@@ -141,9 +158,8 @@ def fit_grid(holes):
 
 
 def grid_anchors(g, rz=45):
-    letters = string.ascii_uppercase
     x0, y0, z0 = g["first"]
-    return {f"{letters[r]}{c + 1}": [_r(x0 + c * g["pitch"][0]), _r(y0 + r * g["pitch"][1]), _r(z0), 0, 0, rz]
+    return {f"{row_name(r)}{c + 1}": [_r(x0 + c * g["pitch"][0]), _r(y0 + r * g["pitch"][1]), _r(z0), 0, 0, rz]
             for r in range(g["rows"]) for c in range(g["cols"])}
 
 
@@ -196,9 +212,8 @@ def template(kind, dims=None, top=None, holes=None, xy=None, pegs=None):
         a.update(place=[0, 0, floor, 0, 0, 0], top=[0, 0, H, 0, 0, 0])
         if g:
             a.update(grid_anchors(g))
-            L = string.ascii_uppercase
             where = f"floor z {floor:g}" if on == "holes" else f"at the surface the pegs stand on, z {floor:g}"
-            notes.append(f"{g['rows'] * g['cols']} slots A1–{L[g['rows'] - 1]}{g['cols']} from the {on} found "
+            notes.append(f"{g['rows'] * g['cols']} slots A1–{row_name(g['rows'] - 1)}{g['cols']} from the {on} found "
                          f"(Ø {g['d']:g} mm, {g['pitch'][0]:g} × {g['pitch'][1]:g} mm pitch, {where})")
             if g["extra"]:
                 notes.append(f"{g['extra']} other {on[:-1]}(s) of another size left out — say if they are slots too")
@@ -293,7 +308,7 @@ def slot_grid(anchors):
     for k, v in anchors.items():
         m = SLOT.match(k)
         if m:
-            pos[(ord(m.group(1)) - 65, int(m.group(2)) - 1)] = v
+            pos[(row_index(m.group(1)), int(m.group(2)) - 1)] = v
     if not pos:
         return None
     R = max(r for r, _ in pos) + 1
@@ -312,7 +327,7 @@ def slot_grid(anchors):
                for (r, c), v in pos.items()):
             px, py = (pr, pc) if transpose else (pc, pr)
             g = {"offset": [round(a1[0], 3), round(a1[1], 3), round(a1[2], 3)], "pitch": [round(px, 3), round(py, 3), 0],
-                 "rows": [chr(65 + r) for r in range(R)], "cols": list(range(1, C + 1)), "rvec_safe": rv}
+                 "rows": [row_name(r) for r in range(R)], "cols": list(range(1, C + 1)), "rvec_safe": rv}
             if transpose:
                 g["transpose"] = True
             return g

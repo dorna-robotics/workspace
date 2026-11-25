@@ -395,6 +395,26 @@ class FlowchartHandler(_Base):
 
 
 # ── the component builder (web/compbuilder.js) ─────────────────────
+# what a malformed request raises below parts.PartError's own messages
+BAD_INPUT = (ValueError, TypeError, KeyError, IndexError, AttributeError)
+
+
+def _bad(e):
+    return e if isinstance(e, parts.PartError) else f"That request could not be used ({type(e).__name__}: {e})."
+
+
+def _forget_type(ctype):
+    """A deleted project part out of the builder's catalog — or, when it
+    shadowed a library type of the same name, that library type back."""
+    import gui.scene_builder.server as sb
+    lib = sb.scan_registered_components().get(ctype)
+    if lib:
+        sb.load_module_from_path(lib, f"_library_component_{ctype}")      # its @register again
+        sb.COMPONENT_MAP[ctype] = lib
+    else:
+        sb.COMPONENT_MAP.pop(ctype, None)
+
+
 class PartHandler(_Base):
     def get(self, name):
         p = self.project(name)
@@ -402,8 +422,8 @@ class PartHandler(_Base):
             return
         try:
             self.finish({"ok": True, **parts.read(p[1], self.get_argument("type", ""))})
-        except parts.PartError as e:
-            self.fail(400, str(e))
+        except BAD_INPUT as e:
+            self.fail(400, str(_bad(e)))
 
     async def post(self, name):
         p = self.project(name)
@@ -411,15 +431,16 @@ class PartHandler(_Base):
             return
         b = self.body()
         try:
+            if not isinstance(b, dict):
+                raise parts.PartError("send the part as a JSON object")
             if b.get("delete"):
                 scene = await _off_loop(scene_edit.merged, p[1])
                 out = parts.delete(p[1], b.get("type"), scene)
-                import gui.scene_builder.server as sb
-                sb.COMPONENT_MAP.pop(out["deleted"], None)     # the builder's catalog drops it
+                _forget_type(out["deleted"])
             else:
                 out = await _off_loop(parts.save, p[1], b)
-        except parts.PartError as e:
-            return self.fail(400, str(e))
+        except BAD_INPUT as e:
+            return self.fail(400, str(_bad(e)))
         self.finish({"ok": True, **out})
 
 
@@ -443,17 +464,20 @@ class ComponentTemplateHandler(_Base):
     def post(self):
         CK = component_kinds
         d = self.body()
-        kind = d.get("kind") if d.get("kind") in CK.KINDS else CK.detect(d.get("type"), d.get("file_name"), d.get("description"))
-        self.finish({"ok": True, "kinds": CK.kinds(),
-                     **CK.template(kind, d.get("dims"), d.get("top"), d.get("holes"), d.get("xy"), d.get("pegs"))})
+        try:
+            kind = d.get("kind") if d.get("kind") in CK.KINDS else CK.detect(d.get("type"), d.get("file_name"), d.get("description"))
+            self.finish({"ok": True, "kinds": CK.kinds(),
+                         **CK.template(kind, d.get("dims"), d.get("top"), d.get("holes"), d.get("xy"), d.get("pegs"))})
+        except BAD_INPUT as e:
+            self.finish({"ok": False, "error": str(_bad(e))})
 
 
 class ComponentMeshHandler(_Base):
     async def post(self):
         try:
             self.finish({"ok": True, **await _off_loop(mesh_measure.store, self.body().get("tris") or "")})
-        except parts.PartError as e:
-            self.finish({"ok": False, "error": str(e)})
+        except BAD_INPUT as e:
+            self.finish({"ok": False, "error": str(_bad(e))})
 
 
 class ComponentAIHandler(_Base):
@@ -474,6 +498,8 @@ class ComponentAIHandler(_Base):
             msg = "Couldn't reach the Dorna server — check this robot's internet connection."
         except anthropic.APIStatusError as e:
             msg = f"Dorna AI couldn't answer (error {e.status_code}). Try again in a moment."
+        except BAD_INPUT as e:
+            msg = str(_bad(e))
         self.finish({"ok": False, "error": msg})
 
 

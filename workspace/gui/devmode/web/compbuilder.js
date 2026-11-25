@@ -29,12 +29,15 @@ const ICON = {
 
 let st = null;   // the open builder's state
 
-// openComponentBuilder({api, type?, onSaved}) — api is the project's
-// /dev/api/projects/<name> base; type edits that project part.
-export function openComponentBuilder({ api, type: editType = null, onSaved = null }) {
+// openComponentBuilder({api, type?, onSaved, inUse}) — api is the project's
+// /dev/api/projects/<name> base; type edits that project part; inUse(type)
+// names the parts of that type in the Scene builder's scene, saved or not.
+export function openComponentBuilder({ api, type: editType = null, onSaved = null, inUse = () => [] }) {
   close();
+  const draco = new DRACOLoader();
+  draco.setDecoderPath("/vendor/three-addons/draco/");
   st = {
-    api, onSaved, glbB64: null, dims: null, sel: null, top: null, holes: [], pegs: [], levels: [],
+    api, onSaved, inUse, draco, glbB64: null, dims: null, sel: null, top: null, holes: [], pegs: [], levels: [],
     anchors: [], boxes: [], history: [], editing: editType, kind: null, kindSet: false, settings: {}, touched: false,
     showBoxes: true, showGrid: true, showEdges: true, showTags: true,
   };
@@ -177,8 +180,10 @@ async function loadExisting(type) {
   st.boxes = (r.collision_boxes || []).map((b) => ({ c: b.pose.slice(0, 3).map(Number), s: b.scale.map(Number) }));
   renderTables(); sync();
   if (!r.glb) { say("This component has no model yet — choose its .glb."); return; }
-  // the stored model is already in Workspace's frame: millimetres, Z up
+  // the stored model is already in Workspace's frame — millimetres, Z up — and
+  // stays as it is: units and up axis apply to a newly chosen file only
   $("#cbUnits").value = "1"; $("#cbUp").value = "z";
+  $("#cbUnits").disabled = $("#cbUp").disabled = true;
   const url = `${st.api}/part/${encodeURIComponent(type)}/${encodeURIComponent(type)}.glb`;
   try {
     const res = await fetch(url, { cache: "no-store" });
@@ -186,33 +191,47 @@ async function loadExisting(type) {
     const buf = await res.arrayBuffer();
     if (me !== st) return;
     // the model's folder as the base: a compressed model's <type>.glb.bin sits next to it
-    loader().parse(buf, url.replace(/[^/]*$/, ""), (gltf) => me === st && onModel(gltf.scene, `${type}.glb`),
+    loader(me).parse(buf, url.replace(/[^/]*$/, ""), (gltf) => me === st && onModel(gltf.scene, `${type}.glb`),
       (err) => say("Couldn't read its model: " + err.message, true));
   } catch (e) { say(e.message, true); }
 }
 
 async function remove(type) {
+  const used = st.inUse(type);
+  if (used.length) {
+    say(`${type} is in the Scene builder's scene (${used.slice(0, 6).join(", ")}${used.length > 6 ? "…" : ""}) — remove it there and save the scene first`, true);
+    return;
+  }
+  const me = st;
   if (!(await confirmIt(`Delete ${type}?`, `Its folder components/${type}/ — class and model — is removed from this project.`, "Delete"))) return;
-  const d = await jpost(`${st.api}/part`, { type, delete: true });
-  if (!d.ok) { say(d.error || "Couldn't delete it", true); return; }
-  const onSaved = st.onSaved;
-  close();
-  if (onSaved) onSaved({ deleted: type });
+  const d = await jpost(`${me.api}/part`, { type, delete: true });
+  if (!d.ok) { if (me === st) say(d.error || "Couldn't delete it", true); return; }
+  if (me === st) close();
+  if (me.onSaved) me.onSaved({ deleted: type });
 }
 
 export function close() {
   if (!st) return;
   cancelAnimationFrame(st.raf);
   st.observers.forEach((o) => o.disconnect());
-  try { st.renderer.dispose(); } catch (_) {}
+  st.controls.dispose();
+  st.scene.traverse((o) => {                       // the model, edges, marks, grid: their GPU memory
+    if (o.geometry) o.geometry.dispose();
+    for (const m of [].concat(o.material || [])) { for (const v of Object.values(m)) if (v && v.isTexture) v.dispose(); m.dispose(); }
+  });
+  st.scene.environment.dispose();
+  st.pmrem.dispose();
+  st.draco.dispose();                              // its decoder workers
+  st.renderer.dispose();
+  st.renderer.forceContextLoss();                  // the WebGL context now, not at garbage collection
   st.bg.remove();
   st = null;
 }
 
-function loader() {
-  const l = new GLTFLoader(), draco = new DRACOLoader();
-  draco.setDecoderPath("/vendor/three-addons/draco/");
-  l.setDRACOLoader(draco);
+// a GLTF loader on the dialog's one DRACOLoader (disposed with it)
+function loader(s) {
+  const l = new GLTFLoader();
+  l.setDRACOLoader(s.draco);
   return l;
 }
 
@@ -253,6 +272,7 @@ function setupView(canvas) {
   const envScene = new THREE.Scene(), sphere = new THREE.Mesh(new THREE.SphereGeometry(100, 64, 64), new THREE.MeshBasicMaterial({ map: tex, side: THREE.BackSide }));
   sphere.rotation.x = Math.PI / 2; envScene.add(sphere);
   scene.environment = pmrem.fromScene(envScene).texture;
+  tex.dispose(); sphere.geometry.dispose(); sphere.material.dispose();
   scene.environmentIntensity = 0.9;
   scene.add(new THREE.HemisphereLight(0xdde8ff, 0x39414f, 0.85));
   const key = new THREE.DirectionalLight(0xfff4e0, 0.65); key.position.set(1200, 900, 1500); scene.add(key);
@@ -265,7 +285,7 @@ function setupView(canvas) {
   controls.minDistance = 5; controls.maxDistance = 50000;
   controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE; controls.mouseButtons.RIGHT = THREE.MOUSE.PAN; controls.mouseButtons.MIDDLE = THREE.MOUSE.DOLLY;
   const marks = new THREE.Group(); scene.add(marks);
-  Object.assign(st, { renderer, scene, camera, controls, marks, model: null, grid: null, gridR: 0, dirty: true,
+  Object.assign(st, { renderer, scene, camera, controls, marks, pmrem, model: null, grid: null, gridR: 0, dirty: true,
                       tags: canvas.parentElement.querySelector(".cb-tags") });
   controls.addEventListener("change", redraw);
   controls.addEventListener("start", () => { if (st) st.camMoved = true; });
@@ -331,7 +351,7 @@ function placeTags() {
   const wanted = (a, i) => {
     const k = "a" + i;
     if (!many || st.sel === k || st.hover === k) return true;
-    if (g && g.idx.has(i)) return g.corners.has(a.name) || (gridOn && /^(A\d+|[A-Z]1)$/.test(a.name));
+    if (g && g.idx.has(i)) return g.corners.has(a.name) || (gridOn && /^(A\d+|[A-Z]+1)$/.test(a.name));
     return !SLOT_RE.test(a.name);
   };
   // the viewer's own buttons are a no-go zone: a tag never hides under them
@@ -386,14 +406,17 @@ function addEdges(obj) {
 
 function loadFile(file) {
   if (!/\.glb$/i.test(file.name)) { say("Choose a .glb file", true); return; }
-  const reader = new FileReader();
+  const reader = new FileReader(), me = st;
   reader.onload = () => {
+    if (me !== st) return;                        // the dialog closed (or another opened) meanwhile
     const buf = reader.result, bytes = new Uint8Array(buf);
     let bin = "";
     for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
     st.glbB64 = btoa(bin);
-    // millimetres, Z up by default (Workspace's frame); the menus change it
-    loader().parse(buf, "", (gltf) => onModel(gltf.scene, file.name), (err) => say("Couldn't read that model: " + err.message, true));
+    // a new file: its own units and up axis (millimetres, Z up by default — Workspace's frame)
+    st.bg.querySelector("#cbUnits").disabled = st.bg.querySelector("#cbUp").disabled = false;
+    loader(me).parse(buf, "", (gltf) => me === st && onModel(gltf.scene, file.name),
+      (err) => me === st && say("Couldn't read that model: " + err.message, true));
   };
   reader.readAsArrayBuffer(file);
   const idEl = st.bg.querySelector("#cbType");
@@ -761,7 +784,7 @@ function fitGrid(feats) {
   };
   const xs = clusters(main.map((h) => h.x)), ys = clusters(main.map((h) => h.y));
   const cols = xs.length, rows = ys.length;
-  if (rows > 26 || rows * cols < main.length || rows * cols > main.length * 1.25) return null;
+  if (rows * cols < main.length || rows * cols > main.length * 1.25) return null;
   const px = cols > 1 ? (xs[cols - 1] - xs[0]) / (cols - 1) : 0, py = rows > 1 ? (ys[rows - 1] - ys[0]) / (rows - 1) : 0;
   if (xs.some((x, i) => Math.abs(x - (xs[0] + i * px)) > tol) || ys.some((y, i) => Math.abs(y - (ys[0] + i * py)) > tol)) return null;
   return { rows, cols, pitch: [r1(px), r1(py)], d: r1(d), count: main.length };
@@ -862,10 +885,13 @@ function sync() {
 
 // A1… slot anchors that make a full, regular grid (columns along x, rows along y,
 // one height and turn) — shown as one "Slots A1–H12 (96)" row, edited as a grid
-const SLOT_RE = /^([A-Z])(\d+)$/;
+const SLOT_RE = /^([A-Z]+)(\d+)$/;
+// row letters as Workspace's racks name them: A…Z, then AA, AB… (component_kinds.row_name)
+const rowName = (r) => { let s = ""; for (r += 1; r; r = Math.floor((r - 1) / 26)) s = String.fromCharCode(65 + (r - 1) % 26) + s; return s; };
+const rowIndex = (s) => [...s].reduce((n, c) => n * 26 + c.charCodeAt(0) - 64, 0) - 1;
 function slotGrid(anchors) {
   const pos = new Map();
-  anchors.forEach((a, i) => { const m = SLOT_RE.exec(a.name); if (m) pos.set(`${m[1].charCodeAt(0) - 65},${+m[2] - 1}`, i); });
+  anchors.forEach((a, i) => { const m = SLOT_RE.exec(a.name); if (m) pos.set(`${rowIndex(m[1])},${+m[2] - 1}`, i); });
   if (pos.size < 4) return null;
   let R = 0, C = 0;
   for (const k of pos.keys()) { const [r, c] = k.split(",").map(Number); R = Math.max(R, r + 1); C = Math.max(C, c + 1); }
@@ -877,7 +903,7 @@ function slotGrid(anchors) {
     if (Math.abs(p[0] - (a1[0] + c * px)) > 0.05 || Math.abs(p[1] - (a1[1] + r * py)) > 0.05 || Math.abs(p[2] - a1[2]) > 0.05
         || [3, 4, 5].some((j) => Math.abs(p[j] - a1[j]) > 0.01)) return null;
   }
-  const last = String.fromCharCode(64 + R);
+  const last = rowName(R - 1);
   return { rows: R, cols: C, first: a1.slice(0, 3), pitch: [Math.round(px * 100) / 100, Math.round(py * 100) / 100],
            rot: a1.slice(3, 6), idx: new Set(pos.values()), last: last + C, corners: new Set(["A1", "A" + C, last + "1", last + C]) };
 }
@@ -930,7 +956,7 @@ function renderTables() {
           else if (f === "px") g.pitch[0] = v; else if (f === "py") g.pitch[1] = v; else if (f === "rz") g.rot[2] = v;
           st.anchors.forEach((a, j) => {
             if (!g.idx.has(j)) return;
-            const m = SLOT_RE.exec(a.name), r = m[1].charCodeAt(0) - 65, c = +m[2] - 1;
+            const m = SLOT_RE.exec(a.name), r = rowIndex(m[1]), c = +m[2] - 1;
             a.p = [g.first[0] + c * g.pitch[0], g.first[1] + r * g.pitch[1], g.first[2], g.rot[0], g.rot[1], g.rot[2]]
               .map((x) => Math.round(x * 100) / 100);
           });
@@ -981,10 +1007,9 @@ async function save() {
     collision_boxes: st.boxes.map((b) => ({ pose: [...b.c, 0, 0, 0], scale: b.s })),
   };
   $("#cbSave").disabled = true; say("Saving…");
-  const r = await jpost(`${st.api}/part`, body);
-  if (!st) return;
-  if (!r.ok) { $("#cbSave").disabled = false; say(r.error || "Save failed", true); return; }
-  const onSaved = st.onSaved;
-  close();
-  if (onSaved) onSaved(r);
+  const me = st;
+  const r = await jpost(`${me.api}/part`, body);
+  if (!r.ok) { if (me === st) { $("#cbSave").disabled = false; say(r.error || "Save failed", true); } return; }
+  if (me === st) close();
+  if (me.onSaved) me.onSaved(r);                 // saved even if the dialog was closed meanwhile
 }

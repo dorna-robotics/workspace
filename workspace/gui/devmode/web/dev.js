@@ -279,7 +279,8 @@ async function buildComponent(type) {
     banner(`Saved ${esc(r.type)} to components/${esc(r.type)}/ — it is in New component now.`
       + (type ? " Parts already placed show the change when the Scene builder reloads." : ""));
     $("#sbFrame").contentWindow?.__sbOpenInsert?.();
-  } });
+  }, inUse: (t) => Object.entries($("#sbFrame").contentWindow?.builderState?.components || {})   // saved or not
+    .filter(([, m]) => m && m.type === t).map(([n]) => n) });
 }
 
 // The project's picture, the AI builder's standard view (scene builder

@@ -112,9 +112,13 @@ def _check_type(ctype):
 
 
 def _num(v, n, what):
-    if not isinstance(v, (list, tuple)) or len(v) != n:
-        raise PartError(f"{what} needs {n} numbers")
-    return [round(float(x), 3) for x in v]
+    try:
+        out = [round(float(x), 3) for x in v] if isinstance(v, (list, tuple)) and len(v) == n else None
+    except (TypeError, ValueError):
+        out = None
+    if out is None or not all(math.isfinite(x) for x in out):
+        raise PartError(f"{what} needs {n} finite numbers")
+    return out
 
 
 def wrap_gltf(raw, scale=1.0, up="z"):
@@ -172,26 +176,8 @@ def _kind_source(kind, anchors, settings, dims):
     return anchors, "".join(f"\n        {k}={v!r}," for k, v in extra.items()), after
 
 
-def _library_types(proj):
-    """Types the library (or another project) already registers — not this project's own."""
-    import gui.scene_builder.server as sb
-    mine = str(Path(proj).resolve() / "components") + "/"
-    return {t for t, f in sb.COMPONENT_MAP.items() if not str(Path(f).resolve()).startswith(mine)}
-
-
-def save(proj, data):
-    """{type, edit?, description, kind, settings, dims, anchors, collision_boxes,
-    glb_b64?, unit_scale, up, file_name} → {type, kind, files}. A new part
-    needs its model; an edit keeps the model it has unless a new one comes."""
-    ctype = _check_type(data.get("type"))
-    d = folder(proj, ctype)
-    if not data.get("edit"):
-        if d.exists():
-            raise PartError(f"the project already has a component {ctype} — pick another id, or edit that one")
-        if ctype in _library_types(proj):
-            raise PartError(f"{ctype} is a library component already — pick another id")
-    elif not (d / f"{ctype}.py").is_file():
-        raise PartError(f"no project component {ctype}")
+def _render(ctype, data):
+    """(kind, the <type>.py source) for the editor's values."""
     anchors = {}
     for name, pose in (data.get("anchors") or {}).items():
         name = str(name).strip()
@@ -199,34 +185,27 @@ def save(proj, data):
             raise PartError(f"bad anchor name '{name}'")
         anchors[name] = _num(pose, 6, f"anchor {name}")
     anchors = {"center": [0.0] * 6, **anchors}
-    boxes = [{"pose": _num(b.get("pose"), 6, f"collision box {i + 1} pose"),
-              "scale": _num(b.get("scale"), 3, f"collision box {i + 1} size")}
-             for i, b in enumerate(data.get("collision_boxes") or [])]
+    boxes = []
+    for i, b in enumerate(data.get("collision_boxes") or []):
+        if not isinstance(b, dict):
+            raise PartError(f"collision box {i + 1} needs a pose and a scale")
+        boxes.append({"pose": _num(b.get("pose"), 6, f"collision box {i + 1} pose"),
+                      "scale": _num(b.get("scale"), 3, f"collision box {i + 1} size")})
     kind = str(data.get("kind") or "") or CK.detect(ctype, data.get("file_name"), data.get("description"))
     if kind not in CK.KINDS:
         raise PartError(f"unknown kind {kind!r}")
-
-    glb = d / f"{ctype}.glb"
-    raw = None
-    if data.get("glb_b64"):
-        raw = base64.b64decode(str(data["glb_b64"]).split(",")[-1])
-        if raw[:4] != b"glTF" and raw.lstrip()[:1] != b"{":
-            raise PartError("that file is not a glTF model (.glb)")
-        if len(raw) > 60_000_000:
-            raise PartError("the model is over 60 MB — simplify it first")
-        if raw[:4] != b"glTF" and any(not str(b.get("uri", "data:")).startswith("data:")
-                                      for b in json.loads(raw.decode("utf-8")).get("buffers", [])):
-            raise PartError("this glTF references external files — export a single binary .glb instead")
-        up = str(data.get("up") or "z").lower()
-        if up not in ("x", "y", "z"):
-            raise PartError("the up axis is x, y or z")
-        raw = wrap_gltf(raw, float(data.get("unit_scale") or 1.0), up)
-    elif not glb.is_file():
-        raise PartError("upload the part's .glb model")
+    settings = data.get("settings") or {}
+    if not isinstance(settings, dict):
+        raise PartError("settings must be an object")
+    for k in ("twist", "pitch"):
+        if settings.get(k) is not None:
+            settings[k] = _num([settings[k]], 1, k)[0]
+    if settings.get("size") is not None:
+        settings["size"] = _num(settings["size"], 3, "size")
+    dims = _num(data["dims"], 3, "dims") if data.get("dims") else None
 
     desc = str(data.get("description") or "").strip() or f"Custom part {ctype}, made in Developer mode."
     doc = desc.replace('"""', "'''").replace("\\", "/")
-    dims = data.get("dims")
     if dims:
         doc += f"\n\n    Measured off {ctype}.glb (mm, origin at the base, centered in XY): " \
                f"{dims[0]:.1f} x {dims[1]:.1f} x {dims[2]:.1f}."
@@ -238,12 +217,76 @@ def save(proj, data):
                                    f"\"padding_enabled\": True}}" for b in boxes) + "\n        ]"
     base = CK.KINDS[kind]["base"]
     if base:
-        anchors, extra, after = _kind_source(kind, anchors, data.get("settings") or {}, dims)
+        anchors, extra, after = _kind_source(kind, anchors, settings, dims)
         src = TEMPLATE_BASED.format(type=ctype, cls=cls, doc=doc, kind=kind, mod=base[0], base=base[1],
                                     anchors=fmt(anchors), boxes=box_src, extra=extra, after=after)
     else:
         src = TEMPLATE.format(type=ctype, cls=cls, doc=doc, kind=kind, anchors=fmt(anchors), boxes=box_src)
     compile(src, f"{ctype}.py", "exec")          # never write a class that would not import
+    return kind, src
+
+
+def _model(data):
+    """The uploaded model in Workspace's frame, or None when none came."""
+    if not data.get("glb_b64"):
+        return None
+    try:
+        raw = base64.b64decode(str(data["glb_b64"]).split(",")[-1], validate=True)
+    except ValueError:
+        raise PartError("the model did not arrive whole — choose the file again")
+    if len(raw) > 60_000_000:
+        raise PartError("the model is over 60 MB — simplify it first")
+    up = str(data.get("up") or "z").lower()
+    if up not in ("x", "y", "z"):
+        raise PartError("the up axis is x, y or z")
+    scale = _num([data.get("unit_scale") or 1.0], 1, "the units")[0]
+    if scale <= 0:
+        raise PartError("the units must be a positive scale")
+    try:
+        if raw[:4] == b"glTF":               # a .glb: its JSON chunk must be whole
+            jlen, kind = struct.unpack("<I4s", raw[12:20])
+            if kind != b"JSON" or len(raw) < 20 + jlen:
+                raise ValueError("cut short")
+            j = json.loads(raw[20:20 + jlen].decode("utf-8").rstrip(" \x00"))
+        else:
+            j = json.loads(raw.decode("utf-8"))
+        if not isinstance(j, dict) or not j.get("meshes"):
+            raise ValueError("no meshes")
+        external = raw[:4] != b"glTF" and any(not str(b.get("uri", "data:")).startswith("data:") for b in j.get("buffers", []))
+        out = wrap_gltf(raw, scale, up)
+    except (ValueError, struct.error, AttributeError, TypeError):
+        raise PartError("that file is not a readable glTF model (.glb)")
+    if external:
+        raise PartError("this glTF references external files — export a single binary .glb instead")
+    return out
+
+
+def _library_types(proj):
+    """Types the library (or another project) already registers — not this project's own."""
+    import gui.scene_builder.server as sb
+    mine = str(Path(proj).resolve() / "components") + "/"
+    return {t for t, f in sb.COMPONENT_MAP.items() if not str(Path(f).resolve()).startswith(mine)}
+
+
+def save(proj, data):
+    """{type, edit?, description, kind, settings, dims, anchors, collision_boxes,
+    glb_b64?, unit_scale, up, file_name} → {type, kind, files}. A new part
+    needs its model; an edit keeps the model it has unless a new one comes,
+    and is refused for a file the builder would not write back whole (read)."""
+    ctype = _check_type(data.get("type"))
+    d = folder(proj, ctype)
+    if not data.get("edit"):
+        if d.exists():
+            raise PartError(f"the project already has a component {ctype} — pick another id, or edit that one")
+        if ctype in _library_types(proj):
+            raise PartError(f"{ctype} is a library component already — pick another id")
+    else:
+        read(proj, ctype)
+    kind, src = _render(ctype, data)
+    raw = _model(data)
+    glb = d / f"{ctype}.glb"
+    if raw is None and not glb.is_file():
+        raise PartError("upload the part's .glb model")
 
     d.mkdir(parents=True, exist_ok=True)
     (d.parent / "__init__.py").touch()
@@ -257,49 +300,75 @@ def save(proj, data):
     return {"type": ctype, "kind": kind, "files": [f"{rel}/{ctype}.py", f"{rel}/{ctype}.glb", f"{rel}/__init__.py"]}
 
 
+class _Floats(ast.NodeTransformer):
+    """1 and 1.0 are the same value in a part's file."""
+    def visit_Constant(self, node):
+        if type(node.value) in (int, float):
+            return ast.copy_location(ast.Constant(float(node.value)), node)
+        return node
+
+
+def _same_code(a, b):
+    return ast.dump(_Floats().visit(ast.parse(a))) == ast.dump(_Floats().visit(ast.parse(b)))
+
+
 def read(proj, ctype):
     """A project part as the editor needs it: description, kind, settings,
     anchors (a Rack grid as its A1… anchors), collision boxes, and whether it
-    has a model. A file that computes its values (not plain literals) is
-    refused: saving it from the editor would lose them."""
+    has a model. Refused unless writing these values back gives the same file:
+    anything else in it (its own code, other solids, computed values, a fuller
+    docstring) would be lost by a save from the editor."""
     ctype = _check_type(ctype)
     src = folder(proj, ctype) / f"{ctype}.py"
     if not src.is_file():
         raise PartError(f"no project component {ctype}")
-    anchors, boxes, doc, kind, settings, grid = {}, [], "", None, {}, {}
-    for node in ast.walk(ast.parse(src.read_text())):
-        if isinstance(node, ast.ClassDef):
-            doc = (ast.get_docstring(node) or "").split("\n\n")[0].strip()
-        if not isinstance(node, ast.Assign):
-            continue
-        names = {getattr(t, "id", None) for t in node.targets}
-        if "KIND" in names:
-            kind = ast.literal_eval(node.value)
-        if "DEFAULTS" in names:
-            for kw in getattr(node.value, "keywords", []):
-                try:
+    text = src.read_text()
+    keep = PartError(f"{ctype}.py has more in it than the component builder writes (its own code, other solids or "
+                     f"computed values) — saving from here would lose that, so edit components/{ctype}/{ctype}.py itself")
+    anchors, boxes, doc, full, kind, settings, grid = {}, [], "", "", None, {}, {}
+    try:
+        for node in ast.walk(ast.parse(text)):
+            if isinstance(node, ast.ClassDef):
+                full = ast.get_docstring(node) or ""
+                doc = full.split("\n\n")[0].strip()
+            if not isinstance(node, ast.Assign):
+                continue
+            names = {getattr(t, "id", None) for t in node.targets}
+            if "KIND" in names:
+                kind = ast.literal_eval(node.value)
+            if "DEFAULTS" in names:
+                for kw in getattr(node.value, "keywords", []):
                     val = ast.literal_eval(kw.value)
-                except ValueError:
-                    raise PartError(f"{ctype}.py computes its {kw.arg} — edit that file itself")
-                if kw.arg == "anchors":
-                    anchors = val.get("body", {})
-                elif kw.arg == "collision_box":
-                    boxes = val.get("body", [])
-                elif kw.arg in ("cap_type", "twist", "pitch", "size") and not (kw.arg == "pitch" and isinstance(val, list)):
-                    settings[kw.arg] = val
-                elif kw.arg in ("offset", "pitch", "rows", "cols", "rvec_safe", "transpose"):
-                    grid[kw.arg] = val
-    if grid.get("rows") and grid.get("cols"):       # a Rack grid → its A1… anchors, as the editor shows them
-        o, p, rv = grid.get("offset", [0, 0, 0]), grid.get("pitch", [9, 9, 0]), grid.get("rvec_safe", [0, 0, 45])
-        tr = bool(grid.get("transpose"))            # Workspace's Rack: transposed = rows along x, columns along y
-        for ri, r in enumerate(grid["rows"]):
-            for ci, c in enumerate(grid["cols"]):
-                i, j = (ri, ci) if tr else (ci, ri)
-                anchors[f"{r}{c}"] = [round(o[0] + i * p[0], 3), round(o[1] + j * p[1], 3), o[2], *rv]
-    return {"type": ctype, "kind": kind if kind in CK.KINDS else CK.detect(ctype, doc), "settings": settings,
-            "description": doc, "anchors": anchors,
-            "collision_boxes": [{"pose": b["pose"], "scale": b["scale"]} for b in boxes],
-            "glb": (folder(proj, ctype) / f"{ctype}.glb").is_file()}
+                    if kw.arg == "anchors":
+                        anchors = dict(val["body"])
+                    elif kw.arg == "collision_box":
+                        boxes = [{"pose": b["pose"], "scale": b["scale"]} for b in val["body"]]
+                    elif kw.arg in ("cap_type", "twist", "pitch", "size") and not (kw.arg == "pitch" and isinstance(val, list)):
+                        settings[kw.arg] = val
+                    elif kw.arg in ("offset", "pitch", "rows", "cols", "rvec_safe", "transpose"):
+                        grid[kw.arg] = val
+        if grid.get("rows") and grid.get("cols"):       # a Rack grid → its A1… anchors, as the editor shows them
+            o, p, rv = grid.get("offset", [0, 0, 0]), grid.get("pitch", [9, 9, 0]), grid.get("rvec_safe", [0, 0, 45])
+            tr = bool(grid.get("transpose"))            # Workspace's Rack: transposed = rows along x, columns along y
+            for ri, r in enumerate(grid["rows"]):
+                for ci, c in enumerate(grid["cols"]):
+                    i, j = (ri, ci) if tr else (ci, ri)
+                    anchors[f"{r}{c}"] = [round(o[0] + i * p[0], 3), round(o[1] + j * p[1], 3), o[2], *rv]
+    except SyntaxError as e:
+        raise PartError(f"{ctype}.py does not parse (line {e.lineno}: {e.msg}) — fix that file first")
+    except (ValueError, KeyError, TypeError, IndexError):
+        raise keep
+    if kind not in CK.KINDS:
+        raise keep
+    m = re.search(r"Measured off [^:]*: ([-\d.]+) x ([-\d.]+) x ([-\d.]+)\.", full)
+    out = {"type": ctype, "kind": kind, "settings": settings, "description": doc, "anchors": anchors,
+           "collision_boxes": boxes, "dims": [float(v) for v in m.groups()] if m else None}
+    try:
+        if not _same_code(_render(ctype, {**out, "settings": dict(settings)})[1], text):
+            raise keep
+    except PartError:
+        raise keep
+    return {**out, "glb": (folder(proj, ctype) / f"{ctype}.glb").is_file()}
 
 
 def delete(proj, ctype, scene):
