@@ -13,7 +13,8 @@ model a project component, install a vision model in vision/.
 text, or a list of texts and images.Shot (a picture the model sees and the
 chat shows); a ToolError is the model's mistake (shown to it as an error
 result, not a crash). ``approval(session, name, args)`` says which calls
-the user approves first (hardware). The camera tools are in vision.py.
+the user approves first (hardware). The camera tools are in vision.py; the
+computer's own files and shell commands in system.py.
 """
 import ast
 import json
@@ -1129,12 +1130,12 @@ def t_install_vision_model(session, a):
     return "\n".join(out), events
 
 
-from . import show as _show, vision as _vision  # noqa: E402  (their tools use the helpers above)
+from . import show as _show, system as _system, vision as _vision  # noqa: E402  (their tools use the helpers above)
 
-TOOLS += _vision.TOOLS + _show.TOOLS
+TOOLS += _vision.TOOLS + _show.TOOLS + _system.TOOLS
 TOOL_NAMES = {t["name"] for t in TOOLS}
 HANDLERS = {**{n: globals()["t_" + n] for n in TOOL_NAMES if "t_" + n in globals()},
-            **_vision.HANDLERS, **_show.HANDLERS}
+            **_vision.HANDLERS, **_show.HANDLERS, **_system.HANDLERS}
 
 LABELS = {
     "list_projects": lambda a: "Listing the projects",
@@ -1167,6 +1168,7 @@ LABELS = {
     "install_vision_model": lambda a: "Installing the vision model",
     **_vision.LABELS,
     **_show.LABELS,
+    **_system.LABELS,
 }
 
 
@@ -1200,7 +1202,7 @@ def approval(session, name, args):
     if name == "device_command":
         verb = "Recover" if args.get("action") == "recover" else "Release"
         return f"{verb} the device {args.get('device')} — {proj}."
-    return _vision.approval(name, args, session)
+    return _vision.approval(name, args, session) or _system.approval(name, args, session)
 
 
 def run_tool(session, name, args):
