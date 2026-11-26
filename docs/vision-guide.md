@@ -94,8 +94,20 @@ Rules (each one is a bug we actually hit):
   boundary, but explicit strings are the convention.)
 - `server` (the vision_server component) and `serial_number` identify
   the server + camera; every OTHER key in `camera_cfg` (`type`,
-  `stream`, `K`, `D`, `native_res`, `mode`, `exposure`, `filter`,
-  `focus`) is forwarded to the server's `camera_add`.
+  `stream`, `K`, `D`, `native_res`, `mode`, `exposure`, `gain`, `wb`,
+  `filter`, `focus`) is forwarded to the server's `camera_add`.
+- **Pin the image, don't leave it on auto.** `exposure` (µs), `gain`
+  (dB) and `wb` (`{auto: true}` / `{once: true}` / `{hold: true}` /
+  `{ratios: {red: r, green: g, blue: b}}`, Hikrobot, 1024 = unity) not
+  written = continuous auto, which meters the WHOLE frame: a white part
+  on a darker background is pushed to full white, and brightness drifts
+  from capture to capture. Write all three per camera (a unit's own
+  numbers go in its `bench.j2`). The live commands set and read them
+  without a relaunch: `camera_exposure(serial, us= | auto=)`,
+  `camera_gain(serial, db= | auto=)`, `camera_wb(serial, auto= | once=
+  | hold= | ratios=)`; `camera_info` reports all three. Which numbers: measure the
+  part, not the frame — apc's `dev/camera/exposure.py` sweeps exposure
+  on a disc and proposes them.
 - **`type` picks the driver** on the vision server: `"d405"` (RealSense,
   depth + color — the default) or `"ueye_xs"` (IDS uEye XS, color +
   autofocus — §8). Write it explicitly.
