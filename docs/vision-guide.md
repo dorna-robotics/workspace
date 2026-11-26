@@ -106,7 +106,7 @@ Rules (each one is a bug we actually hit):
   without a relaunch: `camera_exposure(serial, us= | auto=)`,
   `camera_gain(serial, db= | auto=)`, `camera_wb(serial, auto= | once=
   | hold= | ratios=)`; `camera_info` reports all three. Which numbers: measure the
-  part, not the frame — apc's `dev/camera/exposure.py` sweeps exposure
+  part, not the frame — apc's `dev/camera/exposure.ipynb` sweeps exposure
   on a disc and proposes them.
 - **`type` picks the driver** on the vision server: `"d405"` (RealSense,
   depth + color — the default) or `"ueye_xs"` (IDS uEye XS, color +
