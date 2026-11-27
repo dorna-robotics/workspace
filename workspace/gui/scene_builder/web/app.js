@@ -2014,6 +2014,9 @@ if (node) {
       const socket = io({
         path: "/scene-builder/socket.io/",
         transports: ["websocket"],
+        // this page's project: the server keeps one scene per project, so
+        // a page never gets another project's objects (server.py rooms)
+        query: { project: new URLSearchParams(location.search).get("project") || "" },
         forceNew: true,
         timeout: 10000
       });

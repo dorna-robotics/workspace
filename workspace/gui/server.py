@@ -152,6 +152,10 @@ class ProjectAwareStaticHandler(NoCacheStaticFileHandler):
     A ``CAD/<type>.glb`` request resolves to the project component's own
     folder, ``components/<type>/<type>.glb`` (runtime_server
     .component_mesh_path — one rule for both servers)."""
+    def prepare(self):
+        from gui.scene_builder.server import activate
+        activate(self)                 # the asking page's project (its room)
+
     def get_absolute_path(self, root, path):
         from gui.scene_builder.server import _project_path
         if _project_path:

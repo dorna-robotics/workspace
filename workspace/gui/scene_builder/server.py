@@ -1,5 +1,6 @@
 import os, json, time
 import re, ast, sys, importlib.util
+import threading
 import weakref
 import tornado.web
 import tornado.ioloop
@@ -716,9 +717,37 @@ def instantiate_component_blueprint(type_name: str, options: dict, joints=None):
 
 COMPONENT_MAP = scan_registered_components()
 
-# Project-local components (set via /api/set_project)
+# Project-local components (set via /api/set_project). One builder per
+# project: each page names its project (developer mode's ``?project=``,
+# none for the standalone builder) — the "room". A request's room comes
+# from its Referer (the page that asked: its fetches and its model loads),
+# and ``activate`` points these two at that room's project before the
+# handler runs, so two pages on two projects never get each other's
+# components, meshes, recipes or scene.
 _project_path = None
 _project_component_map = {}
+_tl = threading.local()           # a worker thread's project (instantiate_batch)
+_rooms = {}                       # room -> (project path, {type: file})
+
+
+def room_of(request):
+    from urllib.parse import parse_qs, urlparse
+    q = parse_qs(urlparse(request.headers.get("Referer", "")).query)
+    return (q.get("project") or [""])[0]
+
+
+def activate(handler):
+    """The handler's room's project as the active one (a room never set
+    keeps the last one — the standalone builder's old behaviour)."""
+    global _project_path, _project_component_map
+    r = _rooms.get(room_of(handler.request))
+    if r is not None:
+        _project_path, _project_component_map = r
+
+
+def component_file(t):
+    """A type's class file: the active project's own first, then the library."""
+    return _project_component_map.get(t) or COMPONENT_MAP.get(t)
 
 
 def _project_mesh(name):
@@ -731,13 +760,14 @@ def _project_mesh(name):
     own ``CAD/<name>`` is looked at first for the layouts that still have
     one.
     """
-    if not _project_path:
+    proj = getattr(_tl, "project", None) or _project_path
+    if not proj:
         return None
-    cand = os.path.join(_project_path, "CAD", name)
+    cand = os.path.join(proj, "CAD", name)
     if os.path.isfile(cand):
         return os.path.abspath(cand)
     from workspace.runtime_server import component_mesh_path
-    mesh = component_mesh_path(_project_path, "CAD/" + name)
+    mesh = component_mesh_path(proj, "CAD/" + name)
     return os.path.abspath(mesh) if mesh else None
 
 
@@ -907,7 +937,7 @@ class TypeMetaHandler(tornado.web.RequestHandler):
     """Return anchors + options for a component type."""
     def get(self):
         t = self.get_argument("type", "")
-        fp = COMPONENT_MAP.get(t)
+        fp = component_file(t)
         if not fp or not os.path.exists(fp):
             self.set_status(404)
             self.write({"ok": False, "error": f"unknown type: {t}"})
@@ -966,7 +996,7 @@ class InstantiateHandler(tornado.web.RequestHandler):
             return
 
         t = data.get("type") or ""
-        if t not in COMPONENT_MAP:
+        if not component_file(t):
             self.set_status(404)
             self.write({"ok": False, "error": f"unknown type: {t}"})
             return
@@ -1011,7 +1041,9 @@ class InstantiateBatchHandler(tornado.web.RequestHandler):
         # other response could even flush (the solve_ref reply sat in
         # the send buffer until the browser gave up: the "solving…
         # hangs until refresh" bug). Same code, worker thread.
+        proj, pmap = _project_path, _project_component_map   # this room's, for the worker thread
         def _build():
+            _tl.project = proj
             out = {}
             for it in items:
                 name = str((it or {}).get("name") or "")
@@ -1023,7 +1055,7 @@ class InstantiateBatchHandler(tornado.web.RequestHandler):
                 joints = opts.pop("joints", None)
                 if not name:
                     continue
-                if t not in COMPONENT_MAP:
+                if not (pmap.get(t) or COMPONENT_MAP.get(t)):
                     out[name] = {"error": f"unknown type: {t}"}
                     continue
                 try:
@@ -1165,10 +1197,7 @@ class SetProjectHandler(tornado.web.RequestHandler):
 
         _project_path = path or None
         _project_component_map = scan_project_components(path) if path else {}
-
-        # Merge project components into the global map so instantiate/type_meta work
-        for k, v in _project_component_map.items():
-            COMPONENT_MAP[k] = v
+        _rooms[room_of(self.request)] = (_project_path, _project_component_map)
 
         self.finish({
             "ok": True,
@@ -1332,8 +1361,9 @@ class SolveRefHandler(tornado.web.RequestHandler):
             _log("rejected", reason="no project path set")
             self.write({"ok": False, "error": "no project path set"})
             return
-        sig = _project_solve_sig(_project_path)
-        cached = _ref_solve_cache.get(_project_path)
+        proj = _project_path
+        sig = _project_solve_sig(proj)
+        cached = _ref_solve_cache.get(proj)
         if cached and cached[0] == sig:
             _log("cache_hit")
             self.write(cached[1])
@@ -1345,7 +1375,7 @@ class SolveRefHandler(tornado.web.RequestHandler):
         def _run():
             import subprocess
             try:
-                r = subprocess.run([sys.executable, script, _project_path],
+                r = subprocess.run([sys.executable, script, proj],
                                    capture_output=True, text=True, timeout=180,
                                    cwd=PARENT_DIR)
             except subprocess.TimeoutExpired:
@@ -1363,7 +1393,7 @@ class SolveRefHandler(tornado.web.RequestHandler):
         _log("done", secs=round(time.time() - _t0, 1), ok=bool(result.get("ok")),
              err=(result.get("error") or "")[:120])
         if result.get("ok"):
-            _ref_solve_cache[_project_path] = (sig, result)
+            _ref_solve_cache[proj] = (sig, result)
         self.write(result)
 
 
@@ -1430,12 +1460,12 @@ import threading as _threading
 _ik_lock = _threading.Lock()
 
 
-def _ik_worker_ensure():
+def _ik_worker_ensure(proj):
     import subprocess
-    sig = _project_solve_sig(_project_path)
+    sig = _project_solve_sig(proj)
     w = _ik_worker
     if (w["proc"] is None or w["proc"].poll() is not None
-            or w["project"] != _project_path or w["sig"] != sig):
+            or w["project"] != proj or w["sig"] != sig):
         if w["proc"] is not None:
             try:
                 w["proc"].kill()
@@ -1443,10 +1473,10 @@ def _ik_worker_ensure():
                 pass
         script = os.path.join(BASE_DIR, "ik_worker.py")
         w["proc"] = subprocess.Popen(
-            [sys.executable, script, _project_path],
+            [sys.executable, script, proj],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL, text=True, cwd=PARENT_DIR)
-        w["project"], w["sig"] = _project_path, sig
+        w["project"], w["sig"] = proj, sig
         line = w["proc"].stdout.readline()
         w["info"] = json.loads(line) if line else {"ready": False}
     return w
@@ -1470,9 +1500,10 @@ class RecipeIKHandler(tornado.web.RequestHandler):
             self.write({"ok": False, "error": "no project path set"})
             return
 
+        proj = _project_path
         def _run():
             with _ik_lock:
-                return _ik_worker_ensure()["info"]
+                return _ik_worker_ensure(proj)["info"]
 
         info = await tornado.ioloop.IOLoop.current().run_in_executor(None, _run)
         self.write({"ok": bool(info and info.get("ready")), **(info or {})})
@@ -1488,9 +1519,10 @@ class RecipeIKHandler(tornado.web.RequestHandler):
             self.write({"ok": False, "error": "invalid json"})
             return
 
+        proj = _project_path
         def _run():
             with _ik_lock:
-                w = _ik_worker_ensure()
+                w = _ik_worker_ensure(proj)
                 w["proc"].stdin.write(json.dumps(
                     {"recipe": data.get("recipe"),
                      "offset": data.get("offset"),
@@ -1522,7 +1554,9 @@ app.add_handlers(r".*$", [(r"/api/instantiate", InstantiateHandler)])
 app.add_handlers(r".*$", [(r"/api/instantiate_batch", InstantiateBatchHandler)])
 app.add_handlers(r".*$", [(r"/api/rails", RailsHandler)])
 
-world_state = {}
+# The scene each room's pages share (a reload restores it), by room.
+world_states = {}
+_sid_room = {}
 
 def merge_into_state(state: dict, patch: dict):
     for k, v in (patch or {}).items():
@@ -1538,24 +1572,38 @@ def merge_into_state(state: dict, patch: dict):
             else:
                 state[k] = v
 
+def _room_key(room):
+    return "sb::" + room
+
+
 @sio.event
 async def connect(sid, environ, auth):
-    if world_state:
-        await sio.emit("scene_update", world_state, room=sid)
+    from urllib.parse import parse_qs
+    room = (parse_qs(environ.get("QUERY_STRING", "")).get("project") or [""])[0]
+    _sid_room[sid] = room
+    await sio.enter_room(sid, _room_key(room))
+    if world_states.get(room):
+        await sio.emit("scene_update", world_states[room], room=sid)
+
+@sio.event
+async def disconnect(sid, *a):
+    _sid_room.pop(sid, None)
 
 @sio.event
 async def upstream_update(sid, payload):
-    merge_into_state(world_state, payload)
+    room = _sid_room.get(sid, "")
+    merge_into_state(world_states.setdefault(room, {}), payload)
     # skip_sid: never echo a client's own update back at it. The
     # sender already holds this state — echoing the post-import bulk
     # (341 specs) made the page rebuild every object it had just
     # built, one by one, while the solve banner took the blame.
-    await sio.emit("scene_update", payload, skip_sid=sid)
+    await sio.emit("scene_update", payload, room=_room_key(room), skip_sid=sid)
 
 @sio.event
 async def reset_scene(sid):
-    world_state.clear()
-    await sio.emit("scene_reset")
+    room = _sid_room.get(sid, "")
+    world_states.pop(room, None)
+    await sio.emit("scene_reset", room=_room_key(room))
 
 
 class ReplayListHandler(tornado.web.RequestHandler):
@@ -1767,8 +1815,7 @@ class ResetHandler(tornado.web.RequestHandler):
         self.finish()
 
     def post(self):
-        global world_state
-        world_state.clear()
+        world_states.pop(room_of(self.request), None)
         self.finish({"ok": True})
 
 
@@ -1789,3 +1836,11 @@ if __name__ == "__main__":
 
 app.add_handlers(r".*$", [(r"/api/replays", ReplayListHandler)])
 app.add_handlers(r".*$", [(r"/api/replay", ReplayFileHandler)])
+
+
+# Every builder request runs against its own page's project (room_of).
+for _h in (IndexHandler, CatalogHandler, CategoriesHandler, TypeMetaHandler, InstantiateHandler,
+           InstantiateBatchHandler, RailsHandler, SaveConfigHandler, ProjectBundleHandler, PerfHandler,
+           SolveRefHandler, SchedulePreviewHandler, RecipeIKHandler, ReplayListHandler, ReplayFileHandler,
+           CADStaticHandler):
+    _h.prepare = activate
