@@ -71,6 +71,11 @@ function makeWin(id, title, cls = "") {
       <button class="btn btn-ghost btn-sm btn-icon" data-close title="Close"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
     <div class="dv-win-body"></div><div class="dv-win-foot" hidden></div>`;
   w.querySelector("h3").textContent = title;
+  // a simulated device can't be switched to real until it has an address
+  const wb = w.querySelector(".dv-win-body");
+  new MutationObserver(() => simGate(w)).observe(wb, { childList: true, subtree: true });
+  wb.addEventListener("input", () => simGate(w));
+  wb.addEventListener("change", () => simGate(w));
   const n = $("#dvWins").children.length;
   w.style.right = `${24 + n * 24}px`;
   w.style.top = `${120 + n * 24}px`;
@@ -472,6 +477,42 @@ document.addEventListener("click", e => {
   const add = e.target.closest("[data-io-add]");
   if (add) add.insertAdjacentHTML("beforebegin", ioRow());
 });
+
+// The Settings windows' simulation switches: while the device's address
+// field (as the server's params.missing_connection reads it — ip, else a
+// USB port, else a serial number; a camera's vision server and serial or
+// PoE ip) is empty in the window, a simulated device stays simulated. The
+// server refuses it too; this says so before Save.
+function simGate(w) {
+  const val = (q) => (w.querySelector(q)?.value || "").trim();
+  const gate = (box, why) => {
+    if (!box) return;
+    const lock = box.checked && !!why, label = box.closest("label");
+    if (box.disabled !== lock) box.disabled = lock;
+    const tip = lock ? `Can't switch to real: ${why}` : "";
+    if (label && label.title !== tip) label.title = tip;
+    let hint = label?.parentElement.querySelector(":scope > [data-simgate]");
+    if (lock && !hint && label) {
+      hint = document.createElement("div");
+      hint.className = "hint"; hint.dataset.simgate = "";
+      label.after(hint);
+    }
+    if (hint && !lock) hint.remove();
+    else if (hint && hint.textContent !== `${why} before switching to real.`) hint.textContent = `${why} before switching to real.`;
+  };
+  const box = w.querySelector('.dv-win-body input[type="checkbox"][data-key="simulation"]');
+  if (w.querySelector('[data-key="camera_cfg.server"]')) {
+    const ipEl = w.querySelector('[data-key="camera_cfg.ip"]');
+    const ipOk = ipEl && !ipEl.closest("[hidden]") && ipEl.value.trim();
+    gate(box, !val('[data-key="camera_cfg.server"]') ? "Pick the vision server this camera is plugged into"
+      : !val('[data-key="camera_cfg.serial_number"]') && !ipOk ? `Enter its serial number${ipEl ? " or IP address" : ""}` : "");
+    gate(w.querySelector('input[type="checkbox"][data-key="srv.simulation"]'), w.querySelector("#cwSrvIp") && !val("#cwSrvIp") ? "Enter the vision server's IP address" : "");
+    return;
+  }
+  const ip = w.querySelector('[data-key="ip"]'), port = w.querySelector('input[data-key="port"][list]'), sn = w.querySelector('[data-key="serial_number"]');
+  gate(box, ip ? (ip.value.trim() ? "" : "Enter its IP address") : port ? (port.value.trim() ? "" : "Choose its USB port")
+    : sn ? (sn.value.trim() ? "" : "Enter its serial number") : "");
+}
 
 function fieldHtml(f, portList = []) {
   const id = `f_${f.key.replace(/\W/g, "_")}`;

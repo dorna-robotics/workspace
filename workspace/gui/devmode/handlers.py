@@ -163,6 +163,7 @@ def _components(scene):
         comps.append({"name": n, "type": t, "kind": params.kind_of(t), "device": dev,
                       "simulation": cfg.get("simulation", True) is not False if dev else None,
                       "no_connection": params.no_connection(sch, scene) if sch["fields"] else None,
+                      "missing_connection": params.missing_connection(sch, scene) if sch["fields"] else None,
                       "camera": t.startswith("inspection_"), "menu": bool(sch["fields"]),
                       "settings": sch if sch["fields"] else None})
     return comps
@@ -220,7 +221,8 @@ class ParamsHandler(_Base):
             scene = await _off_loop(scene_edit.merged, p[1])
             if comp not in scene:
                 return self.fail(404, f"no component {comp}")
-            fields = {f["key"]: f for f in params.schema(comp, scene[comp], scene)["fields"]}
+            sch = params.schema(comp, scene[comp], scene)
+            fields = {f["key"]: f for f in sch["fields"]}
             typed = {}
             for k, v in values.items():
                 if k not in fields:
@@ -232,6 +234,9 @@ class ParamsHandler(_Base):
             # unset one left at the library default stays unset.
             typed = {k: v for k, v in typed.items() if fields[k]["value"] != v
                      and not (fields[k]["value"] is None and "default" in fields[k] and fields[k]["default"] == v)}
+            why = params.real_refused(sch, scene, typed)
+            if why:
+                return self.fail(400, why)
             touched = await _off_loop(scene_edit.set_values, p[1], comp, typed) if typed else {}
         except (ValueError, scene_edit.SceneEditError) as e:
             return self.fail(400, str(e))
@@ -264,6 +269,10 @@ class SimulationHandler(_Base):
                 continue
             if (cfg.get("simulation", True) is not False) == on:
                 done.append(n)
+                continue
+            why = None if on else params.real_refused(params.schema(n, cfg, scene), scene, {"simulation": False})
+            if why:
+                errors[n] = why
                 continue
             try:
                 await _off_loop(scene_edit.set_values, p[1], n, {"simulation": on})

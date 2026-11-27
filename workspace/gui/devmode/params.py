@@ -253,34 +253,62 @@ def schema(name, cfg, scene):
     return {"name": name, "type": ctype, "kind": kind_of(ctype), "device": device, "fields": fields}
 
 
-def no_connection(sch, scene=None):
-    """A real device (simulation off) with nothing to reach it by: its
-    Settings ``sch`` (schema()) → {key, text} naming the field to fill, or
-    None. The address is the schema's own connection field — ip, else a
-    USB / serial port, else a serial number — so a part wired through the
-    robot's I/O (no such field) never counts as unconnected."""
+def missing_connection(sch, scene=None):
+    """What a device lacks to be reached for real, whatever its simulation
+    switch says: its Settings ``sch`` (schema()) → {key, text} naming the
+    field to fill, or None. The address is the schema's own connection
+    field — ip, else a USB / serial port, else a serial number — so a part
+    wired through the robot's I/O (no such field) never lacks one."""
     if not sch.get("device"):
         return None
     f = {x["key"]: x for x in sch["fields"]}
-    if (f.get("simulation") or {}).get("value", True) is not False:
-        return None
     empty = lambda k: k in f and str(f[k].get("value") or "").strip() == ""
-    fix = " — or turn on simulation."
     if sch["type"].startswith("inspection_"):
         srv = str(f.get("camera_cfg.server", {}).get("value") or "")
         if not srv or not isinstance((scene or {}).get(srv), dict):
-            return {"key": "camera_cfg.server", "text": "No vision server chosen: pick the one this camera is plugged into" + fix}
+            return {"key": "camera_cfg.server", "text": "No vision server chosen: pick the one this camera is plugged into"}
         typ = str(f.get("camera_cfg.type", {}).get("value") or f.get("camera_cfg.type", {}).get("default") or "")
         if empty("camera_cfg.serial_number") and (typ not in NETWORK_TYPES or empty("camera_cfg.ip")):
             what = "its serial number or IP address" if typ in NETWORK_TYPES else "its serial number"
-            return {"key": "camera_cfg.serial_number", "text": f"No camera set: enter {what}" + fix}
+            return {"key": "camera_cfg.serial_number", "text": f"No camera set: enter {what}"}
         return None
     for k, what in (("ip", "its IP address"), ("port", "its USB port"), ("serial_number", "its serial number")):
         if k in f:
             if k == "port" and f[k]["kind"] != "serial":
                 continue                    # a TCP port number goes with the ip
-            return {"key": k, "text": f"No connection set: enter {what}" + fix} if empty(k) else None
+            return {"key": k, "text": f"No connection set: enter {what}"} if empty(k) else None
     return None
+
+
+def no_connection(sch, scene=None):
+    """A real device (simulation off) with nothing to reach it by → {key,
+    text} (missing_connection's, with the way out), or None."""
+    f = {x["key"]: x for x in sch.get("fields", [])}
+    if (f.get("simulation") or {}).get("value", True) is not False:
+        return None
+    m = missing_connection(sch, scene)
+    return m and {"key": m["key"], "text": m["text"] + " — or turn on simulation."}
+
+
+def real_refused(sch, scene=None, values=None):
+    """Turning simulation off (or keeping it off while the address is
+    cleared) with ``values`` applied to the window ``sch``: the reason it
+    is refused, or None. A device already real without an address may stay
+    so while other settings change — only the switch to real, or emptying
+    the address of a real one, is refused."""
+    values = values or {}
+    f = {x["key"]: x for x in sch.get("fields", [])}
+    if "simulation" not in f:
+        return None
+    was_real = f["simulation"].get("value", True) is False
+    real = values.get("simulation", not was_real) is False
+    if not real or (was_real and not any(k != "simulation" for k in values)):
+        return None
+    after = {**sch, "fields": [{**x, "value": values[x["key"]]} if x["key"] in values else x for x in sch["fields"]]}
+    m = missing_connection(after, scene)
+    if not m or (was_real and missing_connection(sch, scene)):
+        return None                         # already real without one: left as it is
+    return f"{sch['name']} can't run for real yet — {m['text'][0].lower()}{m['text'][1:]} first."
 
 
 def coerce(field, value):

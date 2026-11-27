@@ -2454,14 +2454,18 @@ function _wireDeviceListClicks(el) {
 const _embedded = document.documentElement.classList.contains("embedded");
 const _simDevs = new Map();          // scene device name → simulated?
 const _noConn = new Map();           // real scene device with no ip / port set → what to fill (no bus row: nothing to reach)
+const _missing = new Map();          // scene device with no ip / port set, sim or real → what to fill (no switch to real)
 const _simBusy = new Set();
 const DEV_API = `/dev/api/projects/${encodeURIComponent(wsName)}`;
 
 function _simSwitch(id) {
   if (!_simDevs.has(id)) return "";
   const on = _simDevs.get(id);
-  return `<label class="sim-sw" title="Simulation — saved to the project's scene"><span>${on ? "Sim" : "Real"}</span>
-    <input type="checkbox" data-sim="${escAttr(id)}" ${on ? "checked" : ""} ${_simBusy.has(id) ? "disabled" : ""} aria-label="Simulate ${escAttr(id)}"/></label>`;
+  // simulated with no address to reach it: it can't go real until one is set
+  const why = on && _missing.get(id);
+  const tip = why ? `Can't switch to real: ${why}` : "Simulation — saved to the project's scene";
+  return `${why && window.parent?.__dvOpenSettings ? `<button class="btn btn-sm btn-ghost" data-noconn-set="${escAttr(id)}" title="${escAttr(why)}">Set connection</button>` : ""}<label class="sim-sw${why ? " locked" : ""}" title="${escAttr(tip)}"><span>${on ? "Sim" : "Real"}</span>
+    <input type="checkbox" data-sim="${escAttr(id)}" ${on ? "checked" : ""} ${_simBusy.has(id) || why ? "disabled" : ""} aria-label="Simulate ${escAttr(id)}"/></label>`;
 }
 
 async function loadSimDevices() {
@@ -2472,9 +2476,11 @@ async function loadSimDevices() {
     const j = await r.json();
     _simDevs.clear();
     _noConn.clear();
+    _missing.clear();
     for (const c of j.components || []) {
       if (c.device) _simDevs.set(c.name, !!c.simulation);
       if (c.no_connection) _noConn.set(c.name, c.no_connection.text);
+      if (c.missing_connection) _missing.set(c.name, c.missing_connection.text);
     }
   } catch (_) { return; }
   _devicesListLastHtml = "";
@@ -2492,7 +2498,7 @@ async function setSimulation(id, on) {
       body: JSON.stringify({ components: [id], on }),
     });
     const j = await r.json().catch(() => ({}));
-    if (!r.ok || j.ok === false) throw new Error(j.error || (j.errors || []).join("; ") || r.statusText);
+    if (!r.ok || j.ok === false) throw new Error(j.error || Object.values(j.errors || {}).join("; ") || r.statusText);
     if (j.relaunch) {
       const note = $("simNote");
       note.innerHTML = `<span>The running project still uses the old setting — relaunch to apply.</span><button class="btn btn-sm" data-relaunch>Relaunch now</button>`;

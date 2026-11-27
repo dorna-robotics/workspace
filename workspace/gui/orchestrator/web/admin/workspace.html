@@ -39,6 +39,7 @@
     .sim-sw input:checked { background: var(--sim); }
     .sim-sw input:checked::after { transform: translateX(14px); }
     .sim-sw input:disabled { opacity: 0.5; }
+    .sim-sw.locked, .sim-sw.locked input { cursor: not-allowed; }
     .sim-note { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 10px; margin-bottom: 6px; border-radius: var(--radius-sm); background: var(--accent-dim); font-size: var(--text-xs); }
     .sim-note[hidden] { display: none; }
 
