@@ -1149,5 +1149,16 @@ html[data-sbtab="replay"]  .sb-rail button[data-tab="replay"] {
    alone (.sb-viewonly), or Recipes / Replay beside it with a way back. */
 html.sb-dev .sb-header, html.sb-dev #btnInsert, html.sb-dev .sb-rail, html.sb-dev #sbConfigSection, html.sb-dev #msgStack { display: none !important; }
 html.sb-dev.sb-viewonly .sidebar { display: none; }
+/* …and a frame is never a phone: a narrow one (the Workflow tab's 3D area
+   beside the AI panel) keeps the desktop layout, not the stacked mobile one
+   whose 3D view is half the height */
+@media (max-width: 768px) {
+  html.sb-dev, html.sb-dev body { height: 100%; overflow: hidden; }
+  html.sb-dev .sb-body { flex-direction: row; overflow: hidden; }
+  html.sb-dev .sidebar { width: var(--sbw, 340px); border-bottom: none; border-right: 1px solid var(--border2); overflow: hidden; }
+  html.sb-dev .sidebar-scroll { overflow-y: auto; }
+  html.sb-dev .viewer-col { flex: 1; }
+  html.sb-dev .viewer-area { height: auto; flex: 1; }
+}
 .sb-dev-close { display: none; }
 html.sb-dev:not([data-sbtab="scene"]) .sb-dev-close { display: inline-flex; align-self: flex-start; min-height: 44px; }
