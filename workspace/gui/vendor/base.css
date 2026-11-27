@@ -558,7 +558,7 @@ a:hover { color: var(--accent-h); }
 .ws-brand:not(:has(+ .spacer))::after { content: ""; width: 1px; height: 20px; margin-left: var(--space-3); background: var(--border2); }
 .ws-brand-mark, .ws-brand-word { display: block; background: currentColor; flex: none;
   -webkit-mask: var(--m) center / contain no-repeat; mask: var(--m) center / contain no-repeat; }
-.ws-brand-mark { --m: url(/vendor/dorna-logo.svg); width: 22px; height: 22px; color: var(--accent); }
+.ws-brand-mark { --m: url(/vendor/dorna-logo.svg); width: 22px; height: 22px; }
 .ws-brand-word { --m: url(/vendor/dorna-wordmark.svg); width: 62px; height: 11px; }
 .ws-brand-app { font-size: 14px; font-weight: 500; color: var(--muted); letter-spacing: -0.1px; }
 .ws-brand:hover .ws-brand-app { color: var(--text); }
