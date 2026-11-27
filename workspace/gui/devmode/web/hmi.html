@@ -79,6 +79,9 @@ async function mountMain(spec) {
 }
 
 async function refresh(force) {
+  // watching for edits only while this preview is on screen (a hidden tab
+  // or a hidden frame of Developer mode checks again once it shows)
+  if (!force && (document.hidden || !innerWidth)) return;
   let spec;
   try {
     const r = await fetch(`${API}/hmi`, { cache: "no-store" });

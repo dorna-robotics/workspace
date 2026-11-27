@@ -182,8 +182,19 @@ function makeRenderer(opts, mountEl) {
       // --- Render on demand (declared early so markDirty is available) ---
       let _needsRender = true;
       let _lastRenderMs = 0;
-      const IDLE_RENDER_INTERVAL = 500;
-      function markDirty() { _needsRender = true; }
+      // The idle repaint is the safety net for changes that don't call
+      // markDirty: twice a second while anything is happening (input, a
+      // request or a socket message in the last few seconds), and none
+      // after — an untouched bench draws nothing (any pointer over the
+      // view draws again).
+      const IDLE_RENDER_INTERVAL = 500, ACTIVE_MS = 6000;
+      let _activeUntil = performance.now() + 20000;          // the import's first seconds
+      const poke = () => { _activeUntil = performance.now() + ACTIVE_MS; };
+      function markDirty() { _needsRender = true; poke(); }
+      for (const t of ["pointerdown", "pointermove", "keydown", "wheel"]) window.addEventListener(t, poke, { capture: true, passive: true });
+      { const f = window.fetch;     // (the telemetry beacon below is no activity)
+        window.fetch = (...a) => /\/perf$/.test(String(a[0])) ? f(...a) : (poke(), f(...a).finally(poke)); }
+      document.addEventListener("visibilitychange", () => markDirty());
 
       let _sbCurrentTheme = localStorage.getItem(THEME_KEY) || "dark";
       function sbApplyTheme(theme) {
@@ -2023,6 +2034,7 @@ if (node) {
 
       // Expose socket for actions outside boot()
       window.socket = socket;
+      socket.onAny(poke);
 
       socket.on("scene_update", (payload) => {
         if (!payload || typeof payload !== "object") return;
@@ -9203,12 +9215,12 @@ ensureBuilderBar();
       // --- Animate (keep anchors & badges sticky) ---
       // Render telemetry — what the OPERATOR'S browser actually
       // measures (the server can't see a remote GPU). Sampled around
-      // real renders only, posted every 5s while the tab is visible,
+      // real renders only, posted every 30s while the tab is visible,
       // fire-and-forget. Rows land in /tmp/sb_perf.jsonl on the Pi.
       const _perf = { renders: 0, ms: 0, worst: 0, lastSend: performance.now() };
       function _perfSend() {
         const now = performance.now();
-        if (now - _perf.lastSend < 5000 || !_perf.renders) return;
+        if (now - _perf.lastSend < 30000 || !_perf.renders) return;
         if (document.visibilityState !== "visible") { _perf.lastSend = now; return; }
         const body = {
           renders: _perf.renders,
@@ -9234,7 +9246,10 @@ ensureBuilderBar();
         if (activeAnchors) { updateAnchorsNow(); markDirty(); }
 
         const now = performance.now();
-        if (_needsRender || now - _lastRenderMs > IDLE_RENDER_INTERVAL) {
+        // nothing to draw into while the view is hidden (another tab of
+        // Developer mode, a hidden page): a size change brings it back
+        const shown = !document.hidden && viewerEl.clientWidth > 0;
+        if (shown && (_needsRender || (now < _activeUntil && now - _lastRenderMs > IDLE_RENDER_INTERVAL))) {
           const t0 = performance.now();
           renderer.render(scene, camera);
           vcGroup.quaternion.copy(camera.quaternion).invert();
@@ -9253,9 +9268,11 @@ ensureBuilderBar();
       // The viewer's box changes without a window resize too — the
       // replay player docks under the canvas and takes its height.
       const fitViewer = () => {
+        if (!viewerEl.clientWidth || !viewerEl.clientHeight) return;     // hidden: fit when shown
         camera.aspect = viewerEl.clientWidth / viewerEl.clientHeight;
         camera.updateProjectionMatrix();
         renderer.setSize(viewerEl.clientWidth, viewerEl.clientHeight);
+        markDirty();
       };
       window.addEventListener("resize", fitViewer);
       if (window.ResizeObserver) new ResizeObserver(fitViewer).observe(viewerEl);

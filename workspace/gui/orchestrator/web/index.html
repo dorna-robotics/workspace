@@ -1431,6 +1431,16 @@ function makeRenderer(opts, mountEl) {
       }
 
       // ── Animate ───────────────────────────────────────────────────────────
+      // Render on demand: a frame when something changed (state applied,
+      // the camera moved or snaps, any input or message), else a repaint
+      // twice a second for whatever changes without saying so — an idle
+      // bench no longer redraws 60 times a second.
+      const IDLE_REPAINT_MS = 500;
+      let _dirty = true, _lastDraw = 0;
+      const _markLive = () => { _dirty = true; };
+      for (const t of ["pointerdown", "pointermove", "wheel", "keydown", "message", "resize"])
+        window.addEventListener(t, _markLive, { capture: true, passive: true });
+      controls.addEventListener("change", _markLive);
       function animate() {
         const _now = performance.now();
         if (LAG_LINES && _lastRaf && !document.hidden && _now - _lastRaf > 120)
@@ -1438,13 +1448,16 @@ function makeRenderer(opts, mountEl) {
             + (_meshesLoading ? ` while ${_meshesLoading} meshes were still loading (startup)` : "")
             + ` (last apply: ${_lastApplied || "none"}${_lastApplyAt ? `, ${((_now - _lastApplyAt) / 1000).toFixed(1)} s ago` : ""})`);
         _lastRaf = _now;
+        const _applied = _lastApplyAt;
         flushPendingUpdates();
+        if (_lastApplyAt !== _applied || snapAnim) _dirty = true;
         // Skip the heavy work when either the user has toggled the
         // eye off, *or* the parent has paused us (pendant open).
         // ``flushPendingUpdates`` still runs so any state messages
         // received while paused are applied — we just don't render
         // them until the canvas is visible again.
-        if (_renderEnabled && !_pendantPaused) {
+        if (_renderEnabled && !_pendantPaused && (_dirty || _now - _lastDraw > IDLE_REPAINT_MS)) {
+          _dirty = false; _lastDraw = _now;
           updateSnap();
           controls.update();
           updateAnchorsNow();
