@@ -106,8 +106,6 @@ function makeRenderer(opts, mountEl) {
       const THEME_KEY  = "orch_theme";
       const DARK_BG    = new THREE.Color("#080c12");
       const LIGHT_BG   = new THREE.Color("#f0f4f8");
-      const DARK_GRID  = { minor: 0x182030, major: 0x253548 };
-      const LIGHT_GRID = { minor: 0xbbbbbb, major: 0x888888 };
 
       const scene = new THREE.Scene();
 
@@ -181,81 +179,22 @@ function makeRenderer(opts, mountEl) {
         scene.environmentIntensity = 0.9;
       }
 
-      // --- Helpers (grid/axes) ---
-      function makeRectGrid(width, height, step, major,
-                            colorMinor = 0xaaaaaa,
-                            colorMajor = 0xdddddd) {
-        const geom = new THREE.BufferGeometry();
-        const verts = [];
-        const colors = [];
-        const halfW = width / 2;
-        const halfH = height / 2;
-        const cMinor = new THREE.Color(colorMinor);
-        const cMajor = new THREE.Color(colorMajor);
-
-        for (let x = -halfW; x <= halfW + 1e-6; x += step) {
-          const c = Math.abs(x % major) < 1e-6 ? cMajor : cMinor;
-          verts.push(x, -halfH, 0,  x, halfH, 0);
-          colors.push(c.r, c.g, c.b,  c.r, c.g, c.b);
-        }
-        for (let y = -halfH; y <= halfH + 1e-6; y += step) {
-          const c = Math.abs(y % major) < 1e-6 ? cMajor : cMinor;
-          verts.push(-halfW, y, 0,  halfW, y, 0);
-          colors.push(c.r, c.g, c.b,  c.r, c.g, c.b);
-        }
-
-        geom.setAttribute("position",
-          new THREE.Float32BufferAttribute(verts, 3));
-        geom.setAttribute("color",
-          new THREE.Float32BufferAttribute(colors, 3));
-
-        return new THREE.LineSegments(
-          geom,
-          new THREE.LineBasicMaterial({ vertexColors: true, toneMapped: false })
-        );
-      }
-
       // --- Render on demand (declared early so markDirty is available) ---
       let _needsRender = true;
       let _lastRenderMs = 0;
       const IDLE_RENDER_INTERVAL = 500;
       function markDirty() { _needsRender = true; }
 
-      // grid: 6000 × 6000, theme-aware
-      let _sbGridMesh = makeRectGrid(6000, 6000, 50, 500, DARK_GRID.minor, DARK_GRID.major);
-      _sbGridMesh.visible = true;   // grid on by default
-      scene.add(_sbGridMesh);
-
       let _sbCurrentTheme = localStorage.getItem(THEME_KEY) || "dark";
       function sbApplyTheme(theme) {
         _sbCurrentTheme = theme;
-        const isLight = theme === "light";
-        scene.background = isLight ? LIGHT_BG : DARK_BG;
-        scene.remove(_sbGridMesh);
-        _sbGridMesh.geometry.dispose();
-        _sbGridMesh.material.dispose();
-        const gc = isLight ? LIGHT_GRID : DARK_GRID;
-        _sbGridMesh = makeRectGrid(6000, 6000, 50, 500, gc.minor, gc.major);
-        _sbGridMesh.visible = _sbShowGrid;   // preserve toggle state across theme rebuild
-        scene.add(_sbGridMesh);
+        scene.background = theme === "light" ? LIGHT_BG : DARK_BG;
         markDirty();
       }
-      let _sbShowGrid = true;   // grid on by default
       sbApplyTheme(_sbCurrentTheme);
       window.addEventListener("storage", (e) => {
         if (e.key === THEME_KEY) sbApplyTheme(e.newValue || "dark");
       });
-
-      // Expose grid toggle for btnGrid (wired in ensureBuilderBar)
-      window.__sbToggleGrid = () => {
-        _sbShowGrid = !_sbShowGrid;
-        _sbGridMesh.visible = _sbShowGrid;
-        const btn = document.getElementById("btnGrid");
-        if (btn) btn.classList.toggle("active", _sbShowGrid);
-      };
-      // Reflect the grid state on the button (on by default)
-      const _initGridBtn = document.getElementById("btnGrid");
-      if (_initGridBtn) _initGridBtn.classList.toggle("active", _sbShowGrid);
 
       // Per-object edge outlines (the black lines around each component).
       // On by default; addEdgeOverlay seeds new objects from this flag.
@@ -2166,7 +2105,6 @@ if (node) {
           const m = o.isMesh && (Array.isArray(o.material) ? o.material[0] : o.material);
           if (m && m.transparent && m.opacity < 0.9) hide.push(o);       // collision boxes, ghosts
         });
-        if (_sbGridMesh) hide.push(_sbGridMesh);
         const was = hide.map((o) => o.visible);
         hide.forEach((o) => { o.visible = false; });
         // at most 2048 px a side (2 px/mm where it fits)
@@ -2241,8 +2179,6 @@ if (node) {
         const A = W / H, tv = Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2) * Math.min(1, camera.aspect / A);
         const dist = R / Math.sin(Math.atan(Math.min(tv, tv * A))) * 1.02;
         const saved = { p: camera.position.clone(), q: camera.quaternion.clone() };
-        const gridWas = _sbGridMesh ? _sbGridMesh.visible : null;
-        if (_sbGridMesh) _sbGridMesh.visible = false;
         const src = renderer.domElement;
         const k = Math.max(W / src.width, H / src.height), w = W / k, h = H / k;     // centre crop to W:H
         // then centre the setup's outline in the crop and pull in until it fills it
@@ -2275,7 +2211,6 @@ if (node) {
         const out = document.createElement("canvas");
         out.width = W; out.height = H;
         out.getContext("2d").drawImage(src, (src.width - w) / 2, (src.height - h) / 2, w, h, 0, 0, W, H);
-        if (_sbGridMesh) _sbGridMesh.visible = gridWas;
         camera.position.copy(saved.p); camera.quaternion.copy(saved.q);
         renderer.render(scene, camera);
         return out.toDataURL("image/png");
@@ -2898,13 +2833,6 @@ function ensureBuilderBar() {
       document.addEventListener("keydown", function onKey(e) {
         if (e.key === "Escape") { document.removeEventListener("keydown", onKey); cleanup(null); }
       });
-    });
-  }
-
-  const gridBtn = document.getElementById("btnGrid");
-  if (gridBtn) {
-    gridBtn.addEventListener("click", () => {
-      try { window.__sbToggleGrid?.(); } catch(e) {}
     });
   }
 

@@ -683,7 +683,7 @@ function setTools() {
   link("#toolVision", srv ? `http://${field(srv, "ip")}:${field(srv, "port") || 80}/playground` : net && `http://${net}.40/`,
        "No vision server: add a vision_server part and set its IP address (Scene)");
 }
-document.addEventListener("click", (e) => { if (!e.target.closest("#wfTools")) $("#wfTools").open = false; });
+document.addEventListener("click", (e) => { if (!e.target.closest("#sbTools")) $("#sbTools").open = false; });
 
 // ── project + status ────────────────────────────────────────────────
 async function loadInfo() {

@@ -75,6 +75,14 @@
         <button class="btn btn-primary" id="sbEditPart" hidden title="Open this project component in the component builder: its anchors, collision boxes and model">Edit component</button>
         <div class="spacer"></div>
         <button class="btn btn-ghost" id="sbThumb" title="Use the current view as this project's picture on the Projects page">Save picture</button>
+        <details class="dv-menu" id="sbTools">
+          <summary class="btn btn-ghost">Tools ▾</summary>
+          <div class="dv-menu-list">
+            <a id="toolJupyter" target="_blank" rel="noopener">Jupyter<span>the project's code, notebooks, Recipe.calibrate</span></a>
+            <a id="toolLab" target="_blank" rel="noopener">Dorna Lab<span>the robot: monitor, jog, alarms</span></a>
+            <a id="toolVision" target="_blank" rel="noopener">Vision server<span>cameras and detections</span></a>
+          </div>
+        </details>
       </div>
 
       <!-- Workflow: the project page; Flowchart, Recipes and Replay in its place -->
@@ -85,15 +93,6 @@
           <button data-wv="recipes" title="The project's recipes (recipes.j2): pick one to pose the robot at its reference">Recipes</button>
           <button data-wv="replay" title="Play back a recorded run in the 3D view">Replay</button>
         </div>
-        <div class="spacer"></div>
-        <details class="dv-menu" id="wfTools">
-          <summary class="btn btn-ghost">Tools ▾</summary>
-          <div class="dv-menu-list">
-            <a id="toolJupyter" target="_blank" rel="noopener">Jupyter<span>the project's code, notebooks, Recipe.calibrate</span></a>
-            <a id="toolLab" target="_blank" rel="noopener">Dorna Lab<span>the robot: monitor, jog, alarms</span></a>
-            <a id="toolVision" target="_blank" rel="noopener">Vision server<span>cameras and detections</span></a>
-          </div>
-        </details>
       </div>
       <iframe class="dv-frame" id="wfFrame" title="Project page"></iframe>
 
