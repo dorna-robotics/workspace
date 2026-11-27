@@ -1,17 +1,12 @@
 /* The Workspace assistant (ai_chat.js): a side panel docked on the right —
-   the page narrows beside it (html.ai-open) — collapsed to its button. In
+   the page narrows beside it (html.ai-open) — opened and collapsed from the
+   top bar. In
    the AI builder's chat look; design tokens from base.css, so it follows
    the light/dark theme. */
 
-.ai-fab {
-  position: fixed; right: var(--space-5); bottom: var(--space-5); z-index: 59990;
-  width: 52px; height: 52px; border-radius: 50%; border: 0; cursor: pointer;
-  background: var(--accent); color: white; box-shadow: var(--shadow-lg);
-  display: flex; align-items: center; justify-content: center;
-  transition: transform var(--motion-fast) var(--ease), background var(--motion-fast);
-}
-.ai-fab:hover { background: var(--accent-h); transform: translateY(-1px); }
-.ai-fab[hidden] { display: none; }
+/* the top bar's open / collapse button (one per .topbar-actions) */
+.ai-toggle[hidden] { display: none !important; }
+.ai-toggle[aria-pressed="true"] { color: var(--accent); background: var(--accent-dim); }
 
 /* docked: full height at the right edge; the page gives it its width */
 html.ai-open { --aiw-on: var(--aiw, 400px); }
@@ -181,30 +176,22 @@ html.ai-open .pendant-overlay { right: var(--aiw-on); }
   src: url("/vendor/fonts/InterVariable.woff2") format("woff2");
   font-weight: 100 900; font-style: normal; font-display: swap;
 }
-.ai-panel, .ai-fab { font-family: "Inter", var(--font); }
+.ai-panel { font-family: "Inter", var(--font); }
 .ai-panel textarea, .ai-panel button { font-family: inherit; }
-.ai-panel, .ai-fab {
+.ai-panel {
   --grad: linear-gradient(135deg, #ffffff 0%, #fffb9e 45%, #fff617 100%);
   --grad-ink: #222222;                                    /* text and icons on the gradient */
   --grad-text: linear-gradient(100deg, #ffffff 0%, #fffb9e 50%, #fff617 100%);
   --grad-glow: rgba(255, 246, 23, .60);
   --ring: 0 0 0 1px rgba(255,255,255,.18) inset;
 }
-[data-theme="light"] .ai-panel, [data-theme="light"] .ai-fab {
+[data-theme="light"] .ai-panel {
   --grad: linear-gradient(135deg, #ffffff 0%, #fffb9e 45%, #fff617 100%);
   --grad-ink: #222222;
   --grad-text: linear-gradient(100deg, #222222 0%, #6b6100 55%, #c8b400 100%);
   --grad-glow: rgba(200, 180, 0, .45);
   --ring: 0 0 0 1px rgba(14,22,48,.08) inset;
 }
-.ai-fab {
-  width: auto; height: 52px; border-radius: 26px; padding: 0 20px 0 16px; gap: 8px;
-  font: 700 15px var(--font); background: var(--grad); color: var(--grad-ink);
-  box-shadow: 0 0 0 1px rgba(200,180,0,.35), 0 1px 0 rgba(255,255,255,.6) inset, 0 14px 30px -10px var(--grad-glow);
-}
-.ai-fab:hover { background: var(--grad); filter: brightness(1.08); }
-.ai-fab:active { transform: scale(.95); }
-.ai-fab .ws-brand-mark { width: 22px; height: 22px; color: var(--grad-ink); }
 .ai-head .ai-proj { box-shadow: var(--ring); }
 .ai-head .ai-iconbtn { border-radius: 10px; padding: 7px 10px; font-weight: 600; font-size: 13px; }
 .ai-head .ai-new { color: var(--accent); }
@@ -245,7 +232,7 @@ html.ai-open .pendant-overlay { right: var(--aiw-on); }
 .ai-send:disabled { opacity: .35; }
 .ai-bar { min-height: 0; padding: 0 6px; }
 .ai-hint { font-size: 11px; color: var(--muted2); }
-@media (prefers-reduced-motion: reduce) { .ai-send, .ai-fab { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .ai-send { transition: none; } }
 
 /* recent chats: a menu under the header */
 .ai-hist {
@@ -274,7 +261,7 @@ html.ai-open .pendant-overlay { right: var(--aiw-on); }
   height: 34px; min-width: 34px; padding: 0 10px; display: inline-flex; align-items: center; justify-content: center;
   border-radius: 10px; font-size: 13px; font-weight: 600; line-height: 1;
 }
-.ai-head .ai-hist-btn, .ai-head .ai-close { width: 34px; padding: 0; font-size: 14px; }
+.ai-head .ai-hist-btn { width: 34px; padding: 0; font-size: 14px; }
 .ai-head .ai-new { color: var(--text); }
 .ai-head .ai-new:hover, .ai-head .ai-hist-btn[aria-expanded="true"] { background: var(--surface2); color: var(--text); }
 .ai-panel .ai-attach { width: 34px; height: 34px; min-width: 34px; padding: 0; border-radius: 50%; }
@@ -293,14 +280,10 @@ html.ai-open .pendant-overlay { right: var(--aiw-on); }
 
 /* the header's actions: three quiet icon buttons of one size, close set apart */
 .ai-head { gap: var(--space-1); }
-.ai-head .ai-hist-btn, .ai-head .ai-new, .ai-head .ai-close { width: 34px; padding: 0; color: var(--muted); }
-.ai-head .ai-hist-btn:hover, .ai-head .ai-new:hover, .ai-head .ai-close:hover { background: var(--surface2); color: var(--text); }
+.ai-head .ai-hist-btn, .ai-head .ai-new { width: 34px; padding: 0; color: var(--muted); }
+.ai-head .ai-hist-btn:hover, .ai-head .ai-new:hover { background: var(--surface2); color: var(--text); }
 .ai-head .ai-hist-btn[aria-expanded="true"] { background: var(--surface2); color: var(--text); }
-.ai-head-sep { width: 1px; height: 18px; background: var(--border2); margin: 0 var(--space-1); }
 
-/* the pendant's bottom bar (Start … Kill) stays clear: the button and panel sit above it */
-html.pendant-open .ai-fab, html.pendant-boot .ai-fab { bottom: calc(var(--pendant-bar-h, 108px) + var(--space-3)); }
-html.pendant-open .ai-panel, html.pendant-boot .ai-panel { bottom: calc(var(--pendant-bar-h, 108px) + var(--space-3)); }
 
 /* a picture a tool showed (a camera frame, an ROI, a detection's result):
    inline, click to enlarge */

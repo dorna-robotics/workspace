@@ -1,5 +1,5 @@
 // The Workspace assistant — a side panel docked at the right (the page
-// narrows beside it) that collapses to a floating button, on every page
+// narrows beside it), opened and collapsed from the top bar, on every page
 // once this robot is logged in (hidden in offline mode).
 // Talks to /ai/api (gui/ai/handlers.py): POST /chat streams NDJSON events
 // (text / think / tool / tool_done / image / excerpt / approve / approval /
@@ -74,10 +74,30 @@
   const CLOSE_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>`;
 
   // ── DOM ──────────────────────────────────────────────────────────
-  const fab = document.createElement("button");
-  fab.type = "button"; fab.className = "ai-fab"; fab.hidden = true;
-  fab.title = "Dorna Workspace AI"; fab.setAttribute("aria-label", "Open Dorna Workspace AI");
-  fab.innerHTML = `<span class="ws-brand-mark"></span><span>Workspace AI</span>`;
+  // the open / collapse button: one in each top bar's actions (the page
+  // header's, and the pendant's while it shows)
+  const toggles = [];
+  function addToggles() {
+    for (const bar of document.querySelectorAll(".topbar-actions")) {
+      if (bar.querySelector(".ai-toggle")) continue;
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "btn btn-ghost btn-sm btn-icon ai-toggle"; b.hidden = true;
+      b.title = "Workspace AI"; b.setAttribute("aria-label", "Workspace AI");
+      b.innerHTML = COLLAPSE_ICON;
+      b.onclick = () => setOpen(root.hidden);
+      bar.prepend(b);
+      toggles.push(b);
+    }
+    syncToggles();
+  }
+  function syncToggles() {
+    const open = enabled && !root.hidden;
+    for (const b of toggles) {
+      b.hidden = !enabled;
+      b.setAttribute("aria-pressed", String(open));
+      b.title = open ? "Collapse Workspace AI (Esc)" : "Open Workspace AI";
+    }
+  }
 
   const root = document.createElement("aside");
   root.className = "ai-panel"; root.hidden = true;
@@ -90,7 +110,7 @@
       <span class="spacer"></span>
       <button class="ai-iconbtn ai-hist-btn" type="button" title="Recent chats" aria-label="Recent chats" aria-expanded="false">${HISTORY_ICON}</button>
       <button class="ai-iconbtn ai-new" type="button" title="New chat" aria-label="New chat">${NEW_ICON}</button>
-      <span class="ai-head-sep" aria-hidden="true"></span><button class="ai-iconbtn ai-close" type="button" title="Collapse (Esc)" aria-label="Collapse Dorna Workspace AI">${COLLAPSE_ICON}</button>
+
     </div>
     <div class="ai-hist" role="menu" aria-label="Recent chats" hidden></div>
     <div class="ai-log" aria-live="polite"></div>
@@ -559,8 +579,7 @@
   const relayout = () => requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
   function setOpen(open) {
     root.hidden = !open || !enabled;
-    fab.hidden = !enabled || open;
-    fab.setAttribute("aria-expanded", open && enabled ? "true" : "false");
+    syncToggles();
     document.documentElement.classList.toggle("ai-open", open && enabled);
     relayout();
     ls.set(OPEN_KEY, open ? "1" : "0");
@@ -600,9 +619,7 @@
   });
   sendBtn.onclick = () => { const t = input.value; input.value = ""; send(t); };
   stopBtn.onclick = () => fetch(API + "/cancel", { method: "POST", headers: hdrs(true), body: JSON.stringify({ session: sid }) });
-  fab.onclick = () => setOpen(true);
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !root.hidden) setOpen(false); });
-  $(".ai-close").onclick = () => setOpen(false);
   // ── recent chats: the account's last 10 on this robot ────────────
   const histBtn = $(".ai-hist-btn"), hist = $(".ai-hist");
   function ago(t) {
@@ -752,7 +769,7 @@
   root.addEventListener("drop", (e) => { if (!hasFiles(e)) return; e.preventDefault(); dragDepth = 0; dropEl.hidden = true; addFiles(e.dataTransfer.files); });
 
   function mount() {
-    document.body.appendChild(fab);
+    addToggles();
     document.body.appendChild(root);
     const hook = () => {
       if (window.dornaAccount) { window.dornaAccount.onChange(setEnabled); return; }
