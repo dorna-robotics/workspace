@@ -460,6 +460,16 @@ function makeRenderer(opts, mountEl) {
         if (e.data?.type === "theme")  applyTheme(e.data.value);
         if (e.data?.type === "render") _pendantPaused = (e.data.value === "pause");
         if (e.data?.type === "ui")     document.body.classList.toggle("ui-minimal", e.data.value === "minimal");
+        // developer mode: one camera for the builder's view and this one
+        if (e.data?.type === "camera_set" && Array.isArray(e.data.p) && Array.isArray(e.data.t)) {
+          camera.position.fromArray(e.data.p);
+          camera.up.fromArray(e.data.u || [0, 0, 1]);
+          controls.target.fromArray(e.data.t);
+          camera.lookAt(controls.target);
+          controls.update();
+        }
+        if (e.data?.type === "camera_get") e.source?.postMessage({ type: "camera", p: camera.position.toArray(),
+          t: controls.target.toArray(), u: camera.up.toArray() }, "*");
       });
 
       // ── GLTF + object management ──────────────────────────────────────────

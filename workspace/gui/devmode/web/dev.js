@@ -55,7 +55,7 @@ function showTab(t) {
   history.replaceState(null, "", `?project=${encodeURIComponent(PROJECT)}#${t}`);
   setAiContext();
   ({ scene: openScene, workflow: openWorkflow, hmi: openHmi, calibration: openCalibration })[t]();
-  syncFrame();
+  syncFrame(); placeView();
   renderRun(); showWfMsg();
 }
 $$("#dvRail button").forEach(b => b.onclick = () => showTab(b.dataset.tab));
@@ -119,6 +119,70 @@ function syncFrame() {
   doc.documentElement.classList.toggle("sb-viewonly", tab === "workflow" && !side);
   w.dispatchEvent(new Event("resize"));
 }
+
+// One scene for Scene and Workflow. The project page's 3D area shows the
+// launched runtime's live viewer, or a "Launch" placeholder: not launched,
+// the builder's own view — this same iframe, so the same objects and
+// camera — lies over that area; launched, the live viewer shows and the
+// camera carries across, both ways (its camera_set / camera_get messages).
+// Off while the page shows anything over its 3D area (launch card, dialogs).
+const PAGE_OVERLAYS = ".launch-card, .modal-overlay, .confirm-overlay, .acct-overlay, .pendant-overlay";
+let overOn = false, liveOn = false;
+const shown = (el) => { const cs = el.ownerDocument.defaultView.getComputedStyle(el); return cs.display !== "none" && cs.visibility !== "hidden"; };
+function builderCam() {
+  const t = $("#sbFrame").contentWindow?.__three;
+  return t && { type: "camera_set", p: t.camera.position.toArray(), t: t.controls.target.toArray(), u: t.camera.up.toArray() };
+}
+window.addEventListener("message", (e) => {
+  const t = $("#sbFrame").contentWindow?.__three, live = liveViewer();
+  if (e.data?.type !== "camera" || !t || !live || e.source !== live.contentWindow || !Array.isArray(e.data.p)) return;
+  t.camera.position.fromArray(e.data.p);
+  t.camera.up.fromArray(e.data.u || [0, 0, 1]);
+  t.controls.target.fromArray(e.data.t);
+  t.camera.lookAt(t.controls.target);
+  t.controls.update();
+});
+function liveViewer() {
+  try { return $("#wfFrame").contentDocument?.getElementById("ws3dFrame") || null; } catch (_) { return null; }
+}
+function placeView() {
+  const view = $("#dvView"), wf = $("#wfFrame");
+  let d = null;
+  try { d = wf.contentDocument; } catch (_) {}
+  const area = d?.querySelector(".viewer-area"), ph = d?.getElementById("viewerPlaceholder");
+  const onPage = !!(tab === "workflow" && !wv && area && ph);
+  const live = onPage && ph.style.display === "none";
+  const over = onPage && !live && ![...d.querySelectorAll(PAGE_OVERLAYS)].some(shown);
+  if (live !== liveOn) {
+    liveOn = live;
+    const lf = liveViewer();
+    if (live) {                     // the builder's camera to the live viewer, now and once it (re)loads
+      const send = () => { const c = builderCam(); c && lf?.contentWindow?.postMessage(c, "*"); };
+      send();
+      lf?.addEventListener("load", () => setTimeout(send, 300), { once: true });
+    } else {
+      lf?.contentWindow?.postMessage({ type: "camera_get" }, "*");
+    }
+  }
+  if (over) {
+    if (!sbReady) openScene();
+    const fr = wf.getBoundingClientRect(), r = area.getBoundingClientRect();
+    const left = fr.left + Math.max(0, r.left), top = fr.top + Math.max(0, r.top);
+    Object.assign(view.style, {
+      left: `${left}px`, top: `${top}px`,
+      width: `${Math.max(0, Math.min(fr.left + r.right, fr.right) - left)}px`,
+      height: `${Math.max(0, Math.min(fr.top + r.bottom, fr.bottom) - top)}px`,
+    });
+  }
+  if (over !== overOn) {
+    overOn = over;
+    view.classList.toggle("dv-over", over);
+    if (!over) view.removeAttribute("style");
+    syncFrame();
+  }
+}
+setInterval(placeView, 250);
+window.addEventListener("resize", placeView);
 
 // The builder holds ONE project server-side and keeps its own copy in
 // the browser. Developer mode always starts it from the project's
@@ -470,7 +534,7 @@ async function setView(v) {
   side = v === "recipes" || v === "replay" ? v : null;
   if (v) { $("#dvMain").dataset.wv = v; openScene(); } else delete $("#dvMain").dataset.wv;
   $$("#wfSeg button").forEach(b => b.classList.toggle("on", b.dataset.wv === v));
-  syncFrame();
+  syncFrame(); placeView();
   renderRun(); showWfMsg();
   if (v === "flow") openChart();
 }

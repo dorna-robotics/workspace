@@ -54,6 +54,8 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--
 .dv-main:not([data-tab="hmi"]) [data-pane="hmi"],
 .dv-main:not([data-tab="calibration"]) [data-pane="calibration"] { display: none; }
 .dv-main:not([data-tab="workflow"]) .dv-flow, .dv-main:not([data-wv="flow"]) .dv-flow { display: none; }
+/* Workflow ▸ Project, not launched: the builder's 3D view over the page's 3D area (dev.js placeView) */
+.dv-main[data-tab="workflow"]:not([data-wv]) .dv-view.dv-over { display: flex; position: fixed; z-index: 3; }
 .dv-toolbar { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border2); background: var(--surface); flex-wrap: wrap; }
 .dv-toolbar .btn { min-height: 44px; }
 .dv-sep { width: 1px; align-self: stretch; background: var(--border2); margin: 0 var(--space-2); }
