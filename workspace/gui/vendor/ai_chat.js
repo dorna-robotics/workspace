@@ -85,7 +85,7 @@
       b.title = "Workspace AI"; b.setAttribute("aria-label", "Workspace AI");
       b.innerHTML = COLLAPSE_ICON;
       b.onclick = () => setOpen(root.hidden);
-      bar.prepend(b);
+      bar.append(b);
       toggles.push(b);
     }
     syncToggles();

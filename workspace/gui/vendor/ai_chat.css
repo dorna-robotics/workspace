@@ -5,6 +5,7 @@
    the light/dark theme. */
 
 /* the top bar's open / collapse button (one per .topbar-actions) */
+.ai-toggle { order: 99; }  /* always the rightmost, whatever mounts after it */
 .ai-toggle[hidden] { display: none !important; }
 .ai-toggle[aria-pressed="true"] { color: var(--accent); background: var(--accent-dim); }
 
