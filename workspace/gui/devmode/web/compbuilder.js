@@ -48,7 +48,7 @@ export function openComponentBuilder({ api, type: editType = null, onSaved = nul
       <div class="cb-head"><h3 id="cbTitle">${editType ? `Edit component · ${esc(editType)}` : "Build a component"}</h3>
         <button class="btn btn-ghost btn-icon" data-close title="Close" aria-label="Close">${ICON.x}</button></div>
       <div class="cb-body">
-        <div class="cb-view"><canvas></canvas><div class="cb-drop">Drop a .glb here, or choose a file on the right</div>
+        <div class="cb-view"><canvas></canvas><div class="cb-drop">Drop a model here — .glb, .obj with its .mtl and pictures, .step, .stl — or choose it on the right</div>
           <div class="cb-tags"></div>
           <div class="cb-ctrl">
             <button class="on" id="cbGrid" type="button" title="Grid" aria-label="Grid" aria-pressed="true">${ICON.grid}</button>
@@ -56,8 +56,8 @@ export function openComponentBuilder({ api, type: editType = null, onSaved = nul
             <button class="on" id="cbEdges" type="button" title="Edge outlines" aria-label="Edge outlines" aria-pressed="true">${ICON.edges}</button>
             <button class="on" id="cbTagsBtn" type="button" title="Anchor names" aria-label="Anchor names" aria-pressed="true">${ICON.tags}</button></div></div>
         <div class="cb-panel">
-          <div class="dv-kw"><span>Model (.glb, mm, origin at the base center)</span>
-            <div class="cb-row"><label class="btn btn-primary" id="cbFileBtn">Choose a .glb…<input type="file" accept=".glb" id="cbFile" hidden></label>
+          <div class="dv-kw"><span>Model (.glb, .obj + .mtl, .step, .stl; mm, origin at the base center)</span>
+            <div class="cb-row"><label class="btn btn-primary" id="cbFileBtn">Choose a model…<input type="file" accept=".glb,.obj,.mtl,.step,.stp,.stl,.ply,.3mf,.off,.dae,.gltf,.bin,.png,.jpg,.jpeg,.bmp,.tga" multiple id="cbFile" hidden></label>
               <span class="muted dv-small" id="cbDims"></span></div></div>
           <div class="cb-row">
             <label class="dv-kw"><span>Units in the file</span><select class="input" id="cbUnits">
@@ -96,11 +96,11 @@ export function openComponentBuilder({ api, type: editType = null, onSaved = nul
   const $ = (s) => bg.querySelector(s);
   bg.querySelectorAll("[data-close]").forEach((b) => b.onclick = close);
   bg.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
-  $("#cbFile").onchange = (e) => e.target.files[0] && loadFile(e.target.files[0]);
+  $("#cbFile").onchange = (e) => { if (e.target.files.length) loadFiles(e.target.files); e.target.value = ""; };
   const view = $(".cb-view");
   view.addEventListener("dragover", (e) => { e.preventDefault(); view.classList.add("over"); });
   view.addEventListener("dragleave", () => view.classList.remove("over"));
-  view.addEventListener("drop", (e) => { e.preventDefault(); view.classList.remove("over"); const f = e.dataTransfer.files[0]; if (f) loadFile(f); });
+  view.addEventListener("drop", (e) => { e.preventDefault(); view.classList.remove("over"); if (e.dataTransfer.files.length) loadFiles(e.dataTransfer.files); });
   $("#cbAddA").onclick = () => { st.touched = true; st.anchors.push({ name: `hole_${st.anchors.filter((a) => a.name.startsWith("hole_")).length}`, p: [0, 0, 0, 0, 0, 0] }); renderTables(); sync(); };
   $("#cbAddB").onclick = () => { st.touched = true; const d = st.dims || [50, 50, 50]; st.boxes.push({ c: [0, 0, d[2] / 2], s: [d[0] / 2, d[1] / 2, d[2] / 2] }); renderTables(); sync(); };
   $("#cbSave").onclick = save;
@@ -179,7 +179,7 @@ async function loadExisting(type) {
   st.anchors = Object.entries(r.anchors || {}).map(([name, p]) => ({ name, p: p.map(Number), fixed: name === "center" }));
   st.boxes = (r.collision_boxes || []).map((b) => ({ c: b.pose.slice(0, 3).map(Number), s: b.scale.map(Number) }));
   renderTables(); sync();
-  if (!r.glb) { say("This component has no model yet — choose its .glb."); return; }
+  if (!r.glb) { say("This component has no model yet — choose its model file."); return; }
   // the stored model is already in Workspace's frame — millimetres, Z up — and
   // stays as it is: units and up axis apply to a newly chosen file only
   $("#cbUnits").value = "1"; $("#cbUp").value = "z";
@@ -404,23 +404,50 @@ function addEdges(obj) {
   });
 }
 
-function loadFile(file) {
-  if (!/\.glb$/i.test(file.name)) { say("Choose a .glb file", true); return; }
-  const reader = new FileReader(), me = st;
-  reader.onload = () => {
-    if (me !== st) return;                        // the dialog closed (or another opened) meanwhile
-    const buf = reader.result, bytes = new Uint8Array(buf);
-    let bin = "";
-    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
-    st.glbB64 = btoa(bin);
-    // a new file: its own units and up axis (millimetres, Z up by default — Workspace's frame)
-    st.bg.querySelector("#cbUnits").disabled = st.bg.querySelector("#cbUp").disabled = false;
-    loader(me).parse(buf, "", (gltf) => me === st && onModel(gltf.scene, file.name),
-      (err) => me === st && say("Couldn't read that model: " + err.message, true));
-  };
-  reader.readAsArrayBuffer(file);
+// The model: a .glb as it is; anything else (an .obj with its .mtl and
+// pictures, a .step, an .stl …) goes to the server's converter
+// (devmode/convert.py) and comes back as a .glb — then the same path.
+const MODEL_RE = /\.(glb|obj|step|stp|stl|ply|3mf|off|dae|gltf)$/i;
+function loadFiles(list) {
+  const files = [...list], me = st;
+  const models = files.filter((f) => MODEL_RE.test(f.name));
+  if (models.length !== 1) {
+    say(models.length ? "Choose one model at a time (with its .mtl and pictures for an .obj)"
+                      : "Choose a model: .glb, .obj (with its .mtl and pictures), .step, .stl", true);
+    return;
+  }
+  const main = models[0];
   const idEl = st.bg.querySelector("#cbType");
-  if (!idEl.value) idEl.value = file.name.replace(/\.glb$/i, "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  if (!idEl.value) idEl.value = main.name.replace(/\.[^.]+$/, "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  if (/\.glb$/i.test(main.name)) { main.arrayBuffer().then((buf) => me === st && useGlb(buf, main.name)); return; }
+  say(`Converting ${main.name} to .glb…`);
+  Promise.all(files.map((f) => f.arrayBuffer().then((buf) => ({ name: f.name, b64: b64(new Uint8Array(buf)) }))))
+    .then((fs) => jpost("/dev/api/component/convert", { files: fs }))
+    .then((j) => {
+      if (me !== st) return;
+      if (!j.ok) { say("Couldn't convert it: " + j.error, true); return; }
+      const bin = atob(j.glb_b64), u8 = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+      useGlb(u8.buffer, j.name, j.note);
+    });
+}
+
+function b64(bytes) {
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+
+function useGlb(buf, name, note) {
+  const me = st;
+  st.glbB64 = b64(new Uint8Array(buf));
+  // a new file: its own units and up axis (millimetres, Z up by default — Workspace's frame)
+  st.bg.querySelector("#cbUnits").disabled = st.bg.querySelector("#cbUp").disabled = false;
+  loader(me).parse(buf, "", (gltf) => {
+    if (me !== st) return;
+    onModel(gltf.scene, name);
+    if (note) say(`Converted to ${name} — ${note}`, true);
+  }, (err) => me === st && say("Couldn't read that model: " + err.message, true));
 }
 
 function onModel(obj, fname, refit) {
@@ -463,7 +490,7 @@ function onModel(obj, fname, refit) {
   fitView();
   applyTheme(R);
   $(".cb-drop").hidden = true;
-  $("#cbFileBtn").childNodes[0].textContent = "Replace the .glb…";
+  $("#cbFileBtn").childNodes[0].textContent = "Replace the model…";
   say("Describe what the part needs, or check the anchors and collision boxes, then save.");
   const soup = meshSoup(wrap);
   st.soup = soup;

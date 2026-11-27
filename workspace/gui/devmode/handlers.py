@@ -27,6 +27,7 @@ offline mode runs existing projects and nothing else).
     GET  /dev/api/projects/<n>/part/<type>/<file>      its model (<type>.glb, and a compressed one's .glb.bin)
     POST /dev/api/component/template                   {kind?, type, dims, top, holes, pegs, xy} → the kind's anchors
     POST /dev/api/component/mesh                       {tris} → {id}: the model kept for the assistant's measuring
+    POST /dev/api/component/convert                    {files: [{name, b64}]} → {glb_b64, name, note}: .obj (+ .mtl, pictures) / .step / .stl … as a .glb
     POST /dev/api/component/ai                         {message, history, …} → the assistant's anchors and boxes
 """
 import asyncio
@@ -42,7 +43,7 @@ import tornado.web
 
 from gui.orchestrator.handlers import ProjectScreenFileHandler
 
-from . import access, camera, component_ai, component_kinds, mesh_measure, params, parts, scene_edit, vision_cfg, workflow
+from . import access, camera, component_ai, component_kinds, convert, mesh_measure, params, parts, scene_edit, vision_cfg, workflow
 
 DEV_DIR = os.path.dirname(os.path.abspath(__file__))
 WEB_DIR = os.path.join(DEV_DIR, "web")
@@ -643,6 +644,21 @@ class ComponentMeshHandler(_Base):
             self.finish({"ok": False, "error": str(_bad(e))})
 
 
+class ComponentConvertHandler(_Base):
+    async def post(self):
+        import base64
+        try:
+            fs = self.body().get("files")
+            if not isinstance(fs, list):
+                raise convert.ConvertError("send the files as a list")
+            files = [(str(f.get("name") or ""), base64.b64decode(str(f.get("b64") or "").split(",")[-1])) for f in fs]
+            glb, note = await _off_loop(convert.to_glb, files)
+        except (convert.ConvertError, ValueError, TypeError, AttributeError) as e:
+            return self.finish({"ok": False, "error": str(e)})
+        main = next(n for n, _ in files if Path(n).suffix.lower() in convert.MODEL_SUFFIXES)
+        self.finish({"ok": True, "glb_b64": base64.b64encode(glb).decode(), "name": Path(main).stem + ".glb", "note": note})
+
+
 class ComponentAIHandler(_Base):
     """The assistant reaches the model through the account's relay
     (gui/ai/agent.client) — metered there; nothing here counts cost."""
@@ -740,6 +756,7 @@ def routes(orch):
         (P + r"/part/([a-z0-9_]+)/([A-Za-z0-9_.]+)", PartModelHandler, o),
         (r"/dev/api/component/template", ComponentTemplateHandler, o),
         (r"/dev/api/component/mesh", ComponentMeshHandler, o),
+        (r"/dev/api/component/convert", ComponentConvertHandler, o),
         (r"/dev/api/component/ai", ComponentAIHandler, o),
         (r"/dev/(.*)", DevStaticHandler, {"path": WEB_DIR}),
     ]
