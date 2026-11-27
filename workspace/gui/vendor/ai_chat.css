@@ -1,6 +1,7 @@
-/* The Workspace assistant (ai_chat.js): a floating button and a side panel
-   over the page, in the AI builder's chat look. Design tokens from base.css,
-   so it follows the light/dark theme. */
+/* The Workspace assistant (ai_chat.js): a side panel docked on the right —
+   the page narrows beside it (html.ai-open) — collapsed to its button. In
+   the AI builder's chat look; design tokens from base.css, so it follows
+   the light/dark theme. */
 
 .ai-fab {
   position: fixed; right: var(--space-5); bottom: var(--space-5); z-index: 59990;
@@ -12,14 +13,21 @@
 .ai-fab:hover { background: var(--accent-h); transform: translateY(-1px); }
 .ai-fab[hidden] { display: none; }
 
-/* a pop-up card over the page, above its button — the account and updates
-   panels' shell (account.css .acct-menu), so the three read as one family */
+/* docked: full height at the right edge; the page gives it its width */
+html.ai-open { --aiw-on: var(--aiw, 400px); }
+html.ai-open body { margin-right: var(--aiw-on); }
+html.ai-open .pendant-overlay { right: var(--aiw-on); }
 .ai-panel {
-  position: fixed; top: calc(54px + var(--space-3)); right: var(--space-3); bottom: var(--space-3); z-index: 59995;
-  width: var(--aiw, 400px); min-width: 300px; max-width: calc(100vw - 24px);
+  position: fixed; top: 0; right: 0; bottom: 0; z-index: 59995;
+  width: var(--aiw, 400px); min-width: 300px; max-width: calc(100vw - 320px);
   display: flex; flex-direction: column; min-height: 0; overflow: hidden;
   background: var(--surface); color: var(--text); font-family: var(--font);
-  border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg);
+  border-left: 1px solid var(--border);
+}
+@media (max-width: 768px) {          /* a phone: the panel covers the page */
+  html.ai-open body { margin-right: 0; }
+  html.ai-open .pendant-overlay { right: 0; }
+  .ai-panel { width: 100vw; max-width: none; min-width: 0; border-left: 0; }
 }
 .ai-panel[hidden] { display: none; }
 .ai-panel [hidden] { display: none !important; }
@@ -27,9 +35,11 @@
 
 .ai-head {
   display: flex; align-items: center; gap: var(--space-2);
-  padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border2); min-height: 48px;
+  padding: 0 var(--space-3) 0 var(--space-4); border-bottom: 1px solid var(--border2); height: 54px; flex: none;
 }
-.ai-head .ai-title { font-weight: 600; font-size: var(--text-lg); white-space: nowrap; }
+.ai-head .ws-brand { padding-right: 0; min-height: 0; }
+.ai-head .ws-brand::after { display: none; }
+.ai-head .ai-proj { min-width: 0; flex: 0 1 auto; }
 .ai-head .ai-proj {
   font-size: var(--text-xs); color: var(--muted); background: var(--surface2);
   border-radius: 999px; padding: 2px 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 160px;
@@ -194,15 +204,7 @@
 }
 .ai-fab:hover { background: var(--grad); filter: brightness(1.08); }
 .ai-fab:active { transform: scale(.95); }
-.ai-panel { border-radius: 22px; }
-.ai-head { min-height: 56px; }
-.ai-logo {
-  flex: none; display: inline-flex; width: 30px; height: 30px; padding: 6px; border-radius: 10px; box-sizing: border-box;
-  color: var(--grad-ink); background: var(--grad);
-  box-shadow: 0 0 0 1px rgba(200,180,0,.35), 0 6px 16px -6px var(--grad-glow), 0 1px 0 rgba(255,255,255,.35) inset;
-}
-.ai-logo svg { width: 100%; height: 100%; }
-.ai-head .ai-title { font-weight: 750; letter-spacing: -0.02em; background: var(--grad-text); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.ai-fab .ws-brand-mark { width: 22px; height: 22px; color: var(--grad-ink); }
 .ai-head .ai-proj { box-shadow: var(--ring); }
 .ai-head .ai-iconbtn { border-radius: 10px; padding: 7px 10px; font-weight: 600; font-size: 13px; }
 .ai-head .ai-new { color: var(--accent); }
@@ -291,7 +293,6 @@
 
 /* the header's actions: three quiet icon buttons of one size, close set apart */
 .ai-head { gap: var(--space-1); }
-.ai-head .ai-title { margin-left: var(--space-2); }
 .ai-head .ai-hist-btn, .ai-head .ai-new, .ai-head .ai-close { width: 34px; padding: 0; color: var(--muted); }
 .ai-head .ai-hist-btn:hover, .ai-head .ai-new:hover, .ai-head .ai-close:hover { background: var(--surface2); color: var(--text); }
 .ai-head .ai-hist-btn[aria-expanded="true"] { background: var(--surface2); color: var(--text); }

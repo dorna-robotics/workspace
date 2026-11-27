@@ -3,6 +3,19 @@
 // (There is no sidebar: every page is reached from the projects page.)
 
 (function() {
+  // ── The brand: Dorna's mark + DORNA + Workspace, at the start of the
+  // page's top bar (after its back button); it goes to the projects page.
+  // Not inside a frame (Developer mode's tabs) — the outer page has it.
+  var bar = window.self === window.top && document.querySelector(".topbar, .ws-header, .sb-header");
+  if (bar && !bar.querySelector(".ws-brand")) {
+    var brand = document.createElement("a");
+    brand.className = "ws-brand"; brand.href = "/"; brand.title = "Dorna Workspace — projects";
+    brand.setAttribute("aria-label", "Dorna Workspace — projects");
+    brand.innerHTML = '<span class="ws-brand-mark"></span><span class="ws-brand-word"></span><span class="ws-brand-app">Workspace</span>';
+    var first = bar.firstElementChild;
+    bar.insertBefore(brand, first && first.matches('a[href="/"]') ? first.nextSibling : first);
+  }
+
   // ── Updates: the top bar's button and panel (like Fusion 360's) ──────
   // Mounted where a page has #updatesSlot (the main page). The panel
   // shows this Workspace's version (/home/api/version — workspace.version),

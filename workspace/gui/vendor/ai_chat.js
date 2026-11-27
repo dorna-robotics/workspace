@@ -1,5 +1,6 @@
-// The Workspace assistant — a floating button that opens a side panel, on
-// every page once this robot is logged in (hidden in offline mode).
+// The Workspace assistant — a side panel docked at the right (the page
+// narrows beside it) that collapses to a floating button, on every page
+// once this robot is logged in (hidden in offline mode).
 // Talks to /ai/api (gui/ai/handlers.py): POST /chat streams NDJSON events
 // (text / think / tool / tool_done / image / excerpt / approve / approval /
 // ui / error / done). A picture a tool showed is drawn inline (click to
@@ -65,32 +66,31 @@
     "Add a field for the batch size to the Parameters page.",
   ];
 
-  const LOGO = `<svg viewBox="97.377763787 267.344743133 34.999991232 34.999995952" aria-hidden="true"><path d="m 115.01371,267.34517 c -2.29532,-0.0158 -4.53492,0.40708 -6.65544,1.25775 -2.19489,0.88047 -4.16317,2.18192 -5.85032,3.86819 -2.35312,2.35191 -3.979789,5.30207 -4.703869,8.53143 -0.70508,3.14428 -0.53303,6.41655 0.49727,9.46331 0.48483,1.4339 1.38431,2.57081 2.601019,3.28767 1.10797,0.65278 2.45406,0.93696 3.79026,0.80031 2.19193,-0.22429 6.15511,-1.56389 6.58127,-5.04159 0.48278,-3.93968 -2.17383,-8.42404 -2.63533,-9.84628 -0.0589,-0.18152 -0.10541,-0.32499 -0.13722,-0.43224 -0.42269,-1.42634 -0.23659,-2.7638 0.51077,-3.66951 0.52607,-0.63754 1.57248,-1.35704 3.57034,-1.16398 2.00419,0.19361 5.30108,1.78893 7.53799,2.98554 -1.01837,-0.0805 -2.06121,-0.0226 -3.02265,0.15239 -3.04696,0.55447 -4.70375,3.06534 -3.82983,5.71262 0.118,0.54878 0.2842,1.16531 0.47997,1.87022 0.54764,1.97214 1.38583,4.27011 1.28244,7.2277 -0.11004,3.1469 -1.23383,6.42864 -3.10793,9.67983 2.84216,0.5536 5.66007,0.38004 8.39122,-0.51869 3.18536,-1.04828 5.44222,-2.80977 6.77449,-4.10292 1.68759,-1.63817 3.00417,-3.56451 3.91339,-5.72523 0.87828,-2.08713 1.34074,-4.30153 1.37425,-6.5815 0.0335,-2.28031 -0.36367,-4.50665 -1.18044,-6.61755 -0.84579,-2.18579 -2.10613,-4.14869 -3.74598,-5.83394 -3.29609,-3.38728 -7.71247,-5.27066 -12.43567,-5.30353 z" fill="currentColor"/></svg>`;
-  const SPARK_ICON = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"/><path d="M19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9z"/></svg>`;
 
   const HISTORY_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 103-6.7L3 8"/><polyline points="3 3 3 8 8 8"/><polyline points="12 7 12 12 15 14"/></svg>`;
 
   const NEW_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg>`;
+  const COLLAPSE_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="15" y1="4" x2="15" y2="20"/><polyline points="8 10 10 12 8 14"/></svg>`;
   const CLOSE_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>`;
 
   // ── DOM ──────────────────────────────────────────────────────────
   const fab = document.createElement("button");
   fab.type = "button"; fab.className = "ai-fab"; fab.hidden = true;
-  fab.title = "Dorna AI"; fab.setAttribute("aria-label", "Open Dorna AI");
-  fab.innerHTML = `${SPARK_ICON}<span>Dorna AI</span>`;
+  fab.title = "Dorna Workspace AI"; fab.setAttribute("aria-label", "Open Dorna Workspace AI");
+  fab.innerHTML = `<span class="ws-brand-mark"></span><span>Workspace AI</span>`;
 
   const root = document.createElement("aside");
   root.className = "ai-panel"; root.hidden = true;
-  root.setAttribute("aria-label", "Dorna AI");
+  root.setAttribute("aria-label", "Dorna Workspace AI");
   root.innerHTML = `
     <div class="ai-resize" title="Drag to resize"></div>
     <div class="ai-head">
-      <span class="ai-logo">${LOGO}</span><span class="ai-title">Dorna AI</span>
+      <span class="ws-brand" aria-label="Dorna Workspace"><span class="ws-brand-mark"></span><span class="ws-brand-word"></span><span class="ws-brand-app">Workspace</span></span>
       <span class="ai-proj" hidden></span>
       <span class="spacer"></span>
       <button class="ai-iconbtn ai-hist-btn" type="button" title="Recent chats" aria-label="Recent chats" aria-expanded="false">${HISTORY_ICON}</button>
       <button class="ai-iconbtn ai-new" type="button" title="New chat" aria-label="New chat">${NEW_ICON}</button>
-      <span class="ai-head-sep" aria-hidden="true"></span><button class="ai-iconbtn ai-close" type="button" title="Close" aria-label="Close Dorna AI">${CLOSE_ICON}</button>
+      <span class="ai-head-sep" aria-hidden="true"></span><button class="ai-iconbtn ai-close" type="button" title="Collapse (Esc)" aria-label="Collapse Dorna Workspace AI">${COLLAPSE_ICON}</button>
     </div>
     <div class="ai-hist" role="menu" aria-label="Recent chats" hidden></div>
     <div class="ai-log" aria-live="polite"></div>
@@ -99,7 +99,7 @@
       <div class="ai-atts" hidden></div>
       <div class="ai-compose-row">
         <button class="ai-iconbtn ai-attach" type="button" title="Attach files — images, PDFs, 3D models, vision models (up to 50 MB each)" aria-label="Attach files">${CLIP_ICON}</button>
-        <textarea rows="1" placeholder="Ask Dorna AI…" aria-label="Message Dorna AI"></textarea>
+        <textarea rows="1" placeholder="Ask Dorna Workspace…" aria-label="Message Dorna Workspace AI"></textarea>
         <button class="btn btn-primary btn-sm ai-send" type="button" title="Send (Enter)" aria-label="Send">Send</button>
       </div>
       <div class="ai-bar"><span class="spacer"></span><span class="ai-hint">Enter to send</span>
@@ -111,7 +111,7 @@
   const log = $(".ai-log"), input = $("textarea"), sendBtn = $(".ai-send"), stopBtn = $(".ai-stop"), projEl = $(".ai-proj");
   const attsEl = $(".ai-atts"), fileIn = $(".ai-file"), dropEl = $(".ai-drop");
   const w = parseInt(ls.get(W_KEY) || "", 10);
-  if (isFinite(w)) root.style.setProperty("--aiw", Math.max(320, Math.min(900, w)) + "px");
+  if (isFinite(w)) document.documentElement.style.setProperty("--aiw", Math.max(320, Math.min(900, w)) + "px");
 
   // ── helpers ──────────────────────────────────────────────────────
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -390,7 +390,7 @@
         if (!el) return;
         el.dataset.state = state;
         el.querySelector(".ai-ap-mark").textContent = state === "approved" ? "✓" : state === "pending" && live ? "!" : "×";
-        el.querySelector(".ai-ap-q").textContent = state === "pending" && live ? "Approve this action?" : "Dorna AI asked to do this";
+        el.querySelector(".ai-ap-q").textContent = state === "pending" && live ? "Approve this action?" : "Dorna Workspace AI asked to do this";
         const foot = el.querySelector(".ai-ap-foot");
         if (state === "pending" && live) {
           foot.innerHTML = `<button type="button" class="btn btn-sm ai-ap-no">Decline</button><button type="button" class="btn btn-primary btn-sm ai-ap-ok">Approve</button>`;
@@ -554,15 +554,19 @@
   }
 
   // ── open / close ─────────────────────────────────────────────────
+  // the page narrowed or widened beside the panel: its 3D views and
+  // JS-placed panes measure again on a resize
+  const relayout = () => requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
   function setOpen(open) {
     root.hidden = !open || !enabled;
     fab.hidden = !enabled || open;
     fab.setAttribute("aria-expanded", open && enabled ? "true" : "false");
     document.documentElement.classList.toggle("ai-open", open && enabled);
+    relayout();
     ls.set(OPEN_KEY, open ? "1" : "0");
     if (open && enabled) {
       showProject();
-      if (!loaded) loadSession().catch((e) => { log.innerHTML = ""; assistantBubble().error("Couldn't reach Dorna AI: " + e.message); });
+      if (!loaded) loadSession().catch((e) => { log.innerHTML = ""; assistantBubble().error("Couldn't reach Dorna Workspace AI: " + e.message); });
       setTimeout(() => input.focus(), 50);
     }
   }
@@ -656,7 +660,7 @@
   };
   $(".ai-resize").addEventListener("pointerdown", (e) => {
     const startX = e.clientX, startW = root.getBoundingClientRect().width;
-    const move = (ev) => { const nw = Math.max(320, Math.min(window.innerWidth - 40, startW - (ev.clientX - startX))); root.style.setProperty("--aiw", nw + "px"); ls.set(W_KEY, String(Math.round(nw))); };
+    const move = (ev) => { const nw = Math.max(320, Math.min(window.innerWidth - 40, startW - (ev.clientX - startX))); document.documentElement.style.setProperty("--aiw", nw + "px"); ls.set(W_KEY, String(Math.round(nw))); relayout(); };
     const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
     window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
   });
