@@ -27,7 +27,7 @@ CAMERA_TYPES = ["d405", "ueye_xs", "hikrobot", "oak"]
 
 # key → (label, kind, hint). kind: text | int | float | bool | serial | enum
 FIELDS = {
-    "ip":                     ("IP address", "text", "Empty = no device; the component runs in simulation."),
+    "ip":                     ("IP address", "text", "Its address on the network, e.g. 192.168.1.20."),
     "port":                   ("Port", "int", ""),
     "address":                ("Bus address", "int", ""),
     "baud":                   ("Baud rate", "int", ""),
@@ -251,6 +251,36 @@ def schema(name, cfg, scene):
             f["value"] = True               # the library default
         fields.append(f)
     return {"name": name, "type": ctype, "kind": kind_of(ctype), "device": device, "fields": fields}
+
+
+def no_connection(sch, scene=None):
+    """A real device (simulation off) with nothing to reach it by: its
+    Settings ``sch`` (schema()) → {key, text} naming the field to fill, or
+    None. The address is the schema's own connection field — ip, else a
+    USB / serial port, else a serial number — so a part wired through the
+    robot's I/O (no such field) never counts as unconnected."""
+    if not sch.get("device"):
+        return None
+    f = {x["key"]: x for x in sch["fields"]}
+    if (f.get("simulation") or {}).get("value", True) is not False:
+        return None
+    empty = lambda k: k in f and str(f[k].get("value") or "").strip() == ""
+    fix = " — or turn on simulation."
+    if sch["type"].startswith("inspection_"):
+        srv = str(f.get("camera_cfg.server", {}).get("value") or "")
+        if not srv or not isinstance((scene or {}).get(srv), dict):
+            return {"key": "camera_cfg.server", "text": "No vision server chosen: pick the one this camera is plugged into" + fix}
+        typ = str(f.get("camera_cfg.type", {}).get("value") or f.get("camera_cfg.type", {}).get("default") or "")
+        if empty("camera_cfg.serial_number") and (typ not in NETWORK_TYPES or empty("camera_cfg.ip")):
+            what = "its serial number or IP address" if typ in NETWORK_TYPES else "its serial number"
+            return {"key": "camera_cfg.serial_number", "text": f"No camera set: enter {what}" + fix}
+        return None
+    for k, what in (("ip", "its IP address"), ("port", "its USB port"), ("serial_number", "its serial number")):
+        if k in f:
+            if k == "port" and f[k]["kind"] != "serial":
+                continue                    # a TCP port number goes with the ip
+            return {"key": k, "text": f"No connection set: enter {what}" + fix} if empty(k) else None
+    return None
 
 
 def coerce(field, value):

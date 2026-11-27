@@ -346,7 +346,9 @@ async function openParams(name, force = false) {
     return;
   }
   const io = s.fields.filter(f => f.group === "io"), rest = s.fields.filter(f => f.group !== "io");
-  body.innerHTML = `<div class="muted dv-small">${esc(s.type)}</div>` + rest.map(f => fieldHtml(f, ports)).join("")
+  const nc = info?.components.find(c => c.name === name)?.no_connection;
+  body.innerHTML = `<div class="muted dv-small">${esc(s.type)}</div>`
+    + (nc ? `<div class="dv-msg bad" role="alert">${esc(nc.text)}</div>` : "") + rest.map(f => fieldHtml(f, ports)).join("")
     + (io.length ? `<div class="dv-grp">I/O wiring</div>` + io.map(f => fieldHtml(f, ports)).join("") : "");
   foot.hidden = false;
   foot.innerHTML = `<button class="btn btn-primary" data-save>Save</button><span class="dv-msg" data-msg></span>`;
@@ -695,6 +697,23 @@ async function loadInfo() {
   for (const c of info.components) if (c.settings) schemas.set(c.name, c.settings);
   pushMenus();
   setTools();
+  noConnection();
+}
+
+window.__dvInfoChanged = () => loadInfo();
+
+// Real devices (simulation off) with nothing to reach them by: one card
+// on the top bar, naming them, with the first one's Settings a click away.
+function noConnection() {
+  try { $("#wfFrame").contentWindow.__wfSimReload?.(); } catch (_) {}
+  const bad = info.components.filter(c => c.no_connection);
+  if (!bad.length) return unnotify("noconn");
+  const one = bad[0];
+  notify({ id: "noconn", level: "bad", label: "Devices",
+           title: bad.length === 1 ? `${one.name} has no connection set` : `${bad.length} devices have no connection set`,
+           text: bad.map(c => `${c.name} — ${c.no_connection.text}`).join(" "),
+           actions: [{ label: `Open ${one.name}'s Settings`, primary: true,
+                       wire: (b) => { b.onclick = () => window.__dvOpenSettings(one.name); } }] });
 }
 
 async function pollStatus() {

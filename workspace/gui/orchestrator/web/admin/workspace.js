@@ -2262,7 +2262,7 @@ function renderDevicesPanel() {
     // Not running (embedded): the scene's devices, to pick sim or real
     // before the launch. Recover / Connect come with the bus.
     if (badge) badge.textContent = `${_simDevs.size}`;
-    const html = [..._simDevs.keys()].sort().map(id => `
+    const html = [..._simDevs.keys()].sort().map(id => _noConn.has(id) ? _noConnRow(id) : `
       <div class="device-row" data-device-id="${escAttr(id)}">
         <span class="dot"></span>
         <span class="device-id">${escHtml(id)}</span>
@@ -2291,7 +2291,9 @@ function renderDevicesPanel() {
   }
   const now = Date.now();
   let nDown = 0, nRecovering = 0;
-  const newHtml = list.map(d => {
+  // Real devices with no address never reach the bus: their row says why.
+  const unreached = [..._noConn.keys()].filter(id => !_devices.has(id)).sort();
+  const newHtml = unreached.map(_noConnRow).join("") + list.map(d => {
     const state = d.state || "down";
     const online = d.online !== false;
     const pending = _devicesPending.get(d.id);
@@ -2374,7 +2376,7 @@ function renderDevicesPanel() {
         ${_simSwitch(d.id)}
       </div>`;
   }).join("");
-  _setDevicesAttention(nDown, nRecovering);
+  _setDevicesAttention(nDown + unreached.length, nRecovering);
   // Skip the DOM write when nothing visible changed. WS events stream
   // often during a run — this catches silent state events (e.g. only
   // ``ts`` or ``last_update`` changed) and avoids the layout + paint.
@@ -2451,6 +2453,7 @@ function _wireDeviceListClicks(el) {
 // keeps the old setting until a relaunch — the note offers one.
 const _embedded = document.documentElement.classList.contains("embedded");
 const _simDevs = new Map();          // scene device name → simulated?
+const _noConn = new Map();           // real scene device with no ip / port set → what to fill (no bus row: nothing to reach)
 const _simBusy = new Set();
 const DEV_API = `/dev/api/projects/${encodeURIComponent(wsName)}`;
 
@@ -2468,7 +2471,11 @@ async function loadSimDevices() {
     if (!r.ok) return;
     const j = await r.json();
     _simDevs.clear();
-    for (const c of j.components || []) if (c.device) _simDevs.set(c.name, !!c.simulation);
+    _noConn.clear();
+    for (const c of j.components || []) {
+      if (c.device) _simDevs.set(c.name, !!c.simulation);
+      if (c.no_connection) _noConn.set(c.name, c.no_connection.text);
+    }
   } catch (_) { return; }
   _devicesListLastHtml = "";
   renderDevicesPanel();
@@ -2500,7 +2507,28 @@ async function setSimulation(id, on) {
   }
   _simBusy.delete(id);
   await loadSimDevices();
+  window.parent?.__dvInfoChanged?.();     // Developer mode's no-connection card
 }
+// Developer mode: a Settings save changed a device's connection
+window.__wfSimReload = loadSimDevices;
+
+// A real device with no connection set: red, the reason, and its
+// Settings (Developer mode's Scene tab) one click away.
+function _noConnRow(id) {
+  const why = _noConn.get(id);
+  return `
+      <div class="device-row is-down" data-device-id="${escAttr(id)}" data-noconn>
+        <span class="dot bad"></span>
+        <span class="device-id">${escHtml(id)}</span>
+        <span class="device-msg" title="${escAttr(why)}">${escHtml(why)}</span>
+        ${window.parent?.__dvOpenSettings ? `<button class="btn btn-sm btn-primary" data-noconn-set="${escAttr(id)}">Settings</button>` : ""}
+        ${_simSwitch(id)}
+      </div>`;
+}
+document.addEventListener("click", (ev) => {
+  const b = ev.target.closest("[data-noconn-set]");
+  if (b) { ev.stopPropagation(); window.parent.__dvOpenSettings(b.dataset.noconnSet); }
+}, true);
 
 // ── Device detail modal ─────────────────────────────────────────────
 let _openDeviceId = null;

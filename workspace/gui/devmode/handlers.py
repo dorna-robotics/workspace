@@ -161,6 +161,7 @@ def _components(scene):
             sch = {"fields": []}
         comps.append({"name": n, "type": t, "kind": params.kind_of(t), "device": dev,
                       "simulation": cfg.get("simulation", True) is not False if dev else None,
+                      "no_connection": params.no_connection(sch, scene) if sch["fields"] else None,
                       "camera": t.startswith("inspection_"), "menu": bool(sch["fields"]),
                       "settings": sch if sch["fields"] else None})
     return comps
