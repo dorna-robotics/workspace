@@ -1271,6 +1271,13 @@ class ProjectBundleHandler(tornado.web.RequestHandler):
         self.write(out)
 
 
+def _platform_env():
+    """A solver subprocess runs THIS checkout's platform (workspace/ first
+    on its path), never another one installed in site-packages — a script
+    run by path does not get its cwd on sys.path (devmode's plan.py: same)."""
+    return dict(os.environ, PYTHONPATH=PARENT_DIR + os.pathsep + os.environ.get("PYTHONPATH", ""))
+
+
 # /api/solve_ref result cache: {project_path: (sig, result_dict)} where sig
 # is the mtime fingerprint of launch.yaml + scene files + recipes file —
 # any edit re-solves, an unchanged project answers instantly.
@@ -1324,7 +1331,10 @@ class PerfHandler(tornado.web.RequestHandler):
         row["ip"] = self.request.remote_ip
         try:
             from gui.data_home import data_path
-            with open(data_path("sb_perf.jsonl"), "a") as f:
+            fp = data_path("sb_perf.jsonl")
+            if os.path.getsize(fp) > 2_000_000 if os.path.exists(fp) else False:
+                os.replace(fp, fp + ".1")          # keep the last ~2 MB, not forever
+            with open(fp, "a") as f:
                 f.write(json.dumps(row) + "\n")
         except OSError:
             pass
@@ -1377,7 +1387,7 @@ class SolveRefHandler(tornado.web.RequestHandler):
             try:
                 r = subprocess.run([sys.executable, script, proj],
                                    capture_output=True, text=True, timeout=180,
-                                   cwd=PARENT_DIR)
+                                   cwd=PARENT_DIR, env=_platform_env())
             except subprocess.TimeoutExpired:
                 return {"ok": False, "error": "solve timed out (180s)"}
             except Exception as ex:
@@ -1475,7 +1485,7 @@ def _ik_worker_ensure(proj):
         w["proc"] = subprocess.Popen(
             [sys.executable, script, proj],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL, text=True, cwd=PARENT_DIR)
+            stderr=subprocess.DEVNULL, text=True, cwd=PARENT_DIR, env=_platform_env())
         w["project"], w["sig"] = proj, sig
         line = w["proc"].stdout.readline()
         w["info"] = json.loads(line) if line else {"ready": False}
