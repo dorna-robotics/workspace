@@ -562,7 +562,18 @@ a:hover { color: var(--accent-h); }
 .ws-brand-word { --m: url(/vendor/dorna-wordmark.svg); width: 62px; height: 11px; }
 .ws-brand-app { font-size: 14px; font-weight: 500; color: var(--muted); letter-spacing: -0.1px; }
 .ws-brand:hover .ws-brand-app { color: var(--text); }
-@media (max-width: 768px) { .ws-brand-word, .ws-brand-app, .ws-brand::after { display: none; } }
+/* The bar's own width decides (the AI panel narrows it as much as the
+   window does): the wordmark's text, then the wordmark, then denser icons
+   — the actions never slide out of sight */
+.topbar, .ws-header, .sb-header, .pendant-nav { container-type: inline-size; }
+@container (max-width: 1000px) { .ws-brand-app { display: none; } }
+@container (max-width: 760px) {
+  .ws-brand-word, .ws-brand::after { display: none; }
+  .topbar .btn-icon, .ws-header .btn-icon, .sb-header .btn-icon, .pendant-nav .btn-icon { min-width: 36px; }
+  .topbar-actions { gap: 0; }
+}
+/* a message line squeezed to nothing clips — never draws over its neighbours */
+.msg-line { overflow: hidden; }
 /* the page's name — which app and page this is, at a glance (the vision
    server's top bar has the same) */
 .topbar-title { font-size: 14px; font-weight: 600; letter-spacing: -0.2px; color: var(--text); margin: 0; }
