@@ -134,6 +134,22 @@ a:hover { color: var(--accent-h); }
   ::-webkit-scrollbar { width: 10px; height: 10px; }
 }
 
+/* ── Switch ─────────────────────────────────────────────────────────────
+   One on/off switch everywhere (simulation, settings, collision box):
+   accent when on, like every other "on" control. .switch-sm in dense rows. */
+.switch { display: inline-flex; align-items: center; gap: var(--space-3); min-height: 44px; cursor: pointer; user-select: none; font-size: var(--text-sm); color: var(--muted); }
+.switch input { appearance: none; flex: none; width: 44px; height: 26px; border-radius: 13px; background: var(--surface3); position: relative; cursor: pointer; margin: 0; transition: background var(--motion-fast) var(--ease); }
+.switch input::after { content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: var(--shadow-sm); transition: transform var(--motion-fast) var(--ease); }
+.switch input:checked { background: var(--accent); }
+.switch input:checked::after { transform: translateX(18px); }
+.switch input:focus-visible { outline: none; box-shadow: var(--glow); }
+.switch input:disabled { opacity: 0.5; cursor: not-allowed; }
+.switch.locked, .switch.locked input { cursor: not-allowed; }
+.switch-sm { min-height: 0; gap: var(--space-2); font-size: var(--text-xs); }
+.switch-sm input { width: 34px; height: 20px; border-radius: 10px; }
+.switch-sm input::after { top: 2px; left: 2px; width: 16px; height: 16px; }
+.switch-sm input:checked::after { transform: translateX(14px); }
+
 /* ── Utility ──────────────────────────────────────────────────────────── */
 .mono   { font-family: var(--mono); font-size: 11px; }
 .muted  { color: var(--muted); }
@@ -569,6 +585,10 @@ a:hover { color: var(--accent-h); }
 @container (max-width: 1000px) { .ws-brand-app { display: none; } }
 @container (max-width: 760px) {
   .ws-brand-word, .ws-brand::after { display: none; }
+  /* the message line keeps its mark (and count) — a tap opens the cards */
+  .msg-line .msg-word, .msg-line .msg-first { display: none; }
+  .msg-line { flex: none; }
+  .msg-line .msg-chip { padding-right: 6px; }
   .topbar .btn-icon, .ws-header .btn-icon, .sb-header .btn-icon, .pendant-nav .btn-icon { min-width: 36px; }
   .topbar-actions { gap: 0; }
 }
@@ -654,7 +674,7 @@ html.ai-open :is(.confirm-overlay, .modal-overlay, .launch-card.lc-page) { right
 
 /* Optional bullet list for structured warnings (e.g. listing devices
    that would block a Start). Mono font so device ids align. */
-.confirm-list { list-style: none; padding: 8px 12px; margin: 4px 0 0 0; max-width: 280px; width: 100%; max-height: 140px; overflow-y: auto; background: var(--surface2); border-radius: var(--radius-sm); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: var(--text-sm); color: var(--text); text-align: left; }
+.confirm-list { list-style: none; padding: 8px 12px; margin: 4px 0 0 0; max-width: 280px; width: 100%; max-height: 140px; overflow-y: auto; background: var(--surface2); border-radius: var(--radius-sm); font-family: var(--mono); font-size: var(--text-sm); color: var(--text); text-align: left; }
 .confirm-list li { padding: 3px 6px; line-height: 1.4; word-break: break-all; }
 .confirm-list li + li { border-top: 1px solid rgba(255,255,255,0.04); }
 [data-theme="light"] .confirm-list { background: rgba(0,0,0,0.04); }

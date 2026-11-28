@@ -6,7 +6,8 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--
 .dv-top { gap: var(--space-4); padding: 0 var(--space-4); min-height: 56px; border-bottom: 1px solid var(--border2); background: var(--surface); flex-wrap: nowrap; }
 .dv-title { display: flex; flex-direction: column; line-height: 1.2; min-width: 0; }
 .dv-title #dvProject { font-size: var(--text-lg); font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px; }
-.dv-kicker { font-size: var(--text-xs); color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
+.dv-kicker { font-size: var(--text-xs); color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; white-space: nowrap; }
+#dvState { flex: none; white-space: nowrap; }
 
 .dv-seg button {
   min-height: 44px; padding: 0 var(--space-5); border: none; border-radius: var(--radius-xs);
@@ -68,6 +69,12 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--
   .dv-toolbar { gap: var(--space-2); row-gap: var(--space-2); padding: var(--space-2) var(--space-3); }
   .dv-toolbar .dv-sel, .dv-toolbar .dv-sep, #hmiMsg { display: none; }
 }
+/* narrower still (a landscape tablet beside the AI panel): the buttons
+   lose their icons and some padding, so the bar stays one row */
+@container (max-width: 720px) {
+  .dv-toolbar .btn { padding-inline: var(--space-3); }
+  .dv-toolbar .btn > svg:first-child { display: none; }
+}
 .dv-frame { flex: 1; width: 100%; min-height: 0; border: none; background: var(--bg); display: block; }
 .dv-small { font-size: var(--text-sm); }
 
@@ -126,13 +133,7 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--
 .dv-flow-paper .af-sel [joint-selector="line"] { stroke: var(--accent) !important; stroke-width: 2.5 !important; }
 .dv-flow-paper .available-magnet { fill: var(--accent); }
 
-/* a switch: 44 px target, sim = cyan (device-guide §16: mode, not state) */
 .dv-grp { font-size: var(--text-xs); color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; margin: var(--space-3) 0 var(--space-1); }
-.dv-switch { display: inline-flex; align-items: center; gap: var(--space-3); min-height: 44px; cursor: pointer; user-select: none; font-size: var(--text-sm); color: var(--muted); }
-.dv-switch input { appearance: none; width: 44px; height: 26px; border-radius: 13px; background: var(--live); position: relative; cursor: pointer; margin: 0; transition: background var(--motion-fast) var(--ease); }
-.dv-switch input::after { content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: var(--surface); transition: transform var(--motion-fast) var(--ease); }
-.dv-switch input:checked { background: var(--sim); }
-.dv-switch input:checked::after { transform: translateX(18px); }
 /* floating windows: within the page's own width, never under the
    assistant's docked panel (--aiw-on while it is open) */
 .dv-win { position: fixed; z-index: 9000; --dv-room: calc(100vw - var(--aiw-on, 0px));
@@ -203,10 +204,10 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--
 .dv-roi { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: crosshair; }
 .dv-roi-dim { fill: rgb(0 0 0 / 42%); pointer-events: none; }
 .dv-roi-halo { fill: none; stroke: rgb(0 0 0 / 55%); stroke-width: 4; pointer-events: none; }
-.dv-roi-line { fill: transparent; stroke: #ffd60a; stroke-width: 2; cursor: move; }
-.dv-roi-pt { fill: #ffd60a; stroke: rgb(0 0 0 / 60%); stroke-width: 1.5; vector-effect: non-scaling-stroke; pointer-events: none; }
+.dv-roi-line { fill: transparent; stroke: var(--accent); stroke-width: 2; cursor: move; }
+.dv-roi-pt { fill: var(--accent); stroke: rgb(0 0 0 / 60%); stroke-width: 1.5; vector-effect: non-scaling-stroke; pointer-events: none; }
 .dv-roi-hit { fill: transparent; cursor: grab; }
-.dv-roi-label { fill: #ffd60a; font-family: var(--mono); font-weight: 600; paint-order: stroke; stroke: rgb(0 0 0 / 70%); stroke-width: 3px; pointer-events: none; }
+.dv-roi-label { fill: var(--accent); font-family: var(--mono); font-weight: 600; paint-order: stroke; stroke: rgb(0 0 0 / 70%); stroke-width: 3px; pointer-events: none; }
 .dv-corners { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2) var(--space-4); }
 .dv-corner { display: grid; grid-template-columns: 16px 1fr 1fr; gap: var(--space-2); align-items: center; }
 .dv-corner-head { grid-column: 1 / -1; display: block; font-weight: 600; }
@@ -327,6 +328,7 @@ button.cb-del:focus-visible, .cb-disc:focus-visible { outline: none; box-shadow:
 
 /* the project page's run controls in the top bar (dev.js renderRun) */
 .dv-run { display: flex; align-items: center; gap: var(--space-2); }
+.dv-run .btn { min-height: 44px; }  /* a top-bar target, as its icon buttons */
 .dv-run[hidden] { display: none; }
 /* Workflow (rail) has a question, an alarm or a device down waiting */
 .dv-rail button { position: relative; }

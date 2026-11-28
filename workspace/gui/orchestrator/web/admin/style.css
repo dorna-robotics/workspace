@@ -84,7 +84,7 @@
   .section-header { margin-bottom: 12px; padding-bottom: 8px; gap: 6px; }
   .section-header h2 { font-size: 9px; }
 
-  .wc-avatar { width: 36px; height: 36px; font-size: 15px; border-radius: 12px; }
+  .wc-avatar { width: 36px; height: 36px; font-size: 15px; border-radius: var(--radius-md); }
 }
 .brand img {
   height: 26px;
@@ -586,7 +586,7 @@ html.pendant-boot .pendant-overlay { display: flex !important; }
 .ph-step {
   font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
   color: var(--green); background: var(--green-dim);
-  padding: 3px 10px; border-radius: 6px;
+  padding: 3px 10px; border-radius: var(--radius-xs);
 }
 .ph-row { display: flex; align-items: flex-end; gap: 18px; }
 .ph-title {
@@ -1283,7 +1283,7 @@ html.pendant-boot .pendant-overlay { display: flex !important; }
 .fb-md h3, .fb-md h4 { font-size: var(--text-md); margin: var(--space-4) 0 var(--space-2); }
 .fb-md p, .fb-md ul, .fb-md ol { margin: 0 0 var(--space-3); }
 .fb-md li { margin-bottom: var(--space-1); }
-.fb-md code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: var(--text-sm);
+.fb-md code { font-family: var(--mono); font-size: var(--text-sm);
   background: var(--surface2); padding: 1px 5px; border-radius: var(--radius-xs); }
 .fb-md pre { background: var(--surface2); padding: var(--space-3) var(--space-4); border-radius: var(--radius-sm); overflow: auto; }
 .fb-md pre code { background: none; padding: 0; }

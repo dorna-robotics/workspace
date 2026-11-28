@@ -118,6 +118,7 @@
       <span class="spacer"></span>
       <button class="ai-iconbtn ai-hist-btn" type="button" title="Recent chats" aria-label="Recent chats" aria-expanded="false">${HISTORY_ICON}</button>
       <button class="ai-iconbtn ai-new" type="button" title="New chat" aria-label="New chat">${NEW_ICON}</button>
+      <button class="ai-iconbtn ai-hide" type="button" title="Collapse (Esc)" aria-label="Collapse Dorna Robotics AI">${CLOSE_ICON}</button>
 
     </div>
     <div class="ai-hist" role="menu" aria-label="Recent chats" hidden></div>
@@ -817,9 +818,10 @@
     clearAtts(true);
     emptyState(); input.focus();
   }
+  $(".ai-hide").onclick = () => setOpen(false);
   $(".ai-resize").addEventListener("pointerdown", (e) => {
     const startX = e.clientX, startW = root.getBoundingClientRect().width;
-    const move = (ev) => { const nw = Math.max(320, Math.min(window.innerWidth - 40, startW - (ev.clientX - startX))); document.documentElement.style.setProperty("--aiw", nw + "px"); ls.set(W_KEY, String(Math.round(nw))); relayout(); };
+    const move = (ev) => { const nw = Math.max(300, Math.min(window.innerWidth - 560, startW - (ev.clientX - startX))); document.documentElement.style.setProperty("--aiw", nw + "px"); ls.set(W_KEY, String(Math.round(nw))); relayout(); };
     const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
     window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
   });

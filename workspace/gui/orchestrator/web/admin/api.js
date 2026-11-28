@@ -42,7 +42,7 @@ export function stateLabel(state) {
   if (s === "IDLE") return "READY";
   if (s === "PARKING") return "PARKING";
   if (s === "LAUNCHED_NOT_READY") return "STARTING…";
-  return s || "—";
+  return s.replace(/_/g, " ") || "—";
 }
 
 export function isParking(state) {

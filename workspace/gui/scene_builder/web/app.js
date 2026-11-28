@@ -4680,7 +4680,7 @@ function removeSelected() {
   overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
 
   const card = document.createElement("div");
-  card.style.cssText = `width:min(480px,94vw);max-height:min(86vh,640px);overflow:auto;background:${th.panelBg};border-radius:16px;padding:24px;box-shadow:0 18px 46px rgba(0,0,0,0.5);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;color:${th.color};animation:attachModalIn 0.2s cubic-bezier(0.34,1.56,0.64,1) forwards`;
+  card.style.cssText = `width:min(480px,94vw);max-height:min(86vh,640px);overflow:auto;background:${th.panelBg};border-radius:16px;padding:24px;box-shadow:0 18px 46px rgba(0,0,0,0.5);font-family:var(--font);color:${th.color};animation:attachModalIn 0.2s cubic-bezier(0.34,1.56,0.64,1) forwards`;
 
   const title = document.createElement("div");
   title.textContent = "Delete component?";
@@ -4716,7 +4716,7 @@ function removeSelected() {
   row.appendChild(cbText);
 
   const list = document.createElement("div");
-  list.style.cssText = `margin-top:10px;font-size:12px;opacity:0.7;max-height:140px;overflow:auto;border:${th.listBord};border-radius:10px;padding:10px 12px;background:${th.listBg};font-family:ui-monospace,monospace`;
+  list.style.cssText = `margin-top:10px;font-size:12px;opacity:0.7;max-height:140px;overflow:auto;border:${th.listBord};border-radius:10px;padding:10px 12px;background:${th.listBg};font-family:var(--mono)`;
   list.textContent = childArr.join(", ");
 
   const actions = document.createElement("div");
@@ -6805,7 +6805,7 @@ function __openCollisionBoxPanel() {
 
   const panel = document.createElement("div");
   panel.id = "colBoxPanel";
-  panel.style.cssText = `position:fixed;right:calc(var(--aiw-on, 0px) + 340px);top:18px;width:360px;max-height:85vh;overflow:hidden;display:flex;flex-direction:column;background:${th.panelBg};border:${th.panelBord};border-radius:16px;box-shadow:0 18px 60px rgba(0,0,0,0.45);padding:14px;z-index:10005;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;color:${th.color};`;
+  panel.style.cssText = `position:fixed;right:calc(var(--aiw-on, 0px) + 340px);top:18px;width:360px;max-height:85vh;overflow:hidden;display:flex;flex-direction:column;background:${th.panelBg};border:${th.panelBord};border-radius:16px;box-shadow:0 18px 60px rgba(0,0,0,0.45);padding:14px;z-index:10005;font-family:var(--font);color:${th.color};`;
 
   // Title
   const title = document.createElement("div");
@@ -8277,7 +8277,7 @@ ensureBuilderBar();
     box.className = "ik-prm-box";
     box.dataset.recipe = name;
     box.style.cssText = "display:flex;flex-direction:column;gap:3px;" +
-      "font-size:11px;font-family:monospace;padding:4px 0 2px;";
+      "font-size:11px;font-family:var(--mono);padding:4px 0 2px;";
     box.addEventListener("click", e => e.stopPropagation());
 
     const ov = __ikParams[name] || {};
@@ -8684,7 +8684,7 @@ ensureBuilderBar();
       }
       row.appendChild(head);
       const sub = document.createElement("span");
-      sub.style.cssText = "display:none;font-size:12px;font-family:monospace;" +
+      sub.style.cssText = "display:none;font-size:12px;font-family:var(--mono);" +
         "color:var(--fg,inherit);line-height:1.55;white-space:pre-line;" +
         "word-break:break-all;padding-top:3px;";
       row.appendChild(sub);

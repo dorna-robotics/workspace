@@ -291,6 +291,15 @@ the primitive:
 shared `attachModalIn` keyframe. Body padding `20 px`. Head/foot
 padded `16 px 20 px`. Don't introduce a second modal shell.
 
+### 3.6 Switch
+
+`<label class="switch"><input type="checkbox"/><span>Label</span></label>`
+from base.css — one on/off switch everywhere (simulation, settings, the
+collision box): `--accent` when on, `--surface3` when off, 44 px target.
+`.switch-sm` in dense rows (the Devices list); `.locked` when it can't be
+changed. A device's SIM / LIVE *mode* stays on its pill (`--sim` /
+`--live`), never on the switch.
+
 ### 3.9 Schedule Gantt — phase bands and X-only zoom
 
 **Four elements, each with one job.** A single scrolling SVG loses its

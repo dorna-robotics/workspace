@@ -33,13 +33,7 @@
     html.embedded .viewer-tab[data-vtab="sched"] { display: none !important; }
     /* each scene device's simulation switch (embedded only): saved to
        the project's scene — mode, not state (device-guide §16) */
-    .sim-sw { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; flex: none; font-size: var(--text-xs); color: var(--muted); }
-    .sim-sw input { appearance: none; width: 34px; height: 20px; border-radius: 10px; background: var(--live); position: relative; cursor: pointer; margin: 0; transition: background var(--motion-fast) var(--ease); }
-    .sim-sw input::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--surface); transition: transform var(--motion-fast) var(--ease); }
-    .sim-sw input:checked { background: var(--sim); }
-    .sim-sw input:checked::after { transform: translateX(14px); }
-    .sim-sw input:disabled { opacity: 0.5; }
-    .sim-sw.locked, .sim-sw.locked input { cursor: not-allowed; }
+    .sim-sw { flex: none; }
     .sim-note { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 10px; margin-bottom: 6px; border-radius: var(--radius-sm); background: var(--accent-dim); font-size: var(--text-xs); }
     .sim-note[hidden] { display: none; }
 
@@ -427,13 +421,13 @@
       position: absolute; top: 12px; left: 16px; z-index: 5;
       display: flex; gap: 3px;
       background: var(--surface); border: 1px solid var(--border);
-      border-radius: 9px; padding: 3px;
+      border-radius: var(--radius-sm); padding: 3px;
       box-shadow: var(--shadow-sm);
     }
     .viewer-tab {
       font: inherit; font-size: 12.5px; font-weight: 600;
       color: var(--muted); background: none; border: none;
-      border-radius: 6px; padding: 6px 14px; cursor: pointer;
+      border-radius: var(--radius-xs); padding: 6px 14px; cursor: pointer;
     }
     .viewer-tab:hover { color: var(--text); }
     .viewer-tab.active { background: var(--accent-dim); color: var(--accent); }
@@ -485,6 +479,14 @@
     .viewer-placeholder h3 { font-size: var(--text-md); color: var(--muted); font-weight: 500; }
     .viewer-placeholder p  { font-size: var(--text-sm); }
 
+    /* ---- A narrow page (a landscape tablet beside the AI panel, a
+       portrait tablet): the sidebar gives the 3D view room — its run
+       controls wrap onto a second row ---- */
+    .ws-body { container-type: inline-size; }
+    @container (max-width: 860px) {
+      .sidebar { width: 320px; min-width: 320px; }
+    }
+
     /* ---- Mobile ---- */
     @media (max-width: 768px) {
       html, body { height: auto; overflow: auto; }
@@ -502,6 +504,17 @@
       #controls .btn { font-size: 13px; padding: 10px 6px; min-height: 44px; }
 
       #logPre { height: 200px; font-size: 10px; overflow-y: auto; }
+    }
+
+    /* …but a frame is never a phone: Developer mode's Workflow tab (a
+       landscape tablet beside the AI panel, a portrait tablet) keeps the
+       sidebar beside the 3D view, as on a desktop */
+    @media (max-width: 768px) {
+      html.embedded, html.embedded body { height: 100%; overflow: hidden; }
+      html.embedded .ws-body { flex-direction: row; flex: 1; overflow: hidden; }
+      html.embedded .sidebar { width: 320px; min-width: 320px; flex: none; border-bottom: none; border-right: 1px solid var(--border2); overflow: hidden; }
+      html.embedded .sidebar-scroll { overflow-y: auto; }
+      html.embedded .viewer-area { flex: 1; height: auto; }
     }
 
     @media (max-width: 480px) {

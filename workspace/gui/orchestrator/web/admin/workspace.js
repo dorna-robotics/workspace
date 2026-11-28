@@ -2464,7 +2464,7 @@ function _simSwitch(id) {
   // simulated with no address to reach it: it can't go real until one is set
   const why = on && _missing.get(id);
   const tip = why ? `Can't switch to real: ${why}` : "Simulation — saved to the project's scene";
-  return `${why && window.parent?.__dvOpenSettings ? `<button class="btn btn-sm btn-ghost" data-noconn-set="${escAttr(id)}" title="${escAttr(why)}">Set connection</button>` : ""}<label class="sim-sw${why ? " locked" : ""}" title="${escAttr(tip)}"><span>${on ? "Sim" : "Real"}</span>
+  return `${why && window.parent?.__dvOpenSettings ? `<button class="btn btn-sm btn-ghost" data-noconn-set="${escAttr(id)}" title="${escAttr(why)}">Set connection</button>` : ""}<label class="switch switch-sm sim-sw${why ? " locked" : ""}" title="${escAttr(tip)}"><span>${on ? "Sim" : "Real"}</span>
     <input type="checkbox" data-sim="${escAttr(id)}" ${on ? "checked" : ""} ${_simBusy.has(id) || why ? "disabled" : ""} aria-label="Simulate ${escAttr(id)}"/></label>`;
 }
 

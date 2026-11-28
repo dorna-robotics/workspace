@@ -108,7 +108,7 @@ function thumbHtml(p) {
   const st = p.st || {};
   const state = st.state || "unknown";
   const v = stateVariant(state);
-  const pill = `<span class="pill ${v}"><span class="dot ${v}${isWaiting(state) ? " pulse" : ""}"></span>${esc(stateLabel(state).replace(/_/g, " "))}</span>`;
+  const pill = `<span class="pill ${v}"><span class="dot ${v}${isWaiting(state) ? " pulse" : ""}"></span>${esc(stateLabel(state))}</span>`;
   const ph = `<div class="pc-ph">${I.bench}${p.chassis ? `<span class="pc-ph-chip">${esc(CHASSIS[p.chassis] || p.chassis)}</span>` : ""}</div>`;
   const img = p.thumb
     ? `<img src="/home/api/projects/${enc(p.name)}/thumb?v=${p.thumb}" alt="" loading="lazy" data-ph="1">` : ph;

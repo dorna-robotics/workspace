@@ -471,7 +471,7 @@ let colEditEnd = null;
 function endColEdit() { const f = colEditEnd; colEditEnd = null; f?.(); }
 function colboxHtml(f, id) {
   return `<div class="dv-colbox" id="${id}" data-key="${esc(f.key)}">
-    <label class="dv-switch"><input type="checkbox" data-colbox-on/><span>Off</span></label>
+    <label class="switch"><input type="checkbox" data-colbox-on/><span>Off</span></label>
     <div class="dv-colbox-edit" data-colbox-boxes hidden></div></div>`;
 }
 function wireColbox(el, name, f, win) {
@@ -622,7 +622,7 @@ function fieldHtml(f, portList = []) {
       <div class="dv-io-head muted dv-small"><span>Pin</span><span>Value</span><span>Wait</span></div>
       ${rows.map(ioRow).join("")}<button class="btn btn-ghost btn-sm" data-io-add>+ Add a step</button></div>`;
   } else if (f.kind === "bool") {
-    input = `<label class="dv-switch"><input type="checkbox" id="${id}" data-key="${esc(f.key)}" ${f.value ? "checked" : ""}/>
+    input = `<label class="switch"><input type="checkbox" id="${id}" data-key="${esc(f.key)}" ${f.value ? "checked" : ""}/>
       <span>${f.key === "simulation" ? (f.value ? "Simulated" : "Real device") : (f.value ? "On" : "Off")}</span></label>`;
   } else if (f.kind === "enum") {
     const opts = (f.options || []).slice();
@@ -639,7 +639,7 @@ function fieldHtml(f, portList = []) {
 }
 document.addEventListener("change", e => {
   const el = e.target;
-  if (el.matches?.(".dv-switch input[data-key]")) {
+  if (el.matches?.(".switch input[data-key]")) {
     el.nextElementSibling.textContent = /(^|\.)simulation$/.test(el.dataset.key) ? (el.checked ? "Simulated" : "Real device") : (el.checked ? "On" : "Off");
   }
 });

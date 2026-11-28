@@ -38,7 +38,7 @@ const field = (s, k) => s.fields.find(f => f.key === k);
 const CONN_KEYS = ["camera_cfg.server", "camera_cfg.type", "camera_cfg.serial_number", "camera_cfg.ip", "simulation"];
 
 function switchHtml(key, on, extra = "") {
-  return `<label class="dv-switch"><input type="checkbox" data-key="${esc(key)}" ${on ? "checked" : ""} ${extra}/>
+  return `<label class="switch"><input type="checkbox" data-key="${esc(key)}" ${on ? "checked" : ""} ${extra}/>
     <span>${SIM_TEXT(on)}</span></label>`;
 }
 

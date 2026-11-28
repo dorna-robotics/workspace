@@ -71,10 +71,6 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--
 .seg button.on { background: var(--surface); color: var(--text); box-shadow: var(--shadow-sm); font-weight: 600; }
 .start-bar { display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap; }
 .start-bar .what { flex: 1; min-width: 220px; }
-.toggle { display: inline-flex; align-items: center; gap: var(--space-2); cursor: pointer; font-size: var(--text-sm); user-select: none; }
-.toggle { min-height: 44px; }
-.toggle input { accent-color: var(--accent); width: 16px; height: 16px; }
-.toggle.locked { color: var(--muted); cursor: default; }
 .cal-warn { color: var(--amber); font-size: var(--text-sm); margin-top: var(--space-3); }
 .rail-warn { display: flex; align-items: center; gap: var(--space-4); border-left: 4px solid var(--amber); font-size: var(--text-sm); }
 .rail-warn[hidden] { display: none; }
@@ -235,7 +231,7 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--
           <div class="cal-warn" id="recipeErrs" hidden></div>
           <div class="start-bar">
             <div class="what"><div class="st-name" id="startWhat"></div><div class="muted" id="startSub"></div></div>
-            <label class="toggle locked" title="Robot probing comes with the calibration runner; until then every step runs on the simulated robot and nothing is saved"><input type="checkbox" id="dryRun" checked disabled/> Dry run in simulation</label>
+            <label class="switch locked" title="Robot probing comes with the calibration runner; until then every step runs on the simulated robot and nothing is saved"><input type="checkbox" id="dryRun" checked disabled/><span>Dry run in simulation</span></label>
             <a class="btn btn-ghost" id="calJupyter" target="_blank" rel="noopener" title="Probing on the robot runs as code for now: the project's calibration (Recipe.calibrate) in Jupyter">On the robot: Jupyter ↗</a>
             <button class="btn btn-primary btn-lg" id="btnStart">Start calibration</button>
           </div>
