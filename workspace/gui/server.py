@@ -215,6 +215,7 @@ def make_app(port=5000):
         (r"/orchestrator/api/workspace/([^/]+)/scene", SceneHandler, dict(orch=orch)),
         (r"/orchestrator/api/workspace/([^/]+)/setup/(.*)", ProjectScreenFileHandler, dict(orch=orch, key="setup")),
         (r"/orchestrator/api/workspace/([^/]+)/replan/(.*)", ProjectScreenFileHandler, dict(orch=orch, key="replan")),
+        (r"/orchestrator/api/workspace/([^/]+)/pendant/(.*)", ProjectScreenFileHandler, dict(orch=orch, key="pendant")),
         (r"/orchestrator/api/workspace/([^/]+)/kwargs", UpdateKwargsHandler, dict(orch=orch)),
         (r"/orchestrator/api/workspace/([^/]+)/upload/([^/]+)", FileUploadHandler, dict(orch=orch)),
         # A project folder's files: bytes over HTTP (download / zip /

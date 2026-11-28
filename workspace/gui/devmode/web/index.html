@@ -26,12 +26,8 @@
 
 
 <div class="dv-shell">
-  <header class="topbar dv-top">
-    <a class="btn btn-ghost btn-sm btn-icon" href="/" title="Back to projects" aria-label="Back to projects"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg></a>
-    <div class="dv-title"><span class="dv-kicker">Developer mode</span><span id="dvProject">—</span></div>
-    <span class="pill off" id="dvState"><span class="dot"></span><span>—</span></span>
-    <!-- the project page's run controls, on every tab but Workflow ▸ Project (which shows its own) -->
-    <div class="dv-run" id="dvRun" hidden></div>
+  <header class="topbar">
+    <a class="btn btn-ghost btn-sm btn-icon" href="/" title="Back to projects" aria-label="Back to projects"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg></a>
     <div class="msg-line" hidden></div>
     <div class="spacer"></div>
     <div class="topbar-actions">
@@ -39,6 +35,15 @@
       <button class="btn btn-ghost btn-sm btn-icon js-theme-toggle" id="btnTheme" title="Toggle theme"></button>
     </div>
   </header>
+
+  <!-- The project's head row: which project, its state, its run controls
+       — the top bar is the same on every page and carries none of them. -->
+  <div class="page-head">
+    <div class="page-head-title"><span class="page-head-kicker">Developer mode</span><span class="page-head-name" id="dvProject">—</span></div>
+    <span class="pill off" id="dvState"><span class="dot"></span><span>—</span></span>
+    <!-- the project page's run controls, on every tab but Workflow ▸ Project (which shows its own) -->
+    <div class="dv-run" id="dvRun" hidden></div>
+  </div>
 
   <div class="dv-banner" id="dvBanner" hidden></div>
 

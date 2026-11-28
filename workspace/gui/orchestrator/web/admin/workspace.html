@@ -17,20 +17,17 @@
     /* Header — chrome + status-coloured underline live in
        /vendor/base.css (shared with the pendant nav). Only page-
        local layout tweaks stay here. */
-    .vdivider { width: 1px; height: 20px; background: var(--border2); flex-shrink: 0; position: relative; z-index: 1; }
-    .ws-title-block { min-width: 0; flex: 1 1 auto; overflow: hidden; position: relative; z-index: 1; }
-    .ws-title    { font-size: var(--text-xl); font-weight: 600; letter-spacing: -0.3px; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .ws-subtitle { font-size: var(--text-sm); color: var(--muted); }
 
     /* Hosted in Developer mode (?embed=1 — its Workflow tab; ?hosted=1
-       — its HMI tab's live pendant): the host page owns navigation,
-       account, theme and fullscreen. Embedded: no Schedule there; the
-       HMI tab is the pendant only (no Desktop view). */
-    html.hosted .ws-header > a[href="/"], html.hosted #pendantExit,
-    html.hosted .js-theme-toggle, html.hosted .js-fullscreen-toggle,
+       — its HMI tab's live pendant): the host page owns the top bar
+       (navigation, account, theme, fullscreen) and, embedded, the
+       project's name and state. Embedded: no Schedule there; the HMI
+       tab is the pendant only (no Desktop view). */
+    html.hosted .ws-header, html.hosted .pendant-nav,
     html.hosted .acct, html.hosted .acct-fixed, html.hosted .ai-toggle, html.hosted .ai-panel,
     html.hosted:not(.embedded) #pendantDesktop,
-    html.embedded .viewer-tab[data-vtab="sched"] { display: none !important; }
+    html.embedded .viewer-tab[data-vtab="sched"],
+    html.embedded #deskHead > .page-head-title, html.embedded #statePill { display: none !important; }
     /* each scene device's simulation switch (embedded only): saved to
        the project's scene — mode, not state (device-guide §16) */
     .sim-sw { flex: none; }
@@ -491,9 +488,7 @@
     @media (max-width: 768px) {
       html, body { height: auto; overflow: auto; }
       .ws-header { gap: 8px; padding: 0 12px; height: 48px; min-height: 48px; }
-      .vdivider { display: none; }
-      .ws-title { font-size: 12px; }
-      .ws-subtitle { font-size: 10px; }
+      .page-head-name { font-size: var(--text-lg); }
 
       .ws-body { flex-direction: column; flex: none; overflow: visible; }
       .sidebar { width: 100%; min-width: 0; border-right: none; border-bottom: 1px solid var(--border2); flex: none; overflow: visible; }
@@ -536,25 +531,31 @@
 
 
 <header class="ws-header">
-  <a class="btn btn-ghost btn-sm btn-icon" href="/" title="Back to projects" aria-label="Back to projects"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg></a>
-  <div class="ws-title-block">
-    <div class="ws-title" id="wsName">—</div>
-    <div class="ws-subtitle" id="wsLabel"></div>
-  </div>
-  <span class="pill off" id="statePill"><span class="dot"></span>—</span>
+  <a class="btn btn-ghost btn-sm btn-icon" href="/" title="Back to projects" aria-label="Back to projects"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg></a>
   <div class="msg-line" id="deskMsg" hidden></div>
   <div class="spacer"></div>
-  <!-- Top-bar action icons. Ordered by frequency / semantic weight:
-       content view first, then mode switches, then display tweak,
-       then the set-once-and-forget theme toggle anchoring the right. -->
   <div class="topbar-actions">
-    <button class="btn btn-ghost btn-sm btn-icon" id="btnVersion" title="Version — this project on GitHub"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button>
-    <button class="btn btn-ghost btn-sm btn-icon" id="btnFiles" title="Files — data, results, recordings"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg></button>
-    <button class="btn btn-ghost btn-sm btn-icon" id="btnPendant" title="Pendant mode"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><line x1="12" y1="3" x2="12" y2="7"/></svg></button>
     <button class="btn btn-ghost btn-sm btn-icon js-fullscreen-toggle" id="btnFullscreen" title="Fullscreen"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg></button>
     <button class="btn btn-ghost btn-sm btn-icon js-theme-toggle" id="btnTheme" title="Toggle theme"></button>
   </div>
 </header>
+
+<!-- The project's head row: its name, its state and its actions — the top
+     bar above is the same on every page and carries none of them. -->
+<div class="page-head" id="deskHead" data-state="off">
+  <div class="page-head-title">
+    <div class="page-head-name" id="wsName">—</div>
+    <div class="page-head-sub" id="wsLabel"></div>
+  </div>
+  <span class="pill off" id="statePill"><span class="dot"></span>—</span>
+  <div class="msg-line" id="deskHeadMsg" hidden></div>
+  <div class="spacer"></div>
+  <div class="page-head-actions">
+    <button class="btn btn-ghost btn-sm btn-icon" id="btnVersion" title="Version — this project on GitHub"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button>
+    <button class="btn btn-ghost btn-sm btn-icon" id="btnFiles" title="Files — data, results, recordings"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg></button>
+    <button class="btn btn-ghost btn-sm btn-icon" id="btnPendant" title="Pendant mode"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><line x1="12" y1="3" x2="12" y2="7"/></svg></button>
+  </div>
+</div>
 
 <div class="ws-body">
 
@@ -693,14 +694,29 @@
      .msg-line and its cards (api.js notify). -->
 <div class="launch-card" id="launchCard" style="display:none"></div>
 <div class="pendant-overlay" id="pendantOverlay" style="display:none">
-  <!-- Top nav: BACK to the orchestrator + project identity left, the
-       state block (state + run timer + time left) as the loudest cue
-       right, then files, the desktop view, fullscreen and theme. -->
-  <header class="pendant-nav ws-header-like" data-state="off">
-    <a class="btn btn-ghost btn-sm btn-icon" id="pendantExit" href="/" title="Back to projects" aria-label="Back to projects"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg></a>
-    <span class="pendant-project" id="pendantProject">—</span>
+  <!-- Top bar: the same as every page's — back to the projects, the
+       brand, fullscreen, theme, the account and the assistant. -->
+  <header class="pendant-nav">
+    <a class="btn btn-ghost btn-sm btn-icon" id="pendantExit" href="/" title="Back to projects" aria-label="Back to projects"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg></a>
     <div class="msg-line" id="pendantMsg" hidden></div>
     <div class="spacer"></div>
+    <div class="topbar-actions">
+      <button class="btn btn-ghost btn-sm btn-icon js-fullscreen-toggle" title="Fullscreen"></button>
+      <button class="btn btn-ghost btn-sm btn-icon js-theme-toggle" title="Toggle theme"></button>
+    </div>
+  </header>
+
+  <!-- The project's head row: its name, files and the desktop view left
+       of the state block (state + run timer + time left) — the loudest
+       cue on screen, flush right. -->
+  <div class="page-head pendant-head" data-state="off">
+    <span class="pendant-project" id="pendantProject">—</span>
+    <div class="msg-line" id="pendantHeadMsg" hidden></div>
+    <div class="spacer"></div>
+    <div class="page-head-actions">
+      <button class="btn btn-ghost btn-sm btn-icon" id="pendantFiles" title="Files — data, results, recordings" aria-label="Files"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg></button>
+      <button class="btn btn-ghost btn-sm btn-icon" id="pendantDesktop" title="Desktop view" aria-label="Desktop view"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></button>
+    </div>
     <div class="pendant-state-block off" id="pendantStateBlock">
       <span class="dot" id="pendantStateDot"></span>
       <span class="pendant-state-text" id="pendantStateText">—</span>
@@ -709,13 +725,7 @@
         <span class="pendant-timer-eta" id="pendantEta"></span>
       </span>
     </div>
-    <div class="topbar-actions">
-      <button class="btn btn-ghost btn-sm btn-icon" id="pendantFiles" title="Files — data, results, recordings" aria-label="Files"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg></button>
-      <button class="btn btn-ghost btn-sm btn-icon" id="pendantDesktop" title="Desktop view" aria-label="Desktop view"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></button>
-      <button class="btn btn-ghost btn-sm btn-icon js-fullscreen-toggle" title="Fullscreen"></button>
-      <button class="btn btn-ghost btn-sm btn-icon js-theme-toggle" title="Toggle theme"></button>
-    </div>
-  </header>
+  </div>
 
   <div class="pendant-region">
     <!-- Section rail: the pendant's sections, left — the counterpart of
@@ -730,9 +740,9 @@
         <button class="pendant-tab active" role="tab" aria-selected="true" data-ptab="project" id="pendantTabProject" title="Main" aria-label="Main"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg><span class="pr-label">Main</span></button>
         <button class="pendant-tab" role="tab" aria-selected="false" data-ptab="3d" title="View" aria-label="View"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg><span class="pr-label">View</span></button>
         <button class="pendant-tab" role="tab" aria-selected="false" data-ptab="devices" title="Devices" aria-label="Devices"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6" rx="1"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/></svg><span class="pr-label">Devices</span><span class="pr-badge" id="pendantDevBadge" hidden></span></button>
-        <!-- What the run was started with, read-only. Only while launched:
-             before that, Main IS the run setup. -->
-        <button class="pendant-tab" role="tab" aria-selected="false" data-ptab="params" id="pendantTabParams" title="Parameters" aria-label="Parameters" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="21" y1="4" x2="14" y2="4"/><line x1="10" y1="4" x2="3" y2="4"/><line x1="21" y1="12" x2="12" y2="12"/><line x1="8" y1="12" x2="3" y2="12"/><line x1="21" y1="20" x2="16" y2="20"/><line x1="12" y1="20" x2="3" y2="20"/><line x1="14" y1="2" x2="14" y2="6"/><line x1="8" y1="10" x2="8" y2="14"/><line x1="16" y1="18" x2="16" y2="22"/></svg><span class="pr-label">Parameters</span></button>
+        <!-- The run's parameters: set them and launch before the run;
+             what it was started with, read-only, while it is up. -->
+        <button class="pendant-tab" role="tab" aria-selected="false" data-ptab="params" id="pendantTabParams" title="Parameters" aria-label="Parameters"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="21" y1="4" x2="14" y2="4"/><line x1="10" y1="4" x2="3" y2="4"/><line x1="21" y1="12" x2="12" y2="12"/><line x1="8" y1="12" x2="3" y2="12"/><line x1="21" y1="20" x2="16" y2="20"/><line x1="12" y1="20" x2="3" y2="20"/><line x1="14" y1="2" x2="14" y2="6"/><line x1="8" y1="10" x2="8" y2="14"/><line x1="16" y1="18" x2="16" y2="22"/></svg><span class="pr-label">Parameters</span></button>
         <!-- This project's code vs GitHub — the desktop's Version dialog
              as a page. Any time: it is about the code, not the run. -->
         <button class="pendant-tab" role="tab" aria-selected="false" data-ptab="version" title="Version" aria-label="Version"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg><span class="pr-label">Version</span></button>
@@ -766,13 +776,11 @@
         </div>
       </div>
       <div class="pendant-panes">
-        <!-- Run parameters, IN the pendant. A kiosk tablet is often the
-             only screen at the bench: before launch this is where the
-             operator sets up the run and starts it (the Main tab), so it
-             is never a dead end waiting on a desktop. Once the run is up
-             the project's own screen takes Main, and this pane moves to
-             the Parameters tab — read-only, what the run was started
-             with. -->
+        <!-- Run parameters, IN the pendant (the Parameters tab). A kiosk
+             tablet is often the only screen at the bench: before launch
+             this is where the operator sets up the run and starts it, so
+             it is never a dead end waiting on a desktop. Once the run is
+             up it is read-only — what the run was started with. -->
         <div class="pendant-page" id="pendantParamsPane" style="display:none">
           <div class="pp-head">
             <span>Parameters</span>
@@ -792,6 +800,16 @@
           <div class="pp-foot pv-foot" id="pvFoot"></div>
         </div>
         <div class="pendant-hmi" id="pendantHmi" style="display:none"></div>
+        <!-- Main before launch, for a project without a screen of its own
+             (the platform's default Main is drawn by the running project). -->
+        <div class="pendant-page" id="pendantMainIdle" style="display:none">
+          <div class="pp-head"><span>Main</span></div>
+          <div class="pp-scroll"><div class="rp-none">
+            <b>Not launched</b>
+            <span>The run's screen shows here once the project is launched. Set its parameters and launch it from Parameters.</span>
+            <button class="btn btn-primary" id="pmToParams">Parameters</button>
+          </div></div>
+        </div>
         <div class="pendant-3d-pane" id="pendant3dPane" style="display:none"></div>
         <!-- Devices tab: ONE page — every component an operator works with
              on the left (status, a short name, its address; problems

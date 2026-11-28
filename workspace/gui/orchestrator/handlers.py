@@ -103,8 +103,9 @@ class RemoveWorkspaceHandler(AuthedHandler):
 
 
 class ProjectScreenFileHandler(tornado.web.RequestHandler):
-    """Serves a project's browser-only screen — ``setup:`` (run setup)
-    or ``replan:`` (the Replan choice) — and the files beside it, out
+    """Serves a project's browser-only screen — ``setup:`` (run setup),
+    ``replan:`` (the Replan choice) or, before launch, ``pendant:`` (the
+    pendant's Main) — and the files beside it, out
     of the declared screen's own folder (usually the project's
     ``hmi/``; a sibling's, e.g. ``../_bna/hmi/setup.js``).
 
@@ -117,7 +118,7 @@ class ProjectScreenFileHandler(tornado.web.RequestHandler):
 
     def initialize(self, orch: Orchestrator, key: str):
         self.orch = orch
-        self.key = key            # the launch.yaml key: "setup" | "replan"
+        self.key = key            # the launch.yaml key: "setup" | "replan" | "pendant"
 
     async def get(self, name, rel):
         try:
@@ -174,7 +175,15 @@ class LaunchConfigHandler(tornado.web.RequestHandler):
             ws = self.orch.workspaces[name]
             schema = ws.launch_config()
             has_park = ws.has_trigger("park")
+            # The project's own Main screen (``pendant:`` a .js / .html
+            # file), for the pendant to show before launch — its files
+            # from /pendant/ here (ProjectScreenFileHandler); None: the
+            # platform's default Main, drawn once the project runs.
+            main = ws.screen_spec("pendant")
             self.write({
+                "pendant_screen": main and {
+                    "kind": "file", "kind_hint": main["kind"], "src": "/" + main["src"],
+                    "css": main["css"] and "/" + main["css"]},
                 "kwargs_schema": schema or {},
                 "kwargs_values": ws.kwargs_values or {},
                 "run_kwargs": ws.run_kwargs,

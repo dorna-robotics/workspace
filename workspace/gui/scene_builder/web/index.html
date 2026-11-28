@@ -39,8 +39,6 @@
 
 <header class="sb-header">
   <a class="btn btn-ghost btn-sm btn-icon" href="/" title="Back to projects" aria-label="Back to projects"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg></a>
-  <span class="sb-head-title" id="sbHeadTitle">Scene Builder</span>
-  <span class="ctrl-starting" id="sbLoadStatus" style="display:none;"></span>
   <div class="msg-line" hidden></div>
   <div class="spacer"></div>
   <div class="topbar-actions">
@@ -48,6 +46,13 @@
     <button class="btn btn-ghost btn-sm btn-icon js-theme-toggle" id="btnTheme" title="Toggle theme"></button>
   </div>
 </header>
+
+<!-- The page's head row: which project this builder edits, and its
+     import's progress (the top bar is the same on every page). -->
+<div class="page-head sb-head">
+  <span class="page-head-name" id="sbHeadTitle">Scene Builder</span>
+  <span class="ctrl-starting" id="sbLoadStatus" style="display:none;"></span>
+</div>
 
 <!-- ============================================================
      Body — sidebar (left) + viewer (right)

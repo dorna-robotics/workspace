@@ -305,6 +305,9 @@ async function loadVersion(h, fetchRemote = true) {
     _verFoot(h, [["Close", "", "close"], ["Check again", "btn-primary", () => loadVersion(h, true)]]);
   }
 }
+$("pmToParams").addEventListener("click", () => {
+  document.querySelector('.pendant-tab[data-ptab="params"]')?.click();
+});
 $("btnVersion").addEventListener("click", () => { _verOverlay.classList.add("show"); loadVersion(VER_MODAL, true); });
 $("btnVersionModalClose").addEventListener("click", closeVersion);
 _verOverlay.addEventListener("click", (e) => { if (e.target === _verOverlay) closeVersion(); });
@@ -697,9 +700,20 @@ function updateStatusUI(st) {
   const curUpper  = state.toUpperCase();
   const wasLaunched = isLaunched(_lastState);
   _lastState = state;
-  // Crossing into or out of a launched run swaps what the pendant's
-  // Main tab is FOR: run setup before, the project's screen after.
-  if (_pendantMode && wasLaunched !== isLaunched(state)) {
+  // Main and Parameters: before the run the pendant opens on Parameters
+  // (set up, launch), once it is up on Main (the project's screen). A
+  // section the operator chose — View, Devices, Version — stays put. Only
+  // NOT_LAUNCHED counts as "before": a run's status blinking OFFLINE /
+  // UNKNOWN must not throw the operator off Main.
+  const nowLaunched = isLaunched(state);
+  if (!prevUpper || (wasLaunched !== nowLaunched && (nowLaunched || curUpper === "NOT_LAUNCHED"))) {
+    if (_pendantTab === "project" || _pendantTab === "params") _pendantTab = nowLaunched ? "project" : "params";
+    if (curUpper === "NOT_LAUNCHED") mountMainPreview();
+    _applyPendantTab();
+  }
+  // Crossing into or out of a launched run swaps the Parameters tab
+  // between run setup (before) and what the run was started with.
+  if (_pendantMode && wasLaunched !== nowLaunched) {
     renderPendantParams(true);
     _applyPendantTab();
   }
@@ -713,8 +727,8 @@ function updateStatusUI(st) {
     lastErrRow.style.display = "none";
   }
 
-  // Accent the header border with state colour
-  document.querySelector(".ws-header")?.setAttribute("data-state", variant);
+  // Accent the project's head row with the state colour
+  $("deskHead")?.setAttribute("data-state", variant);
 
   // Steps panel is purely a live view — when the workspace dies, the
   // panel resets cleanly to "No steps yet". History lives in the
@@ -984,6 +998,9 @@ function buildHmi(spec) {
   if (!host) return;
   _hmiInstances = [];
   host.innerHTML = "";
+  // the Main screen shown before launch (mountMainPreview) goes too
+  ++_hmiMountSeq;
+  if (host.shadowRoot) host.shadowRoot.innerHTML = "<slot></slot>";   // the widgets are light DOM
   const widgets = (spec && spec.widgets) || [];
   if (!widgets.length) { _applyPendantTab(); return; }
   // Stats sit together in a row; everything else stacks in order.
@@ -1038,10 +1055,15 @@ function buildHmi(spec) {
 //                                      (style it in your own CSS)
 //   data-bind-attr="key" data-attr="src"  → sets any attribute
 let _hmiHost = null;      // {shadow, module|null, binds}
+let _hmiMountSeq = 0;     // the latest mount wins (the preview vs the run's own)
 
-async function mountProjectPendant(spec) {
+// ``preview``: the files' base URL before launch — the orchestrator
+// serves the declared screen's folder (as it does ``setup:``); the screen
+// gets no live values and its invoke() answers that nothing is running.
+async function mountProjectPendant(spec, preview) {
   const el = $("pendantHmi");
   if (!el || !spec || !spec.src) return;
+  const seq = ++_hmiMountSeq;
   el.innerHTML = "";
   // Visibility is NOT set here. _applyPendantTab is the one place that
   // decides which pane shows, from the active tab and the run state;
@@ -1065,7 +1087,7 @@ async function mountProjectPendant(spec) {
   // and then taken away.
   _hmiHost = { shadow, module: null, binds: [], hero: null };
 
-  const base = (_devicesUrl || "").replace(/\/$/, "");
+  const base = (preview || _devicesUrl || "").replace(/\/$/, "");
   const url = p => (base ? base + p : p);
 
   try {
@@ -1077,6 +1099,7 @@ async function mountProjectPendant(spec) {
     }
     if (spec.kind_hint === "js") {
       const mod = await import(/* webpackIgnore: true */ url(spec.src));
+      if (seq !== _hmiMountSeq) return;
       const def = mod.default || mod;
       _hmiHost.module = def;
       _hmiHost.hero = def.hero !== false;
@@ -1097,16 +1120,21 @@ async function mountProjectPendant(spec) {
         onTheme(cb) { (_hmiHost.themeCbs ||= []).push(cb); },
         // The same operator-action path the platform buttons use — a
         // project screen can trigger declared actions, nothing more.
-        invoke(component, method) { return runOperatorAction(component, method); },
+        invoke(component, method) {
+          return preview ? Promise.resolve({ ok: false, msg: "The project is not launched" })
+                         : runOperatorAction(component, method);
+        },
         // A runtime path (an rt.asset's /op/asset/... from rt.op) as a URL
         // the screen can load — the runtime server's, not this page's.
         url(path) { return url(path); },
       };
+      if (seq !== _hmiMountSeq) return;
       if (typeof def.mount === "function") await def.mount(shadow, api);
       if (typeof def.update === "function") def.update({ ..._opValues });
     } else {
       const res = await fetch(url(spec.src));
       const html = await res.text();
+      if (seq !== _hmiMountSeq) return;
       const wrap = document.createElement("div");
       wrap.innerHTML = html;
       shadow.appendChild(wrap);
@@ -1129,6 +1157,23 @@ async function mountProjectPendant(spec) {
   // on the next status tick — and the pane shows only if its tab is the
   // active one.
   updatePendantUI();
+  _applyPendantTab();
+}
+
+// Main before launch: the project's own screen (launch.yaml ``pendant:``,
+// a .js / .html file) from its files, with no live values; the running
+// project mounts it live once launched. No such screen: the pane empties
+// and Main shows its note (_applyPendantTab).
+async function mountMainPreview() {
+  let j;
+  try { j = await _getLaunchConfig(); } catch (_) { return; }
+  if (isLaunched(_lastState)) return;                 // the run came up meanwhile
+  const spec = j && j.pendant_screen;
+  if (spec) { mountProjectPendant(spec, `/orchestrator/api/workspace/${encodeURIComponent(wsName)}/pendant`); return; }
+  ++_hmiMountSeq;
+  const el = $("pendantHmi");
+  if (el) { el.innerHTML = ""; el.classList.remove("project"); if (el.shadowRoot) el.shadowRoot.innerHTML = ""; }
+  _hmiHost = null;
   _applyPendantTab();
 }
 
@@ -3952,6 +3997,13 @@ $("btnCopySteps").addEventListener("click", (e) => {
 
 // ---- Pendant mode ----
 let _pendantMode = false;
+// The line the messages hang under: the top bar's on screen — or, framed
+// in Developer mode (no top bar of its own), the head row's.
+const _HOSTED = document.documentElement.classList.contains("hosted");
+function _msgLine() {
+  return $(_pendantMode ? (_HOSTED ? "pendantHeadMsg" : "pendantMsg") : (_HOSTED ? "deskHeadMsg" : "deskMsg"));
+}
+notifyHost(_msgLine());
 const pendantOverlay = $("pendantOverlay");
 
 // Pendant main-section tab: "project" (the project's screen) or
@@ -3978,11 +4030,6 @@ function _positionPendant3d() {
 let _versionShown = false;     // the Version section is up (load once per opening)
 function _applyPendantTab() {
   const launched = isLaunched(_lastState);
-  // Parameters is a tab only while launched; before that the setup IS
-  // the Main tab, so a remembered Parameters tab lands on Main.
-  const paramsTab = $("pendantTabParams");
-  if (paramsTab) paramsTab.style.display = launched ? "" : "none";
-  if (_pendantTab === "params" && !launched) _pendantTab = "project";
   const is3d = _pendantTab === "3d";
   const isDevices = _pendantTab === "devices";
   const isParams = _pendantTab === "params";
@@ -3998,15 +4045,17 @@ function _applyPendantTab() {
   const pp  = $("pendantParamsPane");
   const ver = $("pendantVersionPane");
   // Project screens mount into a SHADOW root — check both trees.
-  const hasScreen = !!(hmi && (hmi.childElementCount || hmi.shadowRoot?.childElementCount));
-  // Before the run is up, the Main tab IS the run setup — the operator
-  // sets the parameters and launches from here. After that the
-  // project's own screen owns Main, and the same pane, frozen, is the
-  // Parameters tab.
+  const hasScreen = !!(hmi && (hmi.childElementCount || hmi.shadowRoot?.querySelector(":not(slot)")));
+  // Main is the project's own screen — before launch mounted from its
+  // files with no live values (mountMainPreview), then live. A project
+  // without one shows a note before launch; once up, the frame's ACTIVE
+  // ROUTINE panel below. Parameters is the run setup before launch and,
+  // frozen, what the run was started with after.
   const isMain = !is3d && !isDevices && !isParams && !isVersion;
-  const showParams = launched ? isParams : isMain;
-  if (pp) pp.style.display = showParams ? "" : "none";
-  if (hmi) hmi.style.display = (!isMain || !hasScreen || showParams) ? "none" : "";
+  if (pp) pp.style.display = isParams ? "" : "none";
+  if (hmi) hmi.style.display = (isMain && hasScreen) ? "" : "none";
+  const idle = $("pendantMainIdle");
+  if (idle) idle.style.display = (isMain && !hasScreen && !launched) ? "" : "none";
   if (pane) pane.style.display = is3d ? "" : "none";
   if (dev) dev.style.display = isDevices ? "" : "none";
   // The Devices tab asks for facts only while it is on screen.
@@ -4072,7 +4121,7 @@ function togglePendant(on) {
   document.documentElement.classList.remove("pendant-boot");
   _pendantMode = on !== undefined ? on : !_pendantMode;
   pendantOverlay.style.display = _pendantMode ? "" : "none";
-  notifyHost($(_pendantMode ? "pendantMsg" : "deskMsg"));   // the messages hang under the bar on screen
+  notifyHost(_msgLine());   // the messages hang under the bar on screen
   _applyPendantTab();
   renderLaunchCard();
 
@@ -4133,11 +4182,9 @@ function updatePendantUI() {
   const running = isRunning(state);
   const launched = isLaunched(state);
 
-  // Status-coloured underline on the pendant nav, mirroring the
-  // main ``.ws-header[data-state]`` rule (base.css). Same attribute,
-  // same colours, so both navbars carry an identical state cue.
-  const navEl = document.querySelector(".pendant-nav");
-  if (navEl) navEl.setAttribute("data-state", variant);
+  // Status-coloured underline on the pendant's head row — the desktop
+  // head row's rule (base.css .page-head[data-state]), same cue.
+  document.querySelector(".pendant-head")?.setAttribute("data-state", variant);
 
   // The nav state block — solid fill by variant, state text + the
   // run clock inside. The dot pulses while waiting on the operator.

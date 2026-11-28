@@ -437,24 +437,20 @@ html.pendant-boot .pendant-overlay { display: flex !important; }
   background: var(--bg);
 }
 
-/* ── Nav ── */
-.pendant-nav {
-  display: flex; align-items: center; gap: 14px;
-  height: 54px; padding: 0 14px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
-  flex: none;
-}
+/* ── Nav: the top bar (base.css), the same as every page's ── */
+/* The project's head row (base.css .page-head): the name left, the state
+   block flush right, the row's full height. */
+.pendant-head { padding: 0 0 0 14px; gap: 14px; min-height: 56px; }
 .pendant-project {
   font-size: var(--text-xl); font-weight: 700; letter-spacing: -0.3px;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
 }
 
 /* The state block: the loudest cue on screen — a solid fill carrying
    state text + the run clock. Colour by state, white text always. */
 .pendant-state-block {
   display: flex; align-items: center; gap: 12px;
-  height: 54px; margin: 0 -14px 0 0; padding: 0 22px;
+  align-self: stretch; padding: 0 22px; flex: none;
   color: #fff;
 }
 .pendant-state-block .dot { width: 10px; height: 10px; background: #fff; opacity: 0.9; }
@@ -1095,9 +1091,9 @@ html.pendant-boot .pendant-overlay { display: flex !important; }
    hangs under the pendant nav) — read across a room, 44 px buttons
    like the other pendant buttons. */
 .pendant-nav .msg-line { margin-left: var(--space-3); }
-.pendant-nav .msg-chip { height: 40px; font-size: var(--text-lg); }
-.pendant-nav .msg-mark { width: 26px; height: 26px; font-size: 15px; }
-.pendant-nav .msg-word, .msg-stack.big .msg-word { font-size: var(--text-sm); }
+:is(.pendant-nav, .pendant-head) .msg-chip { height: 40px; font-size: var(--text-lg); }
+:is(.pendant-nav, .pendant-head) .msg-mark { width: 26px; height: 26px; font-size: 15px; }
+:is(.pendant-nav, .pendant-head) .msg-word, .msg-stack.big .msg-word { font-size: var(--text-sm); }
 .msg-stack.big { width: 560px; }
 .msg-stack.big .msg-mark { width: 30px; height: 30px; font-size: 17px; }
 .msg-stack.big .msg-title { font-size: 24px; }

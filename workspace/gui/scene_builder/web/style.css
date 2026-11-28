@@ -214,16 +214,12 @@ select.input { cursor: pointer; }
   gap: 16px;
 }
 
+/* the head row's text gives way, never past the screen */
+.sb-head #sbLoadStatus { min-width: 0; white-space: nowrap; overflow: hidden; }
+.sb-header .topbar-actions { flex: none; }
+.sb-head .proj { color: var(--muted); font-weight: 500; }
 /* Loading status — the orchestrator project page's "Starting…" idiom
    (spinner + muted 600-weight text), shown while a project imports. */
-.sb-head-title {
-  font-size: var(--text-md); font-weight: 600; letter-spacing: -0.1px;
-  margin: 0 14px 0 6px; white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis;
-}
-/* the header's text gives way; its buttons never leave the screen */
-.sb-header #sbLoadStatus { min-width: 0; white-space: nowrap; overflow: hidden; }
-.sb-header .topbar-actions { flex: none; }
-.sb-head-title .proj { color: var(--muted); font-weight: 500; }
 .ctrl-starting {
   font-size: var(--text-sm); font-weight: 600; color: var(--muted);
   display: flex; align-items: center; gap: 8px;
@@ -1150,7 +1146,7 @@ html[data-sbtab="replay"]  .sb-rail button[data-tab="replay"] {
    Workflow · HMI · Calibration); the scene files are saved by its Save
    to project, so no config viewer. Its Workflow tab shows the 3D view
    alone (.sb-viewonly), or Recipes / Replay beside it with a way back. */
-html.sb-dev .sb-header, html.sb-dev #btnInsert, html.sb-dev .sb-rail, html.sb-dev #sbConfigSection, html.sb-dev #msgStack { display: none !important; }
+html.sb-dev .sb-header, html.sb-dev .sb-head, html.sb-dev #btnInsert, html.sb-dev .sb-rail, html.sb-dev #sbConfigSection, html.sb-dev #msgStack { display: none !important; }
 html.sb-dev.sb-viewonly .sidebar { display: none; }
 /* …and a frame is never a phone: a narrow one (the Workflow tab's 3D area
    beside the AI panel) keeps the desktop layout, not the stacked mobile one

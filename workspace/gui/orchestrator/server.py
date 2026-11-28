@@ -142,6 +142,7 @@ class OrchestratorHTTPServer:
             (r"/workspace/([^/]+)/scene", SceneHandler, dict(orch=self.orch)),
             (r"/workspace/([^/]+)/setup/(.*)", ProjectScreenFileHandler, dict(orch=self.orch, key="setup")),
             (r"/workspace/([^/]+)/replan/(.*)", ProjectScreenFileHandler, dict(orch=self.orch, key="replan")),
+            (r"/workspace/([^/]+)/pendant/(.*)", ProjectScreenFileHandler, dict(orch=self.orch, key="pendant")),
             (r"/workspace/([^/]+)/kwargs", UpdateKwargsHandler, dict(orch=self.orch)),
             (r"/workspace/([^/]+)/upload/([^/]+)", FileUploadHandler, dict(orch=self.orch)),
             (r"/workspace/([^/]+)/files/([^/]+)/upload", ProjectUploadHandler, dict(orch=self.orch)),

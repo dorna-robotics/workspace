@@ -548,30 +548,47 @@ a:hover { color: var(--accent-h); }
   background: rgba(255,255,255,0.85);
 }
 
-/* Status-coloured underline. Either nav (main workspace or pendant)
-   tints its bottom border to match ``data-state`` (ok / warn / bad).
-   Off / unset keeps the default grey border. Transition is slow on
-   purpose — state changes should feel like the nav is "settling"
-   into a new colour, not snapping.
-   Plus: when the navbar's state pill is pulsing (IDLE/READY → "your
-   move"), the border turns blue to match the body wash + pill. */
-.ws-header, .pendant-nav { transition: border-bottom-color var(--motion-slow) var(--ease); }
-.ws-header[data-state="ok"],
-.pendant-nav[data-state="ok"]   { border-bottom-color: var(--green); }
-.ws-header[data-state="warn"],
-.pendant-nav[data-state="warn"] { border-bottom-color: var(--amber); }
-.ws-header[data-state="bad"],
-.pendant-nav[data-state="bad"]  { border-bottom-color: var(--red); }
-.ws-header[data-state="ok"]:has(.pill.ok .dot.pulse),
-.pendant-nav[data-state="ok"]:has(.pill.ok .dot.pulse) {
-  border-bottom-color: var(--accent);
+/* ── The page's own head row ─────────────────────────────────────────
+   The top bar is the same on every page (back, brand, fullscreen, theme,
+   account, the assistant) and carries nothing that changes with the page.
+   A page's name, its state and its actions sit in this row under it, next
+   to what they act on. */
+.page-head {
+  display: flex; align-items: center; gap: var(--space-3);
+  min-height: 56px; padding: var(--space-1) var(--space-5);
+  border-bottom: 1px solid var(--border2); background: var(--surface);
+  flex-shrink: 0; min-width: 0; box-sizing: border-box;
+  transition: border-bottom-color var(--motion-slow) var(--ease);
 }
+.page-head-title { min-width: 0; flex: 0 1 auto; display: flex; flex-direction: column; line-height: 1.2; }
+.page-head-name { font-size: var(--text-xl); font-weight: 600; letter-spacing: -0.3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.page-head-sub { font-size: var(--text-sm); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.page-head-kicker { font-size: var(--text-xs); color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; white-space: nowrap; }
+.page-head .pill { flex: none; white-space: nowrap; }
+.page-head-actions { display: flex; align-items: center; gap: 4px; flex: none; }
+.page-head .btn-icon { min-width: 44px; min-height: 44px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
+/* a framed page (Developer mode's tabs) has no top bar of its own: its
+   messages show in its head row instead */
+.page-head > .msg-line { flex: 0 1 auto; }
+html:not(.hosted) .page-head > .msg-line { display: none !important; }
+@media (max-width: 768px) { .page-head { padding: var(--space-1) var(--space-3); gap: var(--space-2); } }
+
+/* Status-coloured underline on the project's head row (desktop and
+   pendant) by ``data-state`` (ok / warn / bad); off / unset keeps the
+   grey border. Slow on purpose — the row "settles" into a new colour.
+   While the state pill pulses (IDLE/READY → "your move") it is blue. */
+.page-head[data-state="ok"]   { border-bottom-color: var(--green); }
+.page-head[data-state="warn"] { border-bottom-color: var(--amber); }
+.page-head[data-state="bad"]  { border-bottom-color: var(--red); }
+.page-head[data-state="ok"]:has(.pill.ok .dot.pulse) { border-bottom-color: var(--accent); }
+/* a page's title in its body (System, Orchestrator) */
+.page-title { font-size: var(--text-xl); font-weight: 700; letter-spacing: -0.2px; margin: 0 0 var(--space-5); }
 .topbar-actions { display: flex; align-items: center; gap: 4px; }
 /* the brand (nav.js): the mark, the DORNA wordmark, "Workspace" */
 .ws-brand { display: inline-flex; align-items: center; gap: 7px; flex: none; color: var(--text); text-decoration: none;
   min-height: 44px; padding-right: var(--space-1); }
-/* set apart from the page's name that follows it */
-.ws-brand:not(:has(+ .spacer))::after { content: ""; width: 1px; height: 20px; margin-left: var(--space-3); background: var(--border2); }
+/* set apart from a message on the line that follows it */
+.ws-brand:not(:has(+ .spacer)):not(:has(+ .msg-line[hidden]))::after { content: ""; width: 1px; height: 20px; margin-left: var(--space-3); background: var(--border2); }
 .ws-brand-mark, .ws-brand-word { display: block; background: currentColor; flex: none;
   -webkit-mask: var(--m) center / contain no-repeat; mask: var(--m) center / contain no-repeat; }
 .ws-brand-mark { --m: url(/vendor/dorna-logo.svg); width: 22px; height: 22px; }
@@ -599,7 +616,7 @@ a:hover { color: var(--accent-h); }
 .topbar-title { font-size: 14px; font-weight: 600; letter-spacing: -0.2px; color: var(--text); margin: 0; }
 
 @media (max-width: 768px) {
-  .topbar, .ws-header, .sb-header {
+  .topbar, .ws-header, .sb-header, .pendant-nav {
     height: 48px; min-height: 48px;
     padding: 0 12px;
     gap: 8px;
