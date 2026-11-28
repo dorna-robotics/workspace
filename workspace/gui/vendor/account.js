@@ -95,6 +95,10 @@
       <div class="acct-bar ${lvl}" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${p}"><span style="width:${p}%"></span></div>${extra}`;
   }
 
+  // admins choose the AI button's icon: the colour tile (default) or the face
+  const FACE_KEY = "ws_ai_face";
+  function faceOn() { try { return localStorage.getItem(FACE_KEY) === "1"; } catch (_) { return false; } }
+
   function closeMenu() { if (menuOpen) { menuOpen.remove(); menuOpen = null; } }
   function toggleMenu(anchor) {
     if (menuOpen) { closeMenu(); return; }
@@ -105,12 +109,18 @@
         <div class="acct-acc">${esc(status.account || "")}${status.is_admin ? " · Dorna admin" : ""}</div></div>
       ${status.reachable === false ? `<div class="acct-offline">The Dorna server can't be reached — the assistant is unavailable until this robot is back online.</div>` : ""}
       <div class="acct-usage">${usageHtml(status.usage)}</div>
+      ${status.is_admin ? `<label class="switch switch-sm acct-face"><input type="checkbox"${faceOn() ? " checked" : ""}> Face on the AI button</label>` : ""}
       <button type="button" class="acct-item acct-logout">Log out</button>`;
     document.body.appendChild(m);
     const r = anchor.getBoundingClientRect();
     m.style.top = Math.round(r.bottom + 6) + "px";
     m.style.right = Math.max(8, Math.round(window.innerWidth - r.right)) + "px";
     m.addEventListener("click", (e) => e.stopPropagation());
+    const face = m.querySelector(".acct-face input");
+    if (face) face.onchange = () => {
+      try { localStorage.setItem(FACE_KEY, face.checked ? "1" : "0"); } catch (_) {}
+      window.dispatchEvent(new Event("ws-ai-icon"));
+    };
     m.querySelector(".acct-logout").onclick = async () => {
       closeMenu();
       await post("/logout").catch(() => null);

@@ -37,6 +37,7 @@
 }
 .acct-item:hover { background: var(--surface2); }
 .acct-logout { color: var(--red); }
+.acct-face { display: flex; padding: 0 var(--space-4); border-top: 1px solid var(--border2); }
 
 .acct-overlay {
   position: fixed; inset: 0; z-index: 60020; display: flex; align-items: center; justify-content: center;
