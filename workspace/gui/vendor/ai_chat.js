@@ -70,9 +70,9 @@
   const HISTORY_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 103-6.7L3 8"/><polyline points="3 3 3 8 8 8"/><polyline points="12 7 12 12 15 14"/></svg>`;
 
   const NEW_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg>`;
-  // the top-bar button's icon: a spark in an accent badge; Dorna admins
+  // the top-bar button's icon: a chat bubble on a colour tile; Dorna admins
   // (the account's is_admin, from the builder's login) get the face picture
-  const SPARK_ICON = `<svg class="ai-badge" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="12" fill="var(--accent)"/><path fill="#fff" d="M12 4.5l1.6 4.6a2 2 0 001.3 1.3l4.6 1.6-4.6 1.6a2 2 0 00-1.3 1.3L12 19.5l-1.6-4.6a2 2 0 00-1.3-1.3L4.5 12l4.6-1.6a2 2 0 001.3-1.3z"/><path fill="#fff" d="M18 3.5l.5 1.4 1.4.5-1.4.5-.5 1.4-.5-1.4-1.4-.5 1.4-.5z"/></svg>`;
+  const TILE_ICON = `<span class="ai-tile" aria-hidden="true"><svg viewBox="0 0 24 24" width="24" height="24"><path fill="#fff" d="M5 5h14a2 2 0 012 2v8a2 2 0 01-2 2h-7l-4 3.5V17H5a2 2 0 01-2-2V7a2 2 0 012-2z"/><circle cx="8.5" cy="11" r="1.3" fill="#5856d6"/><circle cx="12" cy="11" r="1.3" fill="#007aff"/><circle cx="15.5" cy="11" r="1.3" fill="#34c759"/></svg></span>`;
   const FACE_ICON = `<img class="ai-face" src="/vendor/ai-face.png" alt="" aria-hidden="true" draggable="false"/>`;
   let isAdmin = false;
   const MIC_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0014 0"/><line x1="12" y1="17" x2="12" y2="22"/></svg>`;
@@ -100,8 +100,8 @@
   function syncToggles() {
     const open = enabled && !root.hidden;
     for (const b of toggles) {
-      const icon = isAdmin ? "face" : "spark";
-      if (b.dataset.icon !== icon) { b.innerHTML = isAdmin ? FACE_ICON : SPARK_ICON; b.dataset.icon = icon; }
+      const icon = isAdmin ? "face" : "tile";
+      if (b.dataset.icon !== icon) { b.innerHTML = isAdmin ? FACE_ICON : TILE_ICON; b.dataset.icon = icon; }
       b.hidden = !enabled;
       b.setAttribute("aria-pressed", String(open));
       b.title = open ? "Collapse Dorna Robotics AI (Esc)" : "Open Dorna Robotics AI";

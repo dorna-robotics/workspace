@@ -11,8 +11,15 @@
 /* its icon: the assistant's face, at the icon height, never stretched or tinted */
 .ai-toggle { display: inline-flex; align-items: center; justify-content: center; }
 .ai-toggle .ai-face { display: block; height: 22px; width: auto; max-width: 22px; object-fit: contain; pointer-events: none; }
-.ai-toggle .ai-badge { display: block; width: 22px; height: 22px; pointer-events: none; }
-.ai-toggle:hover .ai-badge circle { fill: var(--accent-h); }
+/* the customers' icon: a white chat bubble on a colour tile. The gradient is
+   a deliberate exception to the no-gradients rule (design-system §6) — the
+   user's explicit choice for this one button. Same tile in both themes. */
+.ai-toggle .ai-tile {
+  display: flex; align-items: center; justify-content: center; flex: none;
+  width: 24px; height: 24px; border-radius: 7px; pointer-events: none;
+  background: linear-gradient(135deg, #ff9500, #ff2d55 30%, #af52de 55%, #007aff 80%, #00c7be);
+}
+.ai-toggle .ai-tile svg { display: block; width: 72%; height: 72%; }
 
 /* docked: full height at the right edge; the page gives it its width */
 html.ai-open { --aiw-on: var(--aiw, 400px); }
