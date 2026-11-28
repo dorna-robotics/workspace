@@ -12,6 +12,7 @@
     GET  /ai/api/session  ?id=         → {id, project, transcript, busy, live_seq} (a new one if unknown)
     GET  /ai/api/sessions              → {sessions: [{id, title, project, saved}]} — the last 10 on this robot
     POST /ai/api/session               → a fresh conversation
+    POST /ai/api/session/edit {id, title} renames one; {id, delete: true} deletes it (409 while it replies)
 """
 import json
 import os
@@ -213,6 +214,22 @@ class SessionsHandler(_Json):
         self.write({"sessions": rows})
 
 
+class SessionEditHandler(_Json):
+    @login_required
+    def post(self):
+        b = self.body()
+        sid = str(b.get("id") or "")
+        if b.get("delete"):
+            done = agent.delete_session(sid, _owner())
+            if done is False:
+                raise tornado.web.HTTPError(409, "that chat is still replying — stop it first")
+        else:
+            done = agent.rename_session(sid, _owner(), b.get("title"))
+        if not done:
+            raise tornado.web.HTTPError(404, "no such chat")
+        self.write({"ok": True})
+
+
 def _project_dir(name):
     """The local folder of a project on this unit, or None."""
     if not name:
@@ -333,6 +350,7 @@ def routes(orch):
         (r"/ai/api/approve", ApproveHandler),
         (r"/ai/api/shot", ShotHandler),
         (r"/ai/api/session", SessionHandler),
+        (r"/ai/api/session/edit", SessionEditHandler),
         (r"/ai/api/sessions", SessionsHandler),
         (r"/ai/api/upload", UploadHandler),
         (r"/ai/api/uploads", UploadsHandler),

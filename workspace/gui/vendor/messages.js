@@ -148,7 +148,7 @@ function _msgCard(m) {
     ${m.text ? `<p class="msg-text">${esc(m.text)}</p>` : ""}
     ${m.img ? `<figure class="msg-img"><img src="${esc(m.img)}" alt="">${m.caption ? `<span class="msg-cap">${esc(m.caption)}</span>` : ""}</figure>` : ""}
     ${m.actions?.length || askable ? `<div class="msg-acts">${askable
-      ? `<button type="button" class="btn btn-ghost msg-ask-ai" title="Open Workspace AI with this message — it looks into it">Ask Workspace AI</button>` : ""}${(m.actions || []).map((a, i) =>
+      ? `<button type="button" class="btn btn-ghost msg-ask-ai" title="Open Dorna Robotics AI with this message — it looks into it">Ask AI</button>` : ""}${(m.actions || []).map((a, i) =>
       `<button type="button" class="btn${a.primary ? " btn-primary" : ""}" data-act="${i}">${esc(a.label)}</button>`).join("")}</div>` : ""}`;
   (m.actions || []).forEach((a, i) => a.wire?.(el.querySelector(`[data-act="${i}"]`)));
   el.querySelector(".msg-ask-ai")?.addEventListener("click", () => {

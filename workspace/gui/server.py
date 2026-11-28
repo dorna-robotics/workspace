@@ -283,6 +283,21 @@ def main():
 
     app, orch = make_app(port=port)
     app.listen(port, address=host)
+    # https too (gui/tls.py): the same app on PORT + 443 (HTTPS_PORT; 0 = off),
+    # and each local project's viewer port answered over https beside it
+    https_port = int(os.environ.get("HTTPS_PORT", str(port + 443)))
+    if https_port:
+        from gui import tls
+        try:
+            ctx = tls.ssl_context()
+        except Exception as e:
+            ctx = None
+            print(f"HTTPS off: {e}")
+        if ctx is None:
+            print("HTTPS off: couldn't make a certificate (no cryptography package or openssl) — http only")
+        else:
+            app.listen(https_port, address=host, ssl_options=ctx)
+            tls.ViewerTLS(orch, ctx, host=host)
 
     # Suppress WebSocketClosedError noise
     _orig_handler = asyncio.get_event_loop().get_exception_handler()
@@ -304,6 +319,8 @@ def main():
     print(f"Dorna Workspace server running on {host}:{port}")
     print(f"  Orchestrator:  http://{host}:{port}/orchestrator/")
     print(f"  Scene Builder: http://{host}:{port}/scene-builder/")
+    if https_port and ctx is not None:
+        print(f"  HTTPS:         https://{host}:{https_port}/  (self-signed, ~/.workspace/tls/cert.pem)")
     tornado.ioloop.IOLoop.current().start()
 
 

@@ -14,6 +14,7 @@ API key is ever on the robot.
 import asyncio
 import json
 import os
+import shutil
 import time
 import traceback
 import uuid
@@ -78,6 +79,7 @@ class Session:
         self.id = sid or uuid.uuid4().hex[:12]
         self.owner = owner           # the account email that had this conversation
         self.project = None          # the project the user had open last
+        self.title = None            # the user's name for it (else its first message)
         self.messages = []
         self.transcript = []
         self.cancel = False
@@ -92,7 +94,7 @@ class Session:
 
     def save(self):
         # image / PDF data stays in the upload store, not in the session file
-        data = {"id": self.id, "owner": self.owner, "project": self.project,
+        data = {"id": self.id, "owner": self.owner, "project": self.project, "title": self.title,
                 "messages": uploads.strip_binary(self.messages),
                 "transcript": self.transcript, "saved": time.time()}
         tmp = self.path + ".tmp"
@@ -113,6 +115,7 @@ class Session:
             data = json.load(f)
         s.owner = data.get("owner")
         s.project = data.get("project")
+        s.title = data.get("title")
         s.messages = data.get("messages") or []
         s.transcript = data.get("transcript") or []
         return s
@@ -184,11 +187,39 @@ def recent_sessions(owner, limit=10):
                       if t.get("role") == "user" and t.get("text")), None)
         if not first:
             continue
-        out.append({"id": data.get("id") or n[:-5], "title": " ".join(str(first).split())[:80],
+        title = data.get("title") or " ".join(str(first).split())[:80]
+        out.append({"id": data.get("id") or n[:-5], "title": title,
                     "project": data.get("project"), "saved": data.get("saved")})
         if len(out) >= limit:
             break
     return out
+
+
+def rename_session(sid, owner, title):
+    s = get_session(sid, owner=owner, create=False)
+    if s is None or s.id != sid:
+        return False
+    s.title = " ".join(str(title or "").split())[:80] or None
+    s.save()
+    return True
+
+
+def delete_session(sid, owner):
+    """Forget that conversation: its file, its uploads and pictures (copies already
+    saved into a project stay there). False while a reply is running."""
+    s = get_session(sid, owner=owner, create=False)
+    if s is None or s.id != sid:
+        return None
+    if s.lock.locked():
+        return False
+    _SESSIONS.pop(sid, None)
+    try:
+        os.remove(s.path)
+    except OSError:
+        pass
+    for kind in ("uploads", "shots"):
+        shutil.rmtree(os.path.dirname(data_path("ai", kind, sid, "x")), ignore_errors=True)
+    return True
 
 
 # ── the loop ─────────────────────────────────────────────────────────

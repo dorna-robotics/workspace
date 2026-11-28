@@ -1,4 +1,4 @@
-// The Workspace assistant — a side panel docked at the right (the page
+// The Dorna Robotics assistant — a side panel docked at the right (the page
 // narrows beside it), opened and collapsed from the top bar, on every page
 // once this robot is logged in (hidden in offline mode).
 // Talks to /ai/api (gui/ai/handlers.py): POST /chat streams NDJSON events
@@ -70,7 +70,15 @@
   const HISTORY_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 103-6.7L3 8"/><polyline points="3 3 3 8 8 8"/><polyline points="12 7 12 12 15 14"/></svg>`;
 
   const NEW_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg>`;
-  const COLLAPSE_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="15" y1="4" x2="15" y2="20"/><polyline points="8 10 10 12 8 14"/></svg>`;
+  // the top-bar button's icon: a spark in an accent badge; Dorna admins
+  // (the account's is_admin, from the builder's login) get the face picture
+  const SPARK_ICON = `<svg class="ai-badge" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="12" fill="var(--accent)"/><path fill="#fff" d="M12 4.5l1.6 4.6a2 2 0 001.3 1.3l4.6 1.6-4.6 1.6a2 2 0 00-1.3 1.3L12 19.5l-1.6-4.6a2 2 0 00-1.3-1.3L4.5 12l4.6-1.6a2 2 0 001.3-1.3z"/><path fill="#fff" d="M18 3.5l.5 1.4 1.4.5-1.4.5-.5 1.4-.5-1.4-1.4-.5 1.4-.5z"/></svg>`;
+  const FACE_ICON = `<img class="ai-face" src="/vendor/ai-face.png" alt="" aria-hidden="true" draggable="false"/>`;
+  let isAdmin = false;
+  const MIC_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0014 0"/><line x1="12" y1="17" x2="12" y2="22"/></svg>`;
+  const SPEAKER_ICON = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5L6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 010 7M19 5a10 10 0 010 14"/></svg>`;
+  const PEN_ICON = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg>`;
+  const TRASH_ICON = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>`;
   const CLOSE_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>`;
 
   // ── DOM ──────────────────────────────────────────────────────────
@@ -82,8 +90,7 @@
       if (bar.querySelector(".ai-toggle")) continue;
       const b = document.createElement("button");
       b.type = "button"; b.className = "btn btn-ghost btn-sm btn-icon ai-toggle"; b.hidden = true;
-      b.title = "Workspace AI"; b.setAttribute("aria-label", "Workspace AI");
-      b.innerHTML = COLLAPSE_ICON;
+      b.title = "Dorna Robotics AI"; b.setAttribute("aria-label", "Dorna Robotics AI");
       b.onclick = () => setOpen(root.hidden);
       bar.append(b);
       toggles.push(b);
@@ -93,20 +100,21 @@
   function syncToggles() {
     const open = enabled && !root.hidden;
     for (const b of toggles) {
+      const icon = isAdmin ? "face" : "spark";
+      if (b.dataset.icon !== icon) { b.innerHTML = isAdmin ? FACE_ICON : SPARK_ICON; b.dataset.icon = icon; }
       b.hidden = !enabled;
       b.setAttribute("aria-pressed", String(open));
-      b.title = open ? "Collapse Workspace AI (Esc)" : "Open Workspace AI";
+      b.title = open ? "Collapse Dorna Robotics AI (Esc)" : "Open Dorna Robotics AI";
     }
   }
 
   const root = document.createElement("aside");
   root.className = "ai-panel"; root.hidden = true;
-  root.setAttribute("aria-label", "Dorna Workspace AI");
+  root.setAttribute("aria-label", "Dorna Robotics AI");
   root.innerHTML = `
     <div class="ai-resize" title="Drag to resize"></div>
     <div class="ai-head">
-      <span class="ws-brand" aria-label="Dorna Workspace"><span class="ws-brand-mark"></span><span class="ws-brand-word"></span><span class="ws-brand-app">Workspace</span></span>
-      <span class="ai-proj" hidden></span>
+      <span class="ws-brand" aria-label="Dorna Robotics"><span class="ws-brand-mark"></span><span class="ws-brand-word"></span><span class="ws-brand-app">Robotics</span></span>
       <span class="spacer"></span>
       <button class="ai-iconbtn ai-hist-btn" type="button" title="Recent chats" aria-label="Recent chats" aria-expanded="false">${HISTORY_ICON}</button>
       <button class="ai-iconbtn ai-new" type="button" title="New chat" aria-label="New chat">${NEW_ICON}</button>
@@ -119,16 +127,18 @@
       <div class="ai-atts" hidden></div>
       <div class="ai-compose-row">
         <button class="ai-iconbtn ai-attach" type="button" title="Attach files — images, PDFs, 3D models, vision models (up to 50 MB each)" aria-label="Attach files">${CLIP_ICON}</button>
-        <textarea rows="1" placeholder="Ask Dorna Workspace…" aria-label="Message Dorna Workspace AI"></textarea>
+        <textarea rows="1" placeholder="Ask Dorna Robotics…" aria-label="Message Dorna Robotics AI"></textarea>
+        <button class="ai-iconbtn ai-mic" type="button" aria-label="Talk" aria-pressed="false">${MIC_ICON}</button>
         <button class="btn btn-primary btn-sm ai-send" type="button" title="Send (Enter)" aria-label="Send">Send</button>
       </div>
-      <div class="ai-bar"><span class="spacer"></span><span class="ai-hint">Enter to send</span>
+      <div class="ai-bar"><button class="ai-iconbtn ai-speak" type="button" aria-pressed="false">${SPEAKER_ICON}<span>Read aloud</span></button>
+        <span class="spacer"></span><span class="ai-hint">Enter to send</span>
         <button class="btn btn-ghost btn-sm ai-stop" type="button" hidden>Stop</button></div>
       <input class="ai-file" type="file" multiple hidden/>
     </div>
     <div class="ai-drop" hidden><div>Drop files to attach</div></div>`;
   const $ = (s) => root.querySelector(s);
-  const log = $(".ai-log"), input = $("textarea"), sendBtn = $(".ai-send"), stopBtn = $(".ai-stop"), projEl = $(".ai-proj");
+  const log = $(".ai-log"), input = $("textarea"), sendBtn = $(".ai-send"), stopBtn = $(".ai-stop");
   const attsEl = $(".ai-atts"), fileIn = $(".ai-file"), dropEl = $(".ai-drop");
   const w = parseInt(ls.get(W_KEY) || "", 10);
   if (isFinite(w)) document.documentElement.style.setProperty("--aiw", Math.max(320, Math.min(900, w)) + "px");
@@ -223,14 +233,11 @@
     if (q.get("pendant")) base.view = "pendant";
     return Object.assign(base, c && typeof c === "object" ? c : {});
   }
-  function showProject() {
-    const p = pageContext().project;
-    projEl.hidden = !p;
-    projEl.textContent = (p || "").replace(/_+/g, " ");
-    projEl.title = p ? `Project: ${p}` : "";
-  }
 
-  function setBusy(b) { busy = b; sendBtn.disabled = b || atts.some((a) => a.state === "up"); stopBtn.hidden = !b; }
+  function setBusy(b) {
+    busy = b; sendBtn.disabled = b || atts.some((a) => a.state === "up"); stopBtn.hidden = !b;
+    if (Rec && window.isSecureContext) micBtn.disabled = b;
+  }
 
   // ── rendering (the AI builder's chat look) ───────────────────────
   function emptyState() {
@@ -256,6 +263,11 @@
     c.querySelector(".nm").textContent = f.name;
     c.querySelector(".sub").textContent = [KIND_WORD[kind] || "File", f.size != null ? fmtSize(f.size) : ""].filter(Boolean).join(" · ");
     c.title = f.project_path ? `${f.name} — also saved in the project as ${f.project_path}` : f.name;
+    const timg = c.querySelector(".thumb img");
+    if (timg) {
+      c.classList.add("zoom"); c.title += " — click to enlarge";
+      c.addEventListener("click", (e) => { if (!e.target.closest(".rm")) enlarge(timg.src, f.name); });
+    }
     return c;
   }
   function userBubble(text, files) {
@@ -410,7 +422,7 @@
         if (!el) return;
         el.dataset.state = state;
         el.querySelector(".ai-ap-mark").textContent = state === "approved" ? "✓" : state === "pending" && live ? "!" : "×";
-        el.querySelector(".ai-ap-q").textContent = state === "pending" && live ? "Approve this action?" : "Dorna Workspace AI asked to do this";
+        el.querySelector(".ai-ap-q").textContent = state === "pending" && live ? "Approve this action?" : "Dorna Robotics AI asked to do this";
         const foot = el.querySelector(".ai-ap-foot");
         if (state === "pending" && live) {
           foot.innerHTML = `<button type="button" class="btn btn-sm ai-ap-no">Decline</button><button type="button" class="btn btn-primary btn-sm ai-ap-ok">Approve</button>`;
@@ -500,6 +512,7 @@
       if (!following) {
         bubble.unpend(); bubble.thinkDone(); bubble.seal();
         setBusy(false);
+        speakAnswer(bubble.el);
         window.dispatchEvent(new CustomEvent("ai-turn"));
         window.dornaAccount?.refresh(true);           // the usage bar moves after a turn
       }
@@ -583,9 +596,9 @@
     document.documentElement.classList.toggle("ai-open", open && enabled);
     relayout();
     ls.set(OPEN_KEY, open ? "1" : "0");
+    if (!open) { talking = false; rec?.abort(); tts?.cancel(); }
     if (open && enabled) {
-      showProject();
-      if (!loaded) loadSession().catch((e) => { log.innerHTML = ""; assistantBubble().error("Couldn't reach Dorna Workspace AI: " + e.message); });
+      if (!loaded) loadSession().catch((e) => { log.innerHTML = ""; assistantBubble().error("Couldn't reach Dorna Robotics AI: " + e.message); });
       setTimeout(() => input.focus(), 50);
     }
   }
@@ -601,6 +614,8 @@
   }
   function setEnabled(st) {
     setOut(st);
+    isAdmin = !!(st && st.logged_in && st.is_admin);
+    syncToggles();
     const on = !!(st && st.logged_in);
     if (on === enabled) return;
     enabled = on;
@@ -619,7 +634,81 @@
   });
   sendBtn.onclick = () => { const t = input.value; input.value = ""; send(t); };
   stopBtn.onclick = () => fetch(API + "/cancel", { method: "POST", headers: hdrs(true), body: JSON.stringify({ session: sid }) });
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !root.hidden) setOpen(false); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !root.hidden && !document.querySelector(".confirm-overlay.show")) setOpen(false); });
+  // ── voice: talk to it, and hear it answer ────────────────────────
+  // The mic dictates into the box (the words show as they are heard) and
+  // sends when you stop talking; an answer to a spoken question is read
+  // aloud, then the mic listens again — a conversation, until you press the
+  // mic or Stop, or type. "Read aloud" reads every answer.
+  const micBtn = $(".ai-mic"), speakBtn = $(".ai-speak"), SPEAK_KEY = "ws_ai_speak";
+  const Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const tts = window.speechSynthesis;
+  let rec = null, listening = false, talking = false;   // talking: in a spoken back-and-forth
+  if (!Rec || !window.isSecureContext) {
+    micBtn.disabled = true;
+    micBtn.title = !Rec ? "Talking needs a browser with speech recognition (Chrome, Edge or Safari)"
+      : "The microphone only works over https or on this robot itself (localhost)";
+  } else micBtn.title = "Talk — sends when you stop";
+  speakBtn.hidden = !tts;
+  const setSpeak = (on) => { speakBtn.setAttribute("aria-pressed", String(on)); speakBtn.title = on ? "Stop reading answers aloud" : "Read answers aloud"; ls.set(SPEAK_KEY, on ? "1" : "0"); };
+  setSpeak(ls.get(SPEAK_KEY) === "1");
+  speakBtn.onclick = () => { const on = speakBtn.getAttribute("aria-pressed") !== "true"; setSpeak(on); if (!on) tts?.cancel(); };
+  function setListening(on) {
+    listening = on;
+    micBtn.setAttribute("aria-pressed", String(on));
+    micBtn.classList.toggle("on", on);
+    micBtn.setAttribute("aria-label", on ? "Stop listening" : "Talk");
+    if (Rec && window.isSecureContext) micBtn.title = on ? "Listening — press to send now" : "Talk — sends when you stop";
+    input.placeholder = on ? "Listening…" : "Ask Dorna Robotics…";
+  }
+  function listen() {
+    if (!Rec || !window.isSecureContext || listening || busy || outOfCredits || !enabled) return;
+    tts?.cancel();
+    const base = input.value.trim();
+    let heard = "";
+    rec = new Rec();
+    rec.lang = navigator.language || "en-US";
+    rec.interimResults = true; rec.continuous = false;
+    rec.onresult = (e) => {
+      heard = Array.from(e.results).map((r) => r[0].transcript).join("");
+      input.value = (base ? base + " " : "") + heard;
+    };
+    rec.onerror = (e) => {
+      talking = false;
+      if (e.error === "no-speech" || e.error === "aborted") return;
+      note(e.error === "not-allowed" || e.error === "service-not-allowed"
+        ? "The microphone is blocked — allow it for this page in the browser's site settings."
+        : e.error === "network" ? "Couldn't reach the speech service — check the internet connection." : "The microphone stopped: " + e.error, true);
+    };
+    rec.onend = () => {
+      rec = null; setListening(false);
+      const t = input.value.trim();
+      if (heard.trim() && t) { input.value = ""; talking = true; send(t); }
+      else talking = false;
+    };
+    try { rec.start(); setListening(true); } catch (_) { rec = null; }
+  }
+  micBtn.onclick = () => { if (listening) rec?.stop(); else listen(); };
+  input.addEventListener("input", () => { if (!listening) talking = false; });
+  // what an answer says, as plain words (no code, tool rows or pictures)
+  function spoken(el) {
+    const c = el.cloneNode(true);
+    c.querySelectorAll("pre, .ai-tools, .ai-think, .ai-approve, .ai-excerpt, figure, .ai-error").forEach((n) => n.remove());
+    return Array.from(c.querySelectorAll(".ai-text")).map((n) => n.textContent).join(" ").replace(/\s+/g, " ").trim();
+  }
+  function speakAnswer(el) {
+    const again = talking;
+    if (!tts || !el || !(again || speakBtn.getAttribute("aria-pressed") === "true")) { talking = false; return; }
+    const text = spoken(el);
+    if (!text) { if (again) listen(); return; }
+    tts.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = navigator.language || "en-US";
+    u.onend = () => { if (again && talking && !busy && !root.hidden) listen(); };
+    tts.speak(u);
+  }
+  stopBtn.addEventListener("click", () => { talking = false; tts?.cancel(); rec?.abort(); });
+
   // ── recent chats: the account's last 10 on this robot ────────────
   const histBtn = $(".ai-hist-btn"), hist = $(".ai-hist");
   function ago(t) {
@@ -644,28 +733,81 @@
       return;
     }
     hist.innerHTML = `<div class="ai-hist-head">Recent chats</div>` + (rows.length ? "" : `<div class="ai-hist-msg">No chats yet.</div>`);
-    rows.forEach((x) => {
-      const b = document.createElement("button");
-      b.type = "button"; b.className = "ai-hist-item" + (x.id === sid ? " on" : ""); b.setAttribute("role", "menuitem");
-      b.innerHTML = `<span class="t"></span><span class="m"></span>`;
-      b.querySelector(".t").textContent = x.title;
-      b.querySelector(".m").textContent = (x.project ? x.project + " · " : "") + ago(x.saved);
-      b.onclick = async () => {
-        closeHist();
-        if (busy || x.id === sid) return;
-        sid = x.id; ls.set(SID_KEY, sid);
-        clearAtts(true);
-        await loadSession().catch((e) => { log.innerHTML = ""; assistantBubble().error("Couldn't open that chat: " + e.message); });
+    rows.forEach((x) => hist.appendChild(histRow(x)));
+  }
+  // one past chat: open it, or rename / delete it from its own buttons
+  function histRow(x) {
+    const row = document.createElement("div");
+    row.className = "ai-hist-row" + (x.id === sid ? " on" : "");
+    row.innerHTML = `<button type="button" class="ai-hist-item" role="menuitem"><span class="t"></span><span class="m"></span></button>
+      <button type="button" class="ai-iconbtn ai-hist-act ren" title="Rename" aria-label="Rename this chat">${PEN_ICON}</button>
+      <button type="button" class="ai-iconbtn ai-hist-act del" title="Delete" aria-label="Delete this chat">${TRASH_ICON}</button>`;
+    row.querySelector(".t").textContent = x.title;
+    row.querySelector(".m").textContent = (x.project ? x.project.replace(/_+/g, " ") + " · " : "") + ago(x.saved);
+    row.querySelector(".ai-hist-item").onclick = async () => {
+      closeHist();
+      if (busy || x.id === sid) return;
+      sid = x.id; ls.set(SID_KEY, sid);
+      clearAtts(true);
+      await loadSession().catch((e) => { log.innerHTML = ""; assistantBubble().error("Couldn't open that chat: " + e.message); });
+    };
+    row.querySelector(".ren").onclick = () => {
+      const item = row.querySelector(".ai-hist-item"), t = item.querySelector(".t");
+      const box = document.createElement("input");
+      box.className = "input ai-hist-name"; box.value = x.title; box.maxLength = 80;
+      box.setAttribute("aria-label", "Chat name");
+      row.classList.add("editing");
+      item.replaceWith(box); box.focus(); box.select();
+      let done = false;
+      const finish = async (save) => {
+        if (done) return; done = true;
+        const name = box.value.trim();
+        if (save && name && name !== x.title) {
+          const ok = await editChat({ id: x.id, title: name });
+          if (ok) x.title = name;
+        }
+        t.textContent = x.title; box.replaceWith(item); row.classList.remove("editing");
       };
-      hist.appendChild(b);
-    });
+      box.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") { e.preventDefault(); finish(true); }
+        else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); finish(false); }
+      });
+      box.addEventListener("click", (e) => e.stopPropagation());
+      box.addEventListener("blur", () => finish(true));
+    };
+    row.querySelector(".del").onclick = async () => {
+      const ask = window.confirmDialog
+        ? confirmDialog({ title: "Delete this chat?", message: `“${x.title}” and the files attached to it are removed from this robot. Files already saved into a project stay there.`, confirm: "Delete", icon: "remove", variant: "danger" })
+        : Promise.resolve(window.confirm(`Delete “${x.title}”?`));
+      if (!(await ask)) return;
+      const del = row.querySelector(".del"); del.disabled = true;
+      if (!(await editChat({ id: x.id, delete: true }))) { del.disabled = false; return; }
+      if (x.id === sid) await newChat();
+      row.remove();
+      if (!hist.querySelector(".ai-hist-row")) hist.insertAdjacentHTML("beforeend", `<div class="ai-hist-msg">No chats yet.</div>`);
+    };
+    return row;
+  }
+  async function editChat(body) {
+    try {
+      const r = await fetch(API + "/session/edit", { method: "POST", headers: hdrs(true), body: JSON.stringify(body) });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.statusText);
+      return true;
+    } catch (e) {
+      hist.querySelector(".ai-hist-msg.bad")?.remove();
+      hist.insertAdjacentHTML("beforeend", `<div class="ai-hist-msg bad">${esc(e.message)}</div>`);
+      return false;
+    }
   }
   histBtn.onclick = () => (hist.hidden ? openHist() : closeHist());
-  document.addEventListener("pointerdown", (e) => { if (!hist.hidden && !hist.contains(e.target) && !histBtn.contains(e.target)) closeHist(); });
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !hist.hidden) { e.stopImmediatePropagation(); closeHist(); } }, true);
+  // (the delete confirmation sits outside the menu: clicks in it keep the menu open)
+  document.addEventListener("pointerdown", (e) => { if (!hist.hidden && !hist.contains(e.target) && !histBtn.contains(e.target) && !e.target.closest(".confirm-overlay")) closeHist(); });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !hist.hidden && !e.target.closest?.(".ai-hist-name") && !document.querySelector(".confirm-overlay.show")) { e.stopImmediatePropagation(); closeHist(); }
+  }, true);
 
-  $(".ai-new").onclick = async () => {
-    closeHist();
+  $(".ai-new").onclick = () => { closeHist(); return newChat(); };
+  async function newChat() {
     if (busy) return;
     const r = await fetch(API + "/session", { method: "POST", headers: hdrs(true),
       body: JSON.stringify({ project: pageContext().project || null }) });
@@ -674,7 +816,7 @@
     sid = j.id; ls.set(SID_KEY, sid);
     clearAtts(true);
     emptyState(); input.focus();
-  };
+  }
   $(".ai-resize").addEventListener("pointerdown", (e) => {
     const startX = e.clientX, startW = root.getBoundingClientRect().width;
     const move = (ev) => { const nw = Math.max(320, Math.min(window.innerWidth - 40, startW - (ev.clientX - startX))); document.documentElement.style.setProperty("--aiw", nw + "px"); ls.set(W_KEY, String(Math.round(nw))); relayout(); };
@@ -776,7 +918,6 @@
       setTimeout(hook, 100);
     };
     hook();
-    window.addEventListener("popstate", showProject);
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", mount); else mount();
 

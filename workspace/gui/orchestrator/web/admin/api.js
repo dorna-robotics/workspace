@@ -165,7 +165,14 @@ export function connectStatusWS(onStatus) {
   return { close() { closed = true; ws?.close(); } };
 }
 
+// A project's own server is plain http on its port; on an https page this
+// robot answers it over https on port + 443 too (gui/tls.py), so the frame,
+// its fetches and websockets aren't blocked as mixed content.
+export const VIEWER_TLS_OFFSET = 443;
 export function wsViewerUrl(ws) {
+  if (!ws.node_url && location.protocol === "https:") {
+    return `https://${location.hostname}:${Number(ws.port) + VIEWER_TLS_OFFSET}`;
+  }
   try {
     const host = ws.node_url ? new URL(ws.node_url).hostname : window.location.hostname;
     return `http://${host}:${ws.port}`;
