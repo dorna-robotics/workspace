@@ -15,8 +15,6 @@ offline mode runs existing projects and nothing else).
     POST /dev/api/projects/<n>/camera/<c>/find         {server? | ip, port} → the cameras that vision server sees (camera_list)
     POST /dev/api/projects/<n>/camera/<c>/adjust       {exposure_ms | auto_exposure, white_balance: auto|hold} → done, settings
     POST /dev/api/projects/<n>/camera/<c>/roi          {detection, corners, inv, crop, size} → roi written into vision/<detection>.yaml
-    GET  /dev/api/projects/<n>/hmi                     the HMI screens' specs + a change signature
-    GET  /dev/api/projects/<n>/hmi/pendant/<file>      the Main screen's files, before launch
     GET  /dev/api/projects/<n>/calibration/plan        the calibration plan (gui/calibration/plan.py)
     GET  /dev/api/projects/<n>/workflow                the workflow: steps (actions), stations (recipes), charts (flow/)
     GET  /dev/api/projects/<n>/flowchart?name=         one chart (flow/<name>.json) and its checks
@@ -41,7 +39,6 @@ from pathlib import Path
 import tornado.ioloop
 import tornado.web
 
-from gui.orchestrator.handlers import ProjectScreenFileHandler
 
 from . import access, camera, component_ai, component_kinds, convert, mesh_measure, params, parts, scene_edit, vision_cfg, workflow
 
@@ -175,6 +172,7 @@ class InfoHandler(_Base):
         if not p:
             return
         ws, d = p
+        await _off_loop(params.load_project, d)
         try:
             scene = await _off_loop(scene_edit.merged, d)
             scene_err = None
@@ -198,6 +196,7 @@ class ParamsHandler(_Base):
         if not p:
             return
         comp = self.get_argument("component", "")
+        await _off_loop(params.load_project, p[1])
         try:
             scene = await _off_loop(scene_edit.merged, p[1])
         except Exception as e:
@@ -496,43 +495,6 @@ class CameraRoiHandler(_Base):
                      "roi": r["config"].get("roi"), "relaunch": bool(r["changed"]) and self.orch.is_launched(name)})
 
 
-class HmiHandler(_Base):
-    def get(self, name):
-        p = self.project(name)
-        if not p:
-            return
-        ws, d = p
-        out = {"ok": True, "launched": self.orch.is_launched(name)}
-        sig = []
-        for key in ("pendant", "setup"):
-            spec = ws.screen_spec(key)
-            if spec:
-                folder = Path(spec.pop("dir"))
-                for f in sorted(folder.glob("*")):
-                    if f.is_file():
-                        sig.append(f"{f.name}:{f.stat().st_mtime_ns}")
-            out[key] = spec
-        try:
-            import yaml
-            launch = yaml.safe_load((d / "launch.yaml").read_text()) or {}
-            sig.append(f"launch:{(d / 'launch.yaml').stat().st_mtime_ns}")
-            out["pendant_decl"] = launch.get("pendant")
-            out["pendant_hero"] = launch.get("pendant_hero", True)
-        except Exception:
-            pass
-        out["sig"] = str(hash("|".join(sig)))
-        self.finish(out)
-
-
-class PendantFileHandler(ProjectScreenFileHandler):
-    """The Main (pendant) screen's files, served before launch — the
-    runtime serves them at /hmi/ only while the project runs."""
-    def prepare(self):
-        if not access.logged_in():
-            self.set_status(401)
-            self.finish({"error": "login required"})
-
-
 class WorkflowHandler(_Base):
     async def get(self, name):
         p = self.project(name)
@@ -756,8 +718,6 @@ def routes(orch):
         (P + r"/camera/([^/]+)/find", CameraFindHandler, o),
         (P + r"/camera/([^/]+)/adjust", CameraAdjustHandler, o),
         (P + r"/camera/([^/]+)/roi", CameraRoiHandler, o),
-        (P + r"/hmi", HmiHandler, o),
-        (P + r"/hmi/pendant/(.*)", PendantFileHandler, dict(orch=orch, key="pendant")),
         (P + r"/calibration/plan", CalibrationPlanHandler, o),
         (P + r"/workflow", WorkflowHandler, o),
         (P + r"/flowchart", FlowchartHandler, o),

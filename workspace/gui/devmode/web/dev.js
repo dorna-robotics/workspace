@@ -4,7 +4,7 @@
 // camwin.js: connection, live picture, ROI, exposure).
 // Workflow is the project page (with simulation switches on its devices)
 // plus the AI builder's Flowchart and the builder's Recipes and Replay.
-// HMI previews Main + Parameters; Calibration is its own page.
+// HMI shows the operator's screen; Calibration is its own page.
 import { apiFetch, esc, stateVariant, stateLabel, isLaunched, wireCommand, toast, notify, unnotify } from "/orchestrator/api.js";
 import { openFlowchart, closeFlowchart, preloadFlowchart } from "/dev/flow.js";
 import { openCameraWindow } from "/dev/camwin.js";
@@ -77,7 +77,7 @@ function makeWin(id, title, cls = "") {
   wb.addEventListener("input", () => simGate(w));
   wb.addEventListener("change", () => simGate(w));
   const n = $("#dvWins").children.length;
-  w.style.right = `${24 + n * 24}px`;
+  w.style.right = `calc(var(--aiw-on, 0px) + ${16 + n * 24}px)`;
   w.style.top = `${120 + n * 24}px`;
   $("#dvWins").appendChild(w);
   w.querySelector("[data-close]").onclick = () => { w.remove(); w.dispatchEvent(new Event("closed")); };
@@ -89,7 +89,7 @@ function makeWin(id, title, cls = "") {
     head.setPointerCapture(e.pointerId);
     const mv = ev => {
       w.style.right = "auto";
-      w.style.left = `${Math.max(0, Math.min(innerWidth - 80, ev.clientX - dx))}px`;
+      w.style.left = `${Math.max(0, Math.min(pageRight() - 80, ev.clientX - dx))}px`;
       w.style.top = `${Math.max(0, Math.min(innerHeight - 60, ev.clientY - dy))}px`;
     };
     const up = () => { head.removeEventListener("pointermove", mv); head.removeEventListener("pointerup", up); };
@@ -98,6 +98,17 @@ function makeWin(id, title, cls = "") {
   });
   return w;
 }
+
+// The page's right edge: the assistant's panel, while it is open, is
+// beyond it. A dragged window the panel would cover moves back in.
+const pageRight = () => document.body.getBoundingClientRect().right;
+addEventListener("resize", () => {
+  for (const w of $("#dvWins").children) {
+    if (w.style.right !== "auto") continue;
+    const r = w.getBoundingClientRect(), over = r.right - (pageRight() - 8);
+    if (over > 0) w.style.left = `${Math.max(0, r.left - over)}px`;
+  }
+});
 
 // ── 1 · Scene ───────────────────────────────────────────────────────
 // The builder is the 3D view of Scene and of Workflow's Flowchart,
@@ -257,9 +268,9 @@ function setSaveReady(ok) {
   b.title = ok ? "Write the builder's scene into the project's scene files" : "Loading the scene…";
 }
 
-// Which parts have a settings menu (pins, ports, simulation…): the
-// builder's list shows them a settings button; plain parts (fixture
-// plates, racks) have none and open no window.
+// Which parts have a settings menu (pins, ports, simulation, a rack's
+// collision box…): the builder's list shows them a settings button;
+// plain parts (fixture plates) have none and open no window.
 const hasMenu = (name) => !!info?.components.find(c => c.name === name)?.menu;
 function pushMenus() {
   const w = $("#sbFrame").contentWindow;
@@ -273,12 +284,12 @@ function pushMenus() {
 function onSelect({ name, type }) {
   sbSel = name ? { name, type } : null;
   const menu = !!name && hasMenu(name);
-  $("#sbSel").textContent = !name ? "Parts with settings show a settings button in the list."
+  $("#sbSel").textContent = !name ? "Components with settings show a settings button in the list."
     : `${name} · ${type || "component"}` + (menu ? "" : " — no settings");
   $("#sbParams").hidden = !menu;
   $("#sbEditPart").hidden = !info?.own_types.includes(type);
   if (menu) openParams(name);
-  else document.getElementById("dvParams")?.querySelector("[data-close]")?.click();
+  else { endColEdit(); document.getElementById("dvParams")?.querySelector("[data-close]")?.click(); }
 }
 
 $("#sbNew").onclick = () => {
@@ -390,6 +401,7 @@ function loadPorts() {
 async function openParams(name, force = false) {
   const open = document.getElementById("dvParams");
   if (open && open.dataset.comp === name && !force) return;
+  endColEdit();
   const w = makeWin("dvParams", name);
   w.dataset.comp = name;
   w._stop?.();                                    // a camera window's picture stops
@@ -422,15 +434,26 @@ async function openParams(name, force = false) {
   foot.hidden = false;
   foot.innerHTML = `<button class="btn btn-primary" data-save>Save</button><span class="dv-msg" data-msg></span>`;
   const msg = foot.querySelector("[data-msg]");
+  const cb = body.querySelector(".dv-colbox");
+  if (cb) wireColbox(cb, name, s.fields.find(f => f.kind === "colbox"), w);
   foot.querySelector("[data-save]").onclick = async () => {
     const values = {};
     for (const f of s.fields) {
       const el = body.querySelector(`[data-key="${f.key}"]`);
-      values[f.key] = f.kind === "bool" ? el.checked : f.kind === "io" ? ioValue(el) : el.value;
+      values[f.key] = f.kind === "bool" ? el.checked : f.kind === "io" ? ioValue(el)
+        : f.kind === "colbox" ? (el._dirty ? el._boxes : f.value) : el.value;
     }
     msg.className = "dv-msg"; msg.textContent = "Saving…";
     try {
       const r = await post("/params", { component: name, values });
+      if (r.changed.includes("collision_box")) {
+        // the builder takes the saved boxes now: no reload for this key
+        try { $("#sbFrame").contentWindow.__sbColBoxCommit?.(name, values.collision_box); } catch (_) {}
+        r.builder_keys = (r.builder_keys || []).filter(k => k !== "collision_box");
+        const f = s.fields.find(x => x.kind === "colbox");
+        f.value = values.collision_box;
+        cb._dirty = false;
+      }
       paramsSaved(r);
       msg.className = "dv-msg ok";
       msg.textContent = !r.changed.length ? "No changes." :
@@ -439,6 +462,79 @@ async function openParams(name, force = false) {
       msg.className = "dv-msg bad"; msg.textContent = e.message;
     }
   };
+}
+
+// A rack's or a cap holder's collision box: the switch shows it in the
+// 3D view with a handle on each face (the builder's __sbColBoxEdit);
+// dragging and the size / center fields edit the same boxes.
+let colEditEnd = null;
+function endColEdit() { const f = colEditEnd; colEditEnd = null; f?.(); }
+function colboxHtml(f, id) {
+  return `<div class="dv-colbox" id="${id}" data-key="${esc(f.key)}">
+    <label class="dv-switch"><input type="checkbox" data-colbox-on/><span>Off</span></label>
+    <div class="dv-colbox-edit" data-colbox-boxes hidden></div></div>`;
+}
+function wireColbox(el, name, f, win) {
+  const sb = () => $("#sbFrame").contentWindow;
+  const on = el.querySelector("[data-colbox-on]"), list = el.querySelector("[data-colbox-boxes]");
+  let boxes = f.value || f.default;
+  if (!boxes || !Object.keys(boxes).length) {
+    const m = sb()?.__sbModelBox?.(name);              // a class with no box: one around its model
+    boxes = m ? { [m.solid]: [m.box] } : { body: [{ pose: [0, 0, 25, 0, 0, 0], scale: [100, 100, 50], padding_enabled: true }] };
+    el._dirty = !f.value;
+  }
+  el._boxes = JSON.parse(JSON.stringify(boxes));
+  const AX = ["X", "Y", "Z"];
+  const row = (label, key, sol, bi) => `<div class="dv-colbox-row"><span class="muted dv-small">${label}</span>${AX.map((a, k) =>
+    `<label class="dv-colbox-num"><span class="dv-small">${a}</span><input class="input" inputmode="decimal" data-cb="${key}" data-solid="${esc(sol)}" data-i="${bi}" data-k="${k}" aria-label="${label} ${a}"/></label>`).join("")}</div>`;
+  const multi = Object.values(el._boxes).flat().length > 1;
+  list.innerHTML = Object.entries(el._boxes).map(([sol, bs]) => bs.map((_, i) =>
+    (multi ? `<div class="section-label">${esc(sol)} · box ${i + 1}</div>` : "")
+    + row("Size (mm)", "scale", sol, i) + row("Center (mm)", "pose", sol, i)).join("")).join("")
+    + `<button class="btn btn-ghost btn-sm" data-colbox-reset>Use the ${f.default && Object.keys(f.default).length ? "library's" : "model's"} box</button>`;
+  const fill = () => {
+    for (const inp of list.querySelectorAll("input[data-cb]")) {
+      if (inp === document.activeElement) continue;
+      const v = el._boxes[inp.dataset.solid]?.[+inp.dataset.i]?.[inp.dataset.cb]?.[+inp.dataset.k];
+      inp.value = v == null ? "" : +(+v).toFixed(2);
+    }
+  };
+  const changed = (b) => { el._boxes = b; el._dirty = true; fill(); };
+  const show = (frame) => {
+    // framed in the 3D view's part this window leaves free
+    const fr = $("#sbFrame").getBoundingClientRect(), wr = win.getBoundingClientRect();
+    sb()?.__sbColBoxEdit?.(name, on.checked ? el._boxes : null, changed, frame ? { from: wr.right - fr.left, to: fr.width } : null);
+  };
+  on.onchange = () => {
+    on.nextElementSibling.textContent = on.checked ? "Shown in the 3D view — drag a face" : "Off";
+    list.hidden = !on.checked;
+    if (on.checked) {
+      colEditEnd = () => sb()?.__sbColBoxEdit?.(null);
+      fill();
+      // over the builder's list, not the 3D view the box is dragged in
+      // (a window the user placed stays where it is)
+      if (win.style.right !== "auto") {
+        win.style.right = "auto";
+        win.style.left = `${Math.round($("#dvMain").getBoundingClientRect().left) + 8}px`;
+      }
+    }
+    show(on.checked);
+  };
+  list.addEventListener("input", e => {
+    const inp = e.target.closest("input[data-cb]");
+    const v = parseFloat(inp?.value);
+    if (!inp || !isFinite(v) || (inp.dataset.cb === "scale" && v <= 0)) return;
+    el._boxes[inp.dataset.solid][+inp.dataset.i][inp.dataset.cb][+inp.dataset.k] = v;
+    el._dirty = true;
+    show();
+  });
+  list.addEventListener("click", e => {
+    if (!e.target.closest("[data-colbox-reset]")) return;
+    const m = !(f.default && Object.keys(f.default).length) && sb()?.__sbModelBox?.(name);
+    changed(JSON.parse(JSON.stringify(m ? { [m.solid]: [m.box] } : f.default)));
+    show();
+  });
+  win.addEventListener("closed", endColEdit, { once: true });
 }
 
 // After a Settings save. Connection + I/O keys: the builder never writes
@@ -518,7 +614,9 @@ function fieldHtml(f, portList = []) {
   const id = `f_${f.key.replace(/\W/g, "_")}`;
   const v = f.value ?? (f.group === "io" ? f.default ?? "" : "");
   let input;
-  if (f.kind === "io") {
+  if (f.kind === "colbox") {
+    input = colboxHtml(f, id);
+  } else if (f.kind === "io") {
     const rows = Array.isArray(v) && v.length ? v : [[null, 1, 0.25]];
     input = `<div class="dv-io" id="${id}" data-key="${esc(f.key)}">
       <div class="dv-io-head muted dv-small"><span>Pin</span><span>Value</span><span>Wait</span></div>
@@ -600,28 +698,14 @@ addEventListener("storage", e => {
 });
 
 // ── 3 · HMI ─────────────────────────────────────────────────────────
-let hmiLaunchedShown = null;
+// The operator's screen itself (the project page's pendant view): what
+// Open HMI shows, before launch and while the project runs.
 function openHmi() {
-  const launched = isLaunched(status.state) && status.state !== "LAUNCHED_NOT_READY";
-  if (hmiLaunchedShown === launched && $("#hmiSetup").src) return;
-  hmiLaunchedShown = launched;
-  const q = `project=${encodeURIComponent(PROJECT)}`;
-  // Main: the live pendant while the project runs; before that, the
-  // project's own screen mounted from its files (hmi.html).
-  $("#hmiMain").src = launched
-    ? `${pageUrl()}&pendant=1&hosted=1`
-    : `/dev/hmi.html?${q}&screen=main`;
-  $("#hmiSetup").src = `/dev/hmi.html?${q}&screen=setup`;
-  $("#hmiMsg").textContent = launched
-    ? "Main is the live page of the running project. Parameters updates when its files change."
-    : "Both pages update when their files change. Launch to see Main live.";
+  const f = $("#hmiFrame");
+  if (!f.src) f.src = `${pageUrl()}&pendant=1&hosted=1`;
 }
-$$("#hmiSeg button").forEach(b => b.onclick = () => {
-  $$("#hmiSeg button").forEach(x => x.classList.toggle("on", x === b));
-  $("#hmiGrid").dataset.v = b.dataset.v;
-});
 $("#hmiOpen").href = `${pageUrl()}&pendant=1`;
-$("#hmiReload").onclick = () => { hmiLaunchedShown = null; $("#hmiSetup").src = ""; openHmi(); };
+$("#hmiReload").onclick = () => { $("#hmiFrame").src = `${pageUrl()}&pendant=1&hosted=1`; };
 
 // ── 4 · Calibration ─────────────────────────────────────────────────
 function openCalibration() {
@@ -788,7 +872,7 @@ function setTools() {
   const lab = field(robot, "ip") || (net && `${net}.10`);
   link("#toolLab", lab && `http://${lab}/`, "Set the robot's ip in its Settings (Scene)");
   link("#toolVision", srv ? `http://${field(srv, "ip")}:${field(srv, "port") || 80}/playground` : net && `http://${net}.40/`,
-       "No vision server: add a vision_server part and set its IP address (Scene)");
+       "No vision server: add a vision_server component and set its IP address (Scene)");
 }
 document.addEventListener("click", (e) => { if (!e.target.closest("#sbTools")) $("#sbTools").open = false; });
 
@@ -831,7 +915,6 @@ async function pollStatus() {
   const pill = $("#dvState");
   pill.className = `pill ${stateVariant(s)}`;
   pill.innerHTML = `<span class="dot ${stateVariant(s)}"></span><span>${esc(stateLabel(s))}</span>`;
-  if (tab === "hmi") openHmi();
 }
 
 async function boot() {

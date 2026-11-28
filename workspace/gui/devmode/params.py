@@ -8,6 +8,11 @@ the component's class declares the key (scene_builder's AST reader),
 the scene already sets it, or the type is one that always has it
 (core → rail, inspection_* → camera).
 
+A rack or a cap holder (a ``Rack``) also gets its collision box: the
+class's ``collision_box`` ({solid: [{pose, scale, …}]}, what its solids
+— and so the planner — check against), which the window shows in the
+3D view to be dragged to fit the tubes it holds.
+
 I/O wiring the human fills in on the bench — the robot output pins a
 decapper, gripper or shaker switches (``output_*``: [[pin, value, wait]])
 and an input pin it reads (``*_input_index``) — comes from the class's
@@ -20,6 +25,7 @@ import re
 
 import gui.scene_builder.server as sb
 from workspace.components import factory as comp_factory
+from workspace.components.rack.rack import Rack
 
 from .camera import NETWORK_TYPES
 
@@ -43,6 +49,8 @@ FIELDS = {
     "critical":               ("Critical", "bool", "A fault on this device stops the run."),
     "simulation":             ("Simulation", "bool", "On = nothing is sent to the real device."),
 }
+COLBOX_HINT = ("On: the box shows in the 3D view with a handle on each face — drag them until the box "
+               "covers the rack and the tubes it holds. The robot's path planning keeps clear of it.")
 SERIAL_HINT = "A /dev/serial/by-id/… path — it stays the same across reboots."
 IO_PINS = 16                        # the robot's outputs 0–15 (core.output)
 IO_HINT = "Each step sets one robot output pin to 0 or 1, then waits. An empty pin does nothing."
@@ -54,6 +62,22 @@ SKIP_FOLDERS = {"probe"}            # passive tools whose module only mentions s
 def _src(ctype):
     fp = sb.COMPONENT_MAP.get(ctype) or sb._project_component_map.get(ctype)
     return fp if fp and os.path.isfile(fp) else None
+
+
+_project_seen = set()
+
+
+def load_project(project_dir):
+    """The project's own component classes registered, once per project:
+    the window reads their DEFAULTS and bases before its builder opens."""
+    d = str(project_dir)
+    if d in _project_seen:
+        return
+    _project_seen.add(d)
+    try:
+        sb.scan_project_components(d)
+    except Exception:
+        pass
 
 
 def _folder_mentions_sim(fp):
@@ -179,6 +203,12 @@ def io_keys(ctype):
     return out
 
 
+def has_colbox(ctype):
+    """A rack or a cap holder: its collision box is set in the window."""
+    cls = comp_factory._registry.get(ctype)
+    return isinstance(cls, type) and issubclass(cls, Rack)
+
+
 def _io_label(k):
     if IO_IN_RE.match(k):
         return k[:-len("_index")].replace("_", " ").capitalize() + " pin"
@@ -221,6 +251,9 @@ def schema(name, cfg, scene):
     if device:
         want("simulation")
 
+    if has_colbox(ctype):
+        want("collision_box")
+
     serial = "baud" in keys or str(cfg.get("port") or "").startswith("/dev")
     servers = sorted(n for n, c in (scene or {}).items()
                      if isinstance(c, dict) and c.get("type") == "vision_server")
@@ -231,6 +264,11 @@ def schema(name, cfg, scene):
             fields.append({"key": k, "label": _io_label(k), "kind": "io" if seq else "int",
                            "hint": IO_HINT if seq else f"The robot input pin (0–{IO_PINS - 1}) it reads.",
                            "value": _get(cfg, k), "default": copy.deepcopy(io[k]), "group": "io"})
+            continue
+        if k == "collision_box":
+            fields.append({"key": k, "label": "Collision box", "kind": "colbox", "hint": COLBOX_HINT,
+                           "value": copy.deepcopy(cfg.get(k)),
+                           "default": copy.deepcopy(defaults(ctype).get("collision_box") or {})})
             continue
         label, kind, hint = FIELDS[k]
         f = {"key": k, "label": label, "kind": kind, "hint": hint, "value": _get(cfg, k)}
@@ -316,6 +354,8 @@ def coerce(field, value):
     kind = field["kind"]
     if kind == "io":
         return _coerce_io(field, value)
+    if kind == "colbox":
+        return _coerce_colbox(value)
     if kind == "bool":
         if isinstance(value, bool):
             return value
@@ -386,4 +426,31 @@ def _coerce_io(field, value):
         if wait < 0:
             raise ValueError(f"{name}, step {i}: the wait is 0 s or more")
         out.append([pin, val, wait])
+    return out
+
+
+def _coerce_colbox(value):
+    """{solid: [{pose: [x, y, z, a, b, c], scale: [lx, ly, lz], …}]}, in
+    mm and degrees, each size above 0 — rounded to 0.01."""
+    if not isinstance(value, dict) or not value:
+        raise ValueError("Collision box: at least one box")
+    out = {}
+    for solid, boxes in value.items():
+        if not isinstance(boxes, list) or not boxes:
+            raise ValueError(f"Collision box ({solid}): at least one box")
+        out[str(solid)] = []
+        for b in boxes:
+            if not isinstance(b, dict):
+                raise ValueError("Collision box: each box has a pose and a scale")
+            try:
+                pose = [round(float(v), 2) for v in b.get("pose") or []]
+                scale = [round(float(v), 2) for v in b.get("scale") or []]
+            except (TypeError, ValueError):
+                raise ValueError("Collision box: numbers only")
+            if len(pose) != 6 or len(scale) != 3:
+                raise ValueError("Collision box: a pose of 6 numbers and a size of 3")
+            if min(scale) <= 0:
+                raise ValueError("Collision box: each size above 0 mm")
+            box = {**b, "pose": pose, "scale": scale}
+            out[str(solid)].append(box)
     return out

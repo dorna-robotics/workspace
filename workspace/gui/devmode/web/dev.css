@@ -60,6 +60,14 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--
 .dv-toolbar .btn { min-height: 44px; }
 .dv-sep { width: 1px; align-self: stretch; background: var(--border2); margin: 0 var(--space-2); }
 .dv-sel { max-width: 340px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* a narrow page (a tablet, or the assistant's panel open): the toolbars
+   keep their buttons — the selection line (the builder's Selection
+   panel says the same) and the HMI note give way */
+.dv-main { container-type: inline-size; }
+@container (max-width: 900px) {
+  .dv-toolbar { gap: var(--space-2); row-gap: var(--space-2); padding: var(--space-2) var(--space-3); }
+  .dv-toolbar .dv-sel, .dv-toolbar .dv-sep, #hmiMsg { display: none; }
+}
 .dv-frame { flex: 1; width: 100%; min-height: 0; border: none; background: var(--bg); display: block; }
 .dv-small { font-size: var(--text-sm); }
 
@@ -125,16 +133,10 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--
 .dv-switch input::after { content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: var(--surface); transition: transform var(--motion-fast) var(--ease); }
 .dv-switch input:checked { background: var(--sim); }
 .dv-switch input:checked::after { transform: translateX(18px); }
-/* HMI */
-.dv-hmi { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); padding: var(--space-4); }
-.dv-hmi[data-v="main"], .dv-hmi[data-v="setup"] { grid-template-columns: 1fr; }
-.dv-hmi[data-v="main"] [data-screen="setup"], .dv-hmi[data-v="setup"] [data-screen="main"] { display: none; }
-.dv-hmi-col { display: flex; flex-direction: column; min-height: 0; background: var(--surface); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); overflow: hidden; }
-.dv-hmi-col .section-label { padding: var(--space-3) var(--space-4); margin: 0; border-bottom: 1px solid var(--border2); }
-@media (max-width: 900px) { .dv-hmi { grid-template-columns: 1fr; } }
-
-/* floating windows */
-.dv-win { position: fixed; z-index: 9000; width: min(400px, calc(100vw - 32px)); max-height: calc(100vh - 96px); display: flex; flex-direction: column;
+/* floating windows: within the page's own width, never under the
+   assistant's docked panel (--aiw-on while it is open) */
+.dv-win { position: fixed; z-index: 9000; --dv-room: calc(100vw - var(--aiw-on, 0px));
+  width: min(calc(var(--dv-room) - 32px), max(380px, min(560px, calc(var(--dv-room) / 2)))); max-height: calc(100vh - 136px); display: flex; flex-direction: column;
   background: var(--surface); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); border: 1px solid var(--border2); }
 .dv-win-head { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-3) var(--space-3) var(--space-5); border-bottom: 1px solid var(--border2); cursor: move; user-select: none; }
 .dv-win-head h3 { font-size: var(--text-lg); margin: 0; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -156,8 +158,17 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--
 .dv-io-row .input { min-height: 44px; box-sizing: border-box; width: 100%; }
 .dv-io-row .btn-icon { min-width: 44px; min-height: 44px; justify-content: center; }
 .dv-io [data-io-add] { align-self: flex-start; min-height: 44px; }
+/* a rack's collision box: size and center rows of X · Y · Z */
+.dv-colbox { display: flex; flex-direction: column; gap: var(--space-3); }
+.dv-colbox-edit { display: flex; flex-direction: column; gap: var(--space-2); }
+.dv-colbox-edit[hidden] { display: none; }
+.dv-colbox-edit .section-label { margin: var(--space-2) 0 0; }
+.dv-colbox-row { display: grid; grid-template-columns: 96px repeat(3, minmax(0, 1fr)); gap: var(--space-2); align-items: center; }
+.dv-colbox-num { display: flex; align-items: center; gap: var(--space-1); }
+.dv-colbox-num .input { min-height: 44px; box-sizing: border-box; width: 100%; min-width: 0; }
+.dv-colbox [data-colbox-reset] { align-self: flex-start; min-height: 44px; }
 /* the camera window (camwin.js): picture + ROI, connection, adjustments */
-.dv-win.dv-camwin { width: min(620px, calc(100vw - 32px)); max-height: calc(100vh - 136px); }
+.dv-win.dv-camwin { width: min(720px, calc(100vw - var(--aiw-on, 0px) - 32px)); }
 .dv-camwin .dv-win-body { gap: var(--space-3); }
 .dv-row { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
 .dv-row.dv-end { align-items: flex-end; }
@@ -220,7 +231,7 @@ button.dv-dev:focus-visible { outline: none; box-shadow: var(--glow); }
    the 3D preview and one side panel */
 /* over the assistant's button (59990), under its panel and the account menu; the
    top bar's row stays clear so the account button (Log in) is always reachable */
-.cb-bg { position: fixed; inset: 0; z-index: 59991; display: grid; place-items: center; padding: 64px var(--space-4) var(--space-4);
+.cb-bg { position: fixed; inset: 0 var(--aiw-on, 0px) 0 0; z-index: 59991; display: grid; place-items: center; padding: 64px var(--space-4) var(--space-4);
   background: rgb(0 0 0 / 45%); }
 .cb { width: min(1180px, 100%); height: min(860px, 100%); display: flex; flex-direction: column; overflow: hidden;
   background: var(--surface); color: var(--text); border: 1px solid var(--border2); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); }

@@ -947,7 +947,7 @@ function makeRenderer(opts, mountEl) {
                   return null;
                 })();
                 const ui = window.builderState.rectPatternUi;
-                if (!name || !ui) { showToast("Select a valid object."); downInfo=null; return; }
+                if (!name || !ui) { showToast("Select a valid component."); downInfo=null; return; }
 
                 // Cap→tube redirection: if the user clicks a cap, use its parent tube as the seed instead.
                 // This way patterning a cap behaves identically to patterning its tube.
@@ -1026,7 +1026,7 @@ function makeRenderer(opts, mountEl) {
 
                 // reset point box
                 ui.pointBox.dataset.state = "empty";
-                ui.pointBox.textContent = "Select second object…";
+                ui.pointBox.textContent = "Select second component…";
                 ui.pointBox.style.borderColor = "rgba(0,0,0,0.18)";
                 ui.pointBox.style.background = "rgba(0,0,0,0.02)";
                 ui.pointClear.style.display = "none";
@@ -1034,9 +1034,9 @@ function makeRenderer(opts, mountEl) {
                 window.builderState.mode = "IDLE";
                 try { window.hideBanner(); } catch(e) {}
                 if (!hasAttach) {
-                  showToast("First object set (free). Now pick second object.");
+                  showToast("First component set (free). Now pick second component.");
                 } else {
-                  showToast("First object set. Now pick second object.");
+                  showToast("First component set. Now pick second component.");
                 }
                 downInfo=null;
                 return;
@@ -1057,7 +1057,7 @@ function makeRenderer(opts, mountEl) {
               try {
                 const rp = window.builderState.rectPattern;
                 const ui = window.builderState.rectPatternUi;
-                if (!rp || !ui || !rp.seedName) { showToast("Pick the first object first."); downInfo=null; return; }
+                if (!rp || !ui || !rp.seedName) { showToast("Pick the first component first."); downInfo=null; return; }
 
                 const targetName = (function(){
                   let o = hit.object;
@@ -1068,11 +1068,11 @@ function makeRenderer(opts, mountEl) {
                   }
                   return null;
                 })();
-                if (!targetName) { showToast("Select a valid target object."); downInfo=null; return; }
+                if (!targetName) { showToast("Select a valid target component."); downInfo=null; return; }
 
                 rp.secondOwnerName = targetName;
                 window.builderState.mode = "RECTPATTERN_PICK_SECOND_ANCHOR";
-                try { window.showBanner?.("Now click an anchor on the target object."); } catch(e) {}
+                try { window.showBanner?.("Now click an anchor on the target component."); } catch(e) {}
                 try {
                   const root = objectsByName.get(targetName);
                   if (root) buildAnchorsFor(root);
@@ -1105,7 +1105,7 @@ function makeRenderer(opts, mountEl) {
               try {
                 const rp = window.builderState.rectPattern;
                 const ui = window.builderState.rectPatternUi;
-                if (!rp || !ui || !rp.aPos) { showToast("Pick the first object first."); downInfo=null; return; }
+                if (!rp || !ui || !rp.aPos) { showToast("Pick the first component first."); downInfo=null; return; }
 
                 const bPos = hit.point.clone();
                 rp.bPos = bPos;
@@ -1190,7 +1190,7 @@ if (hit.object.userData && hit.object.userData.__isAnchorPick) {
             })();
             let node = resolvedName ? objectsByName.get(resolvedName) : null;
             const compName = resolvedName;
-            if (!node || !compName) { showToast("Select a valid object."); downInfo=null; return; }
+            if (!node || !compName) { showToast("Select a valid component."); downInfo=null; return; }
 if (node) {
               if (window.builderState.mode === "PICK_TARGET_OBJECT" && window.builderState.pending) {
                 // Route through the attach modal: highlights the pick in its
@@ -1416,6 +1416,167 @@ if (node) {
       window.__colBoxHandlesShow = __cbhShow;
       window.__colBoxHandlesHide = __cbhHide;
       window.__colBoxHandlesUpdate = __cbhUpdate;
+
+      // ── A component's own collision boxes, edited from Developer mode ──
+      // The Settings window of a rack or a cap holder passes the boxes
+      // ({solid: [{pose, scale, …}]}, the component's collision_box); they
+      // show on the model (whatever the Collision toggle says) with a
+      // handle on each of the six faces. Dragging one moves that face
+      // only — the opposite face stays — and hands the new boxes to
+      // onChange. __sbColBoxEdit(null) ends it.
+      const __rcb = { name: null, boxes: null, onChange: null, parts: [], handles: [], drag: null, hidden: [] };
+      function __rcbClear() {
+        for (const m of __rcb.parts) { m.parent?.remove(m); m.traverse(o => { o.geometry?.dispose?.(); o.material?.dispose?.(); }); }
+        for (const g of __rcb.hidden) g.visible = showCollisionBoxes;
+        __rcb.parts = []; __rcb.handles = []; __rcb.hidden = [];
+      }
+      function __rcbHolder(root, solid) {
+        return root.children.find(c => c.name === solid && !c.userData?.__isCollisionGroup) || root;
+      }
+      function __rcbBuild() {
+        __rcbClear();
+        const root = __rcb.name && objectsByName.get(__rcb.name);
+        if (!root || !__rcb.boxes) { markDirty(); return; }
+        const hr = 6;
+        for (const [solid, list] of Object.entries(__rcb.boxes)) {
+          const holder = __rcbHolder(root, solid);
+          const own = holder.children.find(c => c.userData?.__isCollisionGroup);
+          if (own && own.visible) { own.visible = false; __rcb.hidden.push(own); }
+          (list || []).forEach((b, i) => {
+            if (!Array.isArray(b?.pose) || !Array.isArray(b?.scale)) return;
+            const box = makeCollisionMeshLocal(b.pose, b.scale, false);
+            box.material.color.set(0x0a84ff); box.material.opacity = 0.22; box.renderOrder = 990;
+            const edges = new THREE.LineSegments(new THREE.EdgesGeometry(box.geometry),
+              new THREE.LineBasicMaterial({ color: 0x0a84ff, depthTest: false, transparent: true }));
+            edges.renderOrder = 991;
+            box.add(edges);
+            for (let ax = 0; ax < 3; ax++) for (const sign of [1, -1]) {
+              const h = new THREE.Mesh(new THREE.SphereGeometry(hr, 16, 12),
+                new THREE.MeshBasicMaterial({ color: __CBH_COLORS["xyz"[ax]], depthTest: false, transparent: true, opacity: 0.95 }));
+              h.position.setComponent(ax, sign * b.scale[ax] / 2);
+              h.renderOrder = 995;
+              h.userData.__rcb = { solid, i, ax, sign };
+              box.add(h);
+              __rcb.handles.push(h);
+            }
+            holder.add(box);
+            __rcb.parts.push(box);
+          });
+        }
+        markDirty();
+      }
+      // Saved: the builder's copy and its Collision view take the boxes
+      // (its own Save then writes the same, never the old ones back).
+      window.__sbColBoxCommit = (name, boxes) => {
+        const meta = window.builderState?.components?.[name];
+        if (meta) meta.collision_box = JSON.parse(JSON.stringify(boxes));
+        const root = objectsByName.get(name);
+        if (!root) return;
+        for (const [solid, list] of Object.entries(boxes)) {
+          const own = __rcbHolder(root, solid).children.find(c => c.userData?.__isCollisionGroup);
+          if (own) fillCollisionGroup(own, list, false);
+        }
+        markDirty();
+      };
+      // A box around the model, for a component whose class has none.
+      window.__sbModelBox = (name) => {
+        const root = objectsByName.get(name);
+        if (!root) return null;
+        const holder = root.children.find(c => !c.userData?.__isCollisionGroup && c.isGroup && c.name) || root;
+        holder.updateMatrixWorld(true);
+        const inv = holder.matrixWorld.clone().invert(), bb = new THREE.Box3(), tmp = new THREE.Box3();
+        holder.traverse(o => {
+          if (!o.isMesh || !o.geometry || o.userData?.__isCollisionBox) return;
+          if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+          bb.union(tmp.copy(o.geometry.boundingBox).applyMatrix4(inv.clone().multiply(o.matrixWorld)));
+        });
+        if (bb.isEmpty()) return null;
+        const c = bb.getCenter(new THREE.Vector3()), z = bb.getSize(new THREE.Vector3());
+        const r1 = (v) => Math.round(v * 10) / 10;
+        return { solid: holder === root ? "body" : holder.name,
+                 box: { pose: [r1(c.x), r1(c.y), r1(c.z), 0, 0, 0], scale: [r1(z.x), r1(z.y), r1(z.z)], padding_enabled: true } };
+      };
+      // The camera on the boxes, centered in the view's free part
+      // ({from, to} px across this page — the host's Settings window
+      // covers the rest).
+      function __rcbFrame(free) {
+        const bb = new THREE.Box3();
+        for (const m of __rcb.parts) bb.expandByObject(m);
+        if (bb.isEmpty()) return;
+        const c = bb.getCenter(new THREE.Vector3()), r = bb.getSize(new THREE.Vector3()).length() / 2;
+        const W = renderer.domElement.clientWidth, H = renderer.domElement.clientHeight;
+        const L = renderer.domElement.getBoundingClientRect().left;
+        const a = Math.max(0, Math.min(W - 120, (free?.from ?? L) - L)), b = Math.max(a + 120, Math.min(W, (free?.to ?? L + W) - L));
+        const vis = b - a, tan = Math.tan(camera.fov * Math.PI / 360);
+        const dist = 1.3 * Math.max(r / tan, r / (tan * vis / H));
+        const dir = camera.position.clone().sub(controls.target).normalize();
+        camera.position.copy(c).addScaledVector(dir, dist);
+        camera.lookAt(c);
+        camera.updateMatrixWorld(true);
+        const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
+        const shift = (W / 2 - (a + b) / 2) * (2 * dist * tan / H);
+        camera.position.addScaledVector(right, shift);
+        controls.target.copy(c).addScaledVector(right, shift);
+        controls.update();
+        markDirty();
+      }
+      window.__sbColBoxEdit = (name, boxes, onChange, frame) => {
+        __rcb.name = boxes ? name : null;
+        __rcb.boxes = boxes ? JSON.parse(JSON.stringify(boxes)) : null;
+        __rcb.onChange = boxes ? onChange : null;
+        if (!__rcb.drag) __rcbBuild();
+        if (boxes && frame) __rcbFrame(frame);
+      };
+
+      renderer.domElement.addEventListener("pointerdown", (e) => {
+        if (!__rcb.handles.length || e.button !== 0) return;
+        setPointerFromEvent(e);
+        raycaster.setFromCamera(pointer, camera);
+        const hit = raycaster.intersectObjects(__rcb.handles, false)[0];
+        if (!hit) return;
+        e.stopImmediatePropagation();
+        e.preventDefault();
+        controls.enabled = false;
+        const { solid, i, ax, sign } = hit.object.userData.__rcb;
+        const box = hit.object.parent;
+        box.updateMatrixWorld(true);
+        const b = __rcb.boxes[solid][i];
+        __rcb.drag = {
+          solid, i, ax, sign, pose: b.pose.slice(), scale: b.scale.slice(),
+          q: box.quaternion.clone(),
+          origin: box.getWorldPosition(new THREE.Vector3()),
+          dir: new THREE.Vector3().setComponent(ax, 1).transformDirection(box.matrixWorld).normalize(),
+        };
+      }, true);
+      renderer.domElement.addEventListener("pointermove", (e) => {
+        const d = __rcb.drag;
+        if (!d) return;
+        e.stopImmediatePropagation();
+        setPointerFromEvent(e);
+        raycaster.setFromCamera(pointer, camera);
+        // the dragged face goes where the pointer is along the box's axis;
+        // the opposite face (at -sign·size/2 from the old center) stays
+        const t = __cbhAxisT(d.origin, d.dir, raycaster.ray);
+        const keep = -d.sign * d.scale[d.ax] / 2;
+        const size = Math.max(1, d.sign * (t - keep));
+        const face = keep + d.sign * size;
+        const shift = new THREE.Vector3().setComponent(d.ax, (face + keep) / 2).applyQuaternion(d.q);
+        const r1 = (v) => Math.round(v * 10) / 10;
+        const b = __rcb.boxes[d.solid][d.i];
+        b.scale = d.scale.slice(); b.scale[d.ax] = r1(size);
+        b.pose = d.pose.slice();
+        for (let k = 0; k < 3; k++) b.pose[k] = r1(d.pose[k] + shift.getComponent(k));
+        __rcbBuild();
+        try { __rcb.onChange?.(JSON.parse(JSON.stringify(__rcb.boxes))); } catch (err) {}
+      }, true);
+      const __rcbEnd = (e) => {
+        if (!__rcb.drag) return;
+        e.stopImmediatePropagation();
+        __rcb.drag = null;
+        controls.enabled = true;
+      };
+      renderer.domElement.addEventListener("pointerup", __rcbEnd, true);
+      renderer.domElement.addEventListener("pointercancel", __rcbEnd, true);
 
       // ── Ghost preview for anchor attachment ──────────────────────────────
       let __ghostObj = null;
@@ -2245,7 +2406,7 @@ if (node) {
           _sbJointsChip = document.createElement("div");
           _sbJointsChip.id = "sbJointsChip";
           _sbJointsChip.style.cssText =
-            "position:fixed;right:12px;bottom:12px;z-index:40;padding:4px 8px;" +
+            "position:fixed;right:calc(var(--aiw-on, 0px) + 12px);bottom:12px;z-index:40;padding:4px 8px;" +
             "border-radius:6px;background:rgba(10,14,24,0.72);" +
             "border:1px solid rgba(255,255,255,0.10);color:#9fb3c8;" +
             "font:11px ui-monospace,Menlo,Consolas,monospace;" +
@@ -2798,7 +2959,7 @@ function ensureBuilderBar() {
       const overlay = document.createElement("div");
       // ``modal-overlay`` → covers the navbar (see vendor/nav.css).
       overlay.className = "modal-overlay";
-      overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:50000;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);padding:20px;";
+      overlay.style.cssText = "position:fixed;inset:0 var(--aiw-on, 0px) 0 0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:50000;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);padding:20px;";
       overlay.innerHTML = `
         <div style="width:min(480px,100%);background:var(--surface);border-radius:18px;box-shadow:var(--shadow-lg);overflow:hidden;animation:confirmIn 0.25s cubic-bezier(0.2,0.9,0.3,1) forwards;">
           <div style="padding:16px 20px;border-bottom:1px solid var(--border2);display:flex;align-items:center;">
@@ -3294,7 +3455,7 @@ if (customName && customName.trim() && !__nameExists(customName.trim())) {
     window.builderState.pending = { name, childSolid: solidName, childAnchor: a0 };
     window.builderState.mode = "PICK_TARGET_OBJECT";
     window.builderState.targetName = null;
-    showToast("Click a target object, then click its anchor.");
+    showToast("Click a target component, then click its anchor.");
   }
   return name;
 }
@@ -3890,7 +4051,7 @@ function openAttachModal(childName, anchorsBySolid, opts = {}) {
     const solidKeys = Object.keys(anchorsBySolid || {});
     let curSolid = solidKeys[0] || null;
 
-    modal.appendChild(mkStepHeader(1, 2, "Anchor on: " + childName, "Pick the mount anchor on the new object"));
+    modal.appendChild(mkStepHeader(1, 2, "Anchor on: " + childName, "Pick the mount anchor on the new component"));
 
     const body = document.createElement("div");
     Object.assign(body.style, { padding: "14px 18px", overflowY: "auto", flex: "1", display: "flex", flexDirection: "column", gap: "10px", background: th.panelBg });
@@ -3956,7 +4117,7 @@ function openAttachModal(childName, anchorsBySolid, opts = {}) {
     Object.assign(body.style, { padding: "14px 18px", overflowY: "auto", flex: "1", display: "flex", flexDirection: "column", gap: "10px", background: th.panelBg });
 
     // ── Object section ──────────────────────────────────────────────────────
-    body.appendChild(mkSectionLabel("Parent object"));
+    body.appendChild(mkSectionLabel("Parent component"));
     let anchorSection = null;
 
     function onObjSelect(name) {
@@ -3972,7 +4133,7 @@ function openAttachModal(childName, anchorsBySolid, opts = {}) {
     let objListWrap = null;
     function rebuildObjList(selName) {
       if (objListWrap) objListWrap.remove();
-      objListWrap = mkSearchList(candidates, onObjSelect, "Search objects…", selName);
+      objListWrap = mkSearchList(candidates, onObjSelect, "Search components…", selName);
       body.insertBefore(objListWrap, anchorSection || null);
     }
     rebuildObjList(null);
@@ -4204,8 +4365,8 @@ function updateObjectList() {
 
     item.appendChild(label);
     // Developer mode: a part with settings to fill in (pins, ports,
-    // simulation…) shows a settings button; plain parts (fixture
-    // plates, racks) have none. The host page sets __sbMenus.
+    // simulation, a rack's collision box…) shows a settings button;
+    // plain parts (fixture plates) have none. The host page sets __sbMenus.
     if (SB_DEV && window.__sbMenus?.has(name)) {
       const menuBtn = document.createElement("button");
       menuBtn.className = "sb-menu-btn";
@@ -4522,13 +4683,13 @@ function removeSelected() {
   card.style.cssText = `width:min(480px,94vw);max-height:min(86vh,640px);overflow:auto;background:${th.panelBg};border-radius:16px;padding:24px;box-shadow:0 18px 46px rgba(0,0,0,0.5);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;color:${th.color};animation:attachModalIn 0.2s cubic-bezier(0.34,1.56,0.64,1) forwards`;
 
   const title = document.createElement("div");
-  title.textContent = "Delete object?";
+  title.textContent = "Delete component?";
   title.style.fontWeight = "900";
   title.style.fontSize = "18px";
   title.style.marginBottom = "6px";
 
   const msg = document.createElement("div");
-  msg.textContent = `"${name}" has ${children.size} child object(s) anchored to it.`;
+  msg.textContent = `"${name}" has ${children.size} child component(s) anchored to it.`;
   msg.style.cssText = `font-size:13px;color:var(--panel-dim);margin-bottom:16px`;
 
   const row = document.createElement("label");
@@ -4549,7 +4710,7 @@ function removeSelected() {
   const cbText = document.createElement("div");
   const childArr = [...children];
   cbText.innerHTML = `<div style="font-weight:800;">Delete child objects too</div>
-                      <div style="font-size:12px;opacity:.75;">This will delete ${children.size} dependent object(s).</div>`;
+                      <div style="font-size:12px;opacity:.75;">This will delete ${children.size} dependent component(s).</div>`;
 
   row.appendChild(cb);
   row.appendChild(cbText);
@@ -5099,7 +5260,7 @@ function nudgeSelectedAnchor(axis, sign) {
     return;
   }
   const parentObj = objectsByName.get(meta.attach.parent_name);
-  if (!parentObj) { showToast("Move: parent object not found"); return; }
+  if (!parentObj) { showToast("Move: parent component not found"); return; }
 
   // Parent anchors — prefer the attach's solid, else flat, else first solid.
   const ud = parentObj.userData || {};
@@ -5683,7 +5844,7 @@ async function openCreatePanel(typeName) {
 
   const panel = document.createElement("div");
   panel.id = "createPanel";
-  panel.style.cssText = "position:fixed;inset:0;background:rgba(10,10,10,0.65);z-index:10002;display:flex;align-items:center;justify-content:center";
+  panel.style.cssText = "position:fixed;inset:0 var(--aiw-on, 0px) 0 0;background:rgba(10,10,10,0.65);z-index:10002;display:flex;align-items:center;justify-content:center";
   panel.addEventListener("click", (e) => { if (e.target === panel) panel.remove(); });
 
   const card = document.createElement("div");
@@ -6353,7 +6514,7 @@ window.handleAnchorPick = handleAnchorPick;
 function __snapChildToParentAnchor(childName, parentName, parentAnchor, childSolid, childAnchor, offsetArr=null, parentSolid=null) {
   const childObj = objectsByName.get(childName);
   const parentObj = objectsByName.get(parentName);
-  if (!childObj || !parentObj) throw new Error("snap: missing child/parent object");
+  if (!childObj || !parentObj) throw new Error("snap: missing child/parent component");
 
   // Some CADs name anchors inconsistently (e.g. "A4" vs "hole_A4" vs "hole-A4").
   // We accept the canonical name in config ("A4") but resolve to the actual key at snap-time.
@@ -6644,7 +6805,7 @@ function __openCollisionBoxPanel() {
 
   const panel = document.createElement("div");
   panel.id = "colBoxPanel";
-  panel.style.cssText = `position:fixed;right:340px;top:18px;width:360px;max-height:85vh;overflow:hidden;display:flex;flex-direction:column;background:${th.panelBg};border:${th.panelBord};border-radius:16px;box-shadow:0 18px 60px rgba(0,0,0,0.45);padding:14px;z-index:10005;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;color:${th.color};`;
+  panel.style.cssText = `position:fixed;right:calc(var(--aiw-on, 0px) + 340px);top:18px;width:360px;max-height:85vh;overflow:hidden;display:flex;flex-direction:column;background:${th.panelBg};border:${th.panelBord};border-radius:16px;box-shadow:0 18px 60px rgba(0,0,0,0.45);padding:14px;z-index:10005;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;color:${th.color};`;
 
   // Title
   const title = document.createElement("div");
@@ -6653,7 +6814,7 @@ function __openCollisionBoxPanel() {
   panel.appendChild(title);
 
   const hint = document.createElement("div");
-  hint.textContent = "Select a target object, pick an anchor, set size, then Add.";
+  hint.textContent = "Select a target component, pick an anchor, set size, then Add.";
   hint.style.cssText = "font-size:11px;opacity:0.6;margin-bottom:10px;flex-shrink:0;";
   panel.appendChild(hint);
 
@@ -6661,12 +6822,12 @@ function __openCollisionBoxPanel() {
   const secTarget = document.createElement("div");
   secTarget.style.cssText = "margin-bottom:8px;flex-shrink:0;";
   const targetLabel = document.createElement("div");
-  targetLabel.textContent = "TARGET OBJECT";
+  targetLabel.textContent = "TARGET COMPONENT";
   targetLabel.style.cssText = "font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;opacity:0.5;margin-bottom:4px;";
   secTarget.appendChild(targetLabel);
 
   const targetBox = document.createElement("div");
-  targetBox.textContent = "Click target object...";
+  targetBox.textContent = "Click target component...";
   targetBox.style.cssText = "padding:8px 10px;border-radius:10px;border:2px solid rgba(37,99,235,0.6);background:rgba(37,99,235,0.08);font-size:13px;font-weight:600;color:rgba(37,99,235,0.8);";
   secTarget.appendChild(targetBox);
   panel.appendChild(secTarget);
@@ -6728,7 +6889,7 @@ function __openCollisionBoxPanel() {
 
   // Empty state
   const anchorEmpty = document.createElement("div");
-  anchorEmpty.textContent = "Select a target object to see anchors";
+  anchorEmpty.textContent = "Select a target component to see anchors";
   anchorEmpty.style.padding = "12px 10px";
   anchorEmpty.style.fontSize = "12px";
   anchorEmpty.style.opacity = "0.45";
@@ -6765,7 +6926,7 @@ function __openCollisionBoxPanel() {
   }
 
   const xRow = mkSizeRow("X", "Auto X", (inp) => {
-    if (!selectedTarget) { showToast("Select a target object first."); return; }
+    if (!selectedTarget) { showToast("Select a target component first."); return; }
     const sz = __getParentCollisionSize(selectedTarget);
     if (sz) inp.value = Math.round(sz[0]);
     else showToast("No collision data on " + selectedTarget);
@@ -6773,7 +6934,7 @@ function __openCollisionBoxPanel() {
   secSize.appendChild(xRow.row);
 
   const yRow = mkSizeRow("Y", "Auto Y", (inp) => {
-    if (!selectedTarget) { showToast("Select a target object first."); return; }
+    if (!selectedTarget) { showToast("Select a target component first."); return; }
     const sz = __getParentCollisionSize(selectedTarget);
     if (sz) inp.value = Math.round(sz[1]);
     else showToast("No collision data on " + selectedTarget);
@@ -6822,7 +6983,7 @@ function __openCollisionBoxPanel() {
       inp.value = Math.max(1, Math.round(zH));
       showToast("Auto Z: " + Math.round(zH) + " mm (from " + objName + ")");
     };
-    showToast("Click an object to measure top anchor height.");
+    showToast("Click a component to measure top anchor height.");
   });
   secSize.appendChild(zRow.row);
   panel.appendChild(secSize);
@@ -6963,7 +7124,7 @@ function __openCollisionBoxPanel() {
     anchorSearch.value = "";
     anchorListDiv.innerHTML = "";
     const emptyMsg = document.createElement("div");
-    emptyMsg.textContent = "Select a target object to see anchors";
+    emptyMsg.textContent = "Select a target component to see anchors";
     emptyMsg.style.padding = "12px 10px";
     emptyMsg.style.fontSize = "12px";
     emptyMsg.style.opacity = "0.45";
@@ -7082,7 +7243,7 @@ function __sbTextModal({ title = "", label = "", value = "", placeholder = "", o
     // backdrop covers the whole viewport (including the navbar) — see
     // vendor/nav.css. Without it the navbar peeks through on the left.
     overlay.className = "modal-overlay";
-    overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:50000;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);padding:20px;";
+    overlay.style.cssText = "position:fixed;inset:0 var(--aiw-on, 0px) 0 0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:50000;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);padding:20px;";
     overlay.innerHTML = `
       <div style="width:min(420px,100%);background:var(--surface);border-radius:18px;box-shadow:var(--shadow-lg);overflow:hidden;animation:confirmIn 0.25s cubic-bezier(0.2,0.9,0.3,1) forwards;">
         <div style="padding:16px 20px;border-bottom:1px solid var(--border2);display:flex;align-items:center;">
@@ -8444,7 +8605,7 @@ ensureBuilderBar();
       }).then(x => x.json());
       const coreName = __coreName();
       if (res.ok && res.solids) {
-        if (!coreName) throw new Error("no core object in the scene");
+        if (!coreName) throw new Error("no core component in the scene");
         if (!window.__setSolidPosesWorld) throw new Error("viewer not ready (pose setter missing)");
         window.__setSolidPosesWorld(coreName, res.solids);
         if (__ikDrag.ball) __ikDrag.ball.material.color.set(0x4f9cf9);
@@ -9297,7 +9458,7 @@ async function patternFromPlate() {
 
   if (!plateName) { window.showToast("Select a plate first."); return; }
   if (!(plateType && plateType.startsWith("plate_"))) {
-    window.showToast("Select a plate_... object to pattern.");
+    window.showToast("Select a plate_... component to pattern.");
   try { window.hideBanner(); } catch(e) {}
     return;
   }
@@ -9336,7 +9497,7 @@ async function patternFromPlate() {
   }
 
   if (!templateName) {
-    window.showToast(`No object mounted at ${TEMPLATE_ANCHOR}. Place one there first, then Pattern.`);
+    window.showToast(`No component mounted at ${TEMPLATE_ANCHOR}. Place one there first, then Pattern.`);
     return;
   }
 
@@ -9539,7 +9700,7 @@ function openPatternSourceAnchorMenu(sourceName, anchorsBySolid) {
     const names = Object.keys(anchors || {});
     if (!names.length) {
       const none = document.createElement("div");
-      none.textContent = "No anchors on this object.";
+      none.textContent = "No anchors on this component.";
       none.style.opacity = "0.75";
       btnWrap.appendChild(none);
       return;
@@ -9657,7 +9818,7 @@ async function runPatternFill() {
       srcType = so?.userData?.typeName || so?.userData?.type || "";
     } catch(e) {}
   }
-  if (!srcType) { window.showToast("Source object type unknown."); return; }
+  if (!srcType) { window.showToast("Source component type unknown."); return; }
 
   // Use same checkbox options as the source object (only bools are stored now)
   const srcOptions = {};
@@ -9680,7 +9841,7 @@ async function runPatternFill() {
   } catch(e) {}
 
   if (!blueprint) {
-    window.showToast("Failed to instantiate pattern object.");
+    window.showToast("Failed to instantiate pattern component.");
     window.builderState.mode = "IDLE";
     window.builderState.pattern = null;
     return;
@@ -9697,7 +9858,7 @@ async function runPatternFill() {
   const childAnchors = anchorsBySolid[childSolid] || {};
   const srcArr = childAnchors[p.sourceAnchor];
   if (!srcArr) {
-    window.showToast("Selected source anchor not found on instantiated object.");
+    window.showToast("Selected source anchor not found on instantiated component.");
     window.builderState.mode = "IDLE";
     window.builderState.pattern = null;
     return;
@@ -9804,7 +9965,7 @@ function __rpChildAnchorLocalPose(childObj, childAnchorName) {
 function rectPatternHandleSecondAnchor(ownerName, anchorName) {
   const rp = window.builderState?.rectPattern;
   const ui = window.builderState?.rectPatternUi;
-  if (!rp || !ui || !rp.seedName) { showToast("Pick the first object first."); return; }
+  if (!rp || !ui || !rp.seedName) { showToast("Pick the first component first."); return; }
   if (!ownerName || !anchorName) { showToast("Select a valid anchor."); return; }
 
   const w = __rpAnchorWorldPose(ownerName, anchorName);
@@ -9878,7 +10039,7 @@ function startRectPattern() {
   hint.style.fontSize = "12px";
   hint.style.opacity = "0.75";
   hint.style.marginBottom = "10px";
-  hint.textContent = "Pick a first object, then pick a second object + anchor. Enter counts and Fill.";
+  hint.textContent = "Pick a first component, then pick a second component + anchor. Enter counts and Fill.";
   panel.appendChild(hint);
 
   function mkRow(labelText) {
@@ -9937,8 +10098,8 @@ function startRectPattern() {
   }
 
   // First object picker
-  const r1 = mkRow("First object");
-  const seed = mkSelectBox("Select first object…");
+  const r1 = mkRow("First component");
+  const seed = mkSelectBox("Select first component…");
   r1.row.appendChild(seed.wrap);
   panel.appendChild(r1.row);
 
@@ -9947,13 +10108,13 @@ function startRectPattern() {
     // Blue highlight for selection state
     seed.box.style.borderColor = "rgba(60,130,255,0.7)";
     seed.box.style.background = "rgba(60,130,255,0.08)";
-    seed.box.textContent = "Click an object in 3D...";
-    try { window.showBanner?.("Click a valid object (the one you want to pattern)."); } catch(e) {}
+    seed.box.textContent = "Click a component in 3D...";
+    try { window.showBanner?.("Click a valid component (the one you want to pattern)."); } catch(e) {}
   });
   seed.clearBtn.addEventListener("click", (e) => {
     e.stopPropagation();
     seed.box.dataset.state = "empty";
-    seed.box.textContent = "Select first object…";
+    seed.box.textContent = "Select first component…";
     seed.box.style.borderColor = "";
     seed.box.style.border = th.listBord;
     seed.box.style.background = th.listBg;
@@ -9962,7 +10123,7 @@ function startRectPattern() {
     window.builderState.rectPattern = null;
     // reset point
     point.box.dataset.state = "empty";
-    point.box.textContent = "Select second object…";
+    point.box.textContent = "Select second component…";
     point.box.style.borderColor = "rgba(0,0,0,0.18)";
     point.box.style.background = "rgba(0,0,0,0.02)";
     point.clearBtn.style.display = "none";
@@ -9970,8 +10131,8 @@ function startRectPattern() {
   });
 
   // Second object picker
-  const r2 = mkRow("Second object");
-  const point = mkSelectBox("Select second object…");
+  const r2 = mkRow("Second component");
+  const point = mkSelectBox("Select second component…");
   r2.row.appendChild(point.wrap);
   panel.appendChild(r2.row);
 
@@ -10026,7 +10187,7 @@ function startRectPattern() {
 
   // Empty state
   const anchorEmpty = document.createElement("div");
-  anchorEmpty.textContent = "Select a second object to see anchors";
+  anchorEmpty.textContent = "Select a second component to see anchors";
   anchorEmpty.style.padding = "12px 10px";
   anchorEmpty.style.fontSize = "12px";
   anchorEmpty.style.opacity = "0.45";
@@ -10105,7 +10266,7 @@ function startRectPattern() {
     anchorSearchInput.value = "";
     anchorListDiv.innerHTML = "";
     const emptyMsg = document.createElement("div");
-    emptyMsg.textContent = "Select a second object to see anchors";
+    emptyMsg.textContent = "Select a second component to see anchors";
     emptyMsg.style.padding = "12px 10px";
     emptyMsg.style.fontSize = "12px";
     emptyMsg.style.opacity = "0.45";
@@ -10122,20 +10283,20 @@ function startRectPattern() {
 
   point.box.addEventListener("click", () => {
     const rp = window.builderState.rectPattern;
-    if (!rp || !rp.seedName) { showToast("Pick the first object first."); return; }
+    if (!rp || !rp.seedName) { showToast("Pick the first component first."); return; }
     window.builderState.mode = "RECTPATTERN_PICK_SECOND_OBJECT";
     // Blue highlight for selection state
     point.box.style.borderColor = "rgba(60,130,255,0.7)";
     point.box.style.background = "rgba(60,130,255,0.08)";
-    point.box.textContent = "Click a second object in 3D...";
-    try { window.showBanner?.("Click the second object, then pick an anchor."); } catch(e) {}
+    point.box.textContent = "Click a second component in 3D...";
+    try { window.showBanner?.("Click the second component, then pick an anchor."); } catch(e) {}
   });
   point.clearBtn.addEventListener("click", (e) => {
     e.stopPropagation();
     const rp = window.builderState.rectPattern;
     if (rp) { rp.bAnchor = null; rp.delta = null; rp.secondOwnerName = null; }
     point.box.dataset.state = "empty";
-    point.box.textContent = "Select second object…";
+    point.box.textContent = "Select second component…";
     point.box.style.borderColor = "rgba(0,0,0,0.18)";
     point.box.style.background = "rgba(0,0,0,0.02)";
     point.clearBtn.style.display = "none";
@@ -10222,7 +10383,7 @@ function startRectPattern() {
 
   btnFill.addEventListener("click", async () => {
     const rp = window.builderState.rectPattern;
-    if (!rp || !rp.seedName || !rp.aAnchor?.pos) { showToast("Pick the first object."); return; }
+    if (!rp || !rp.seedName || !rp.aAnchor?.pos) { showToast("Pick the first component."); return; }
     if (!rp.bAnchor?.pos || !rp.delta) { showToast("Pick the second anchor."); return; }
 
     // --- Grid fill mode (A1..Z500 style) ---
@@ -10346,7 +10507,7 @@ function startRectPattern() {
 
     // Anchor-based grid fill only (no distance-based XYZ counts)
     if (!seedObj) {
-      showToast("Seed object missing.");
+      showToast("Seed component missing.");
       return;
     }
     if (!rp.bAnchor || !rp.bAnchor.ownerName || !rp.bAnchor.anchorName) {
@@ -10354,7 +10515,7 @@ function startRectPattern() {
       return;
     }
     if (!canGridFill) {
-      showToast("Grid fill requires A1-style anchors on the chosen target object.");
+      showToast("Grid fill requires A1-style anchors on the chosen target component.");
       return;
     }
 
@@ -10381,7 +10542,7 @@ function startRectPattern() {
     if (canGridFill) {
       const parentName = targetParentName;
       const parentObj = objectsByName.get(parentName);
-      if (!parentObj) { showToast("Grid fill failed: parent object missing."); return; }
+      if (!parentObj) { showToast("Grid fill failed: parent component missing."); return; }
 
       // Treat the entire fill as one atomic Undo/Redo action.
       const __patternNames = [];
@@ -10460,7 +10621,7 @@ function startRectPattern() {
       }
 
       if (!targets.length) {
-        showToast("No anchors found in that range on the target object.");
+        showToast("No anchors found in that range on the target component.");
         return;
       }
 
@@ -10520,7 +10681,7 @@ function startRectPattern() {
 
           const name = await spawnComponentSilent(type, null, options);
           const spawnedObj = await __waitForObject(name);
-          if (!spawnedObj) throw new Error(`snap: spawned object not ready (${name})`);
+          if (!spawnedObj) throw new Error(`snap: spawned component not ready (${name})`);
           // Truly anchor using the same UI snap pipeline that manual anchoring uses.
           // This avoids any mismatch between our anchor-resolution code and the live
           // anchor pick/snap path.
@@ -10666,7 +10827,7 @@ function startRectPattern() {
 
     // Safety: ensure seed object was not accidentally removed during fill
     if (rp.seedName && !objectsByName.has(rp.seedName)) {
-      console.warn("Pattern fill: seed object was lost, restoring...");
+      console.warn("Pattern fill: seed component was lost, restoring...");
       const seedSpec = window.builderState.specs?.[rp.seedName];
       if (seedSpec) {
         try { upsertObject(rp.seedName, seedSpec); } catch(e) { console.error(e); }

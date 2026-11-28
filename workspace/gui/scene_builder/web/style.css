@@ -321,7 +321,7 @@ select.input { cursor: pointer; }
 /* ── Insert modal ───────────────────────────────────────────────────────── */
 .sb-insert-box {
   width: 560px;
-  max-width: calc(100vw - 48px);
+  max-width: calc(100vw - var(--aiw-on, 0px) - 48px);
   max-height: 80vh;
   display: flex;
   flex-direction: column;

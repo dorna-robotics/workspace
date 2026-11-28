@@ -602,6 +602,10 @@ a:hover { color: var(--accent-h); }
 }
 .progress-bar-fill.done { background: var(--green); }
 
+/* Page-wide covers stop at the assistant's docked panel (--aiw-on while
+   it is open): nothing opens under it. */
+html.ai-open :is(.confirm-overlay, .modal-overlay, .launch-card.lc-page) { right: var(--aiw-on); }
+
 /* ── Confirm Dialog ───────────────────────────────────────────────────── */
 .confirm-overlay {
   position: fixed; inset: 0;
